@@ -49,6 +49,17 @@ class Ledger:
         with os.fdopen(self._open_owner_only(self.ledger_path, append=True), "a") as fh:
             fh.write(line + "\n")
 
+    def write_text(self, name: str, text: str) -> str:
+        """Write a redacted text/markdown artifact (owner-only) to the run dir."""
+        path = os.path.join(self.run_dir, name)
+        with os.fdopen(self._open_owner_only(path, append=False), "w") as fh:
+            fh.write(redact_obj(text))
+        return path
+
+    def write_json(self, name: str, obj) -> str:
+        """Write a redacted JSON artifact (owner-only) to the run dir."""
+        return self._write(name, obj)
+
     def record_transcript(self, event: dict) -> None:
         """Append one verbatim model-call record (redacted) to transcript.jsonl."""
         path = os.path.join(self.run_dir, "transcript.jsonl")

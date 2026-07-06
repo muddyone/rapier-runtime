@@ -41,6 +41,7 @@ class AnchoredFixStage(TransformStage):
             "Revise the recommendation in place per the rules above."
         )
         resp = client.complete(system=_SYSTEM, prompt=prompt)
+        env.meta["recommendation_before_fix"] = env.recommendation  # for the ceremony-row "did the challenge change it?"
         env.recommendation = resp.text
         env.add_trace(
             "anchored_fix",

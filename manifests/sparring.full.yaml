@@ -1,0 +1,37 @@
+# The full SPARRING ceremony — Proposer -> Resolver -> compose, over one Envelope.
+#
+#   SPARK -> Pattern Lock -> the Cut        (Proposer: diverge, filter, commit)
+#     -> author -> cross_review -> anchored_fix -> definitiveness_gate
+#        -> citation_gate -> compose          (Resolver: challenge, correct, gate, report)
+#
+# The Cut commits an option and forwards its standing objections; the author
+# writes the recommendation FOR that committed option, pre-empting the objections
+# (a single fresh pass, not iteration). compose emits the two-part report + the
+# /spar-parity records + the ceremony-ledger row.
+#
+# Cross-vendor is automatic (the policy assigns distinct vendors per role); pin
+# vendors per stage with generator_vendor / challenger_vendor / reviewer_vendor.
+name: sparring
+policy:
+  independence: preferred        # required = error if only one vendor; off = single-vendor
+pipeline:
+  - stage: spark
+    config: { cap: 5 }
+  - stage: pattern_lock
+    config: { cap: 3 }
+  - stage: cut
+    config: { cap: 2, integrity_check: true }
+  - stage: author
+    roles:
+      author: { vendor: anthropic, model: claude-opus-4-8 }
+  - stage: cross_review
+    config: {}
+  - stage: anchored_fix
+    roles:
+      author: { vendor: anthropic, model: claude-opus-4-8 }
+  - stage: definitiveness_gate
+    config: {}
+  - stage: citation_gate
+    config: { judge: false }
+  - stage: compose
+    config: {}

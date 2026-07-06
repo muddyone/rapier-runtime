@@ -26,7 +26,26 @@ class AuthorStage(TransformStage):
             env.add_trace("author", self.kind, "no author client bound — skipped")
             return env
         system = ctx.config.get("system", _SYSTEM)
-        resp = client.complete(system=system, prompt=env.request)
+        # Handoff: if the Proposer committed an option, author FOR that option and
+        # forward the Cut's standing objections as context to pre-empt (a single
+        # fresh pass — never fed as `prev` to iterate).
+        committed = env.committed
+        standing = ((env.meta.get("proposer") or {}).get("cut") or {}).get("standing_objections") or []
+        if committed:
+            prompt = f"DECISION:\n{env.request}\n\nThe deliberation committed to this option:\n{committed}\n"
+            if standing:
+                objs = "\n".join(
+                    f"- [{o.get('artifact', '')}] {o.get('text', '')}" for o in standing if isinstance(o, dict)
+                )
+                prompt += (
+                    "\nKNOWN UNRESOLVED OBJECTIONS from the adversarial deliberation — address each where "
+                    f"valid, in your recommendation:\n{objs}\n"
+                )
+            prompt += "\nWrite the recommendation for the committed option, on the merits."
+            env.meta["handoff"] = {"committed": True, "standing_objections_forwarded": len(standing)}
+        else:
+            prompt = env.request
+        resp = client.complete(system=system, prompt=prompt)
         env.recommendation = resp.text
         # Record the author's vendor so the reviewer/gate can pick a *distinct*
         # second vendor for cross-vendor independence (V4).

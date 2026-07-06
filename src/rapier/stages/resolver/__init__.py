@@ -7,6 +7,7 @@ from . import (  # noqa: F401  (each import registers a stage)
     anchored_fix,
     author,
     citation_gate,
+    compose,
     cross_review,
     definitiveness_gate,
 )
@@ -17,4 +18,5 @@ __all__ = [
     "anchored_fix",
     "definitiveness_gate",
     "citation_gate",
+    "compose",
 ]
