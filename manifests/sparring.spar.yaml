@@ -1,0 +1,33 @@
+# The v2 SPARRING Resolver as a Rapier pipeline — the port of /spar.
+#
+#   author -> cross_review -> anchored_fix -> definitiveness_gate -> citation_gate
+#
+# Cross-vendor is a config property: the author runs on Anthropic, the reviewer
+# on OpenAI. The author/anchored stages use Rapier's model layer (the `author`
+# role below). The cross_review / definitiveness_gate / citation_gate stages
+# wrap the vendored SPARRING stack and use its own cross-vendor model selection
+# (Anthropic + OpenAI keys from the environment) — faithful to shipped /spar.
+# Unifying those onto the manifest's role bindings is a later milestone.
+#
+# Requires ANTHROPIC_API_KEY (author + gate) and OPENAI_API_KEY (reviewer) in
+# the environment. Fail-soft: missing keys degrade (cross_vendor:false /
+# unchecked) rather than aborting.
+name: spar
+pipeline:
+  - stage: author
+    roles:
+      author: { vendor: anthropic, model: claude-opus-4-8 }
+
+  - stage: cross_review
+    config:
+      reviewer: gpt        # 'gpt' | 'claude' — reviewer vendor for the one pass
+
+  - stage: anchored_fix
+    roles:
+      author: { vendor: anthropic, model: claude-opus-4-8 }
+
+  - stage: definitiveness_gate
+
+  - stage: citation_gate
+    config:
+      judge: false         # set true to also run the dual-substrate supports-claim judge

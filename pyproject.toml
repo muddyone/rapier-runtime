@@ -29,6 +29,7 @@ dependencies = ["pyyaml>=6.0"]
 
 [project.optional-dependencies]
 providers = ["anthropic>=0.40", "openai>=1.40"]
+resolver = ["requests>=2.31"]  # the vendored SPARRING Resolver stack (lib_llm) uses requests
 dev = ["pytest>=8.0"]
 
 [project.scripts]

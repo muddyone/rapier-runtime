@@ -19,7 +19,7 @@ Free and open source (Apache-2.0). Not monetized.
 
 ---
 
-## Status: M0 (pre-alpha skeleton)
+## Status: M1 (Resolver ported; pre-alpha)
 
 This is the foundation, not the finished tool. What works today:
 
@@ -30,13 +30,18 @@ This is the foundation, not the finished tool. What works today:
 - **The model layer** — a provider abstraction where vendor/model names live
   only in config; cross-vendor is a manifest property. Ships a `mock` vendor
   (no keys, no network) plus lazy Anthropic/OpenAI clients.
+- **The Resolver** *(M1)* — the SPARRING challenge half as a five-stage pipeline
+  (`author → cross_review → anchored_fix → definitiveness_gate → citation_gate`,
+  `manifests/sparring.spar.yaml`), wrapping the vendored, battle-tested SPARRING
+  grounding/gate stack behind one **single shared verification service** (the
+  collapse of the old pilot-vs-loom two-copies split).
 - **The ledger** — opt-in, redacted, owner-only run persistence.
 - **Security from day one** — env-only secrets + redaction, `yaml.safe_load`,
   a [threat model](docs/threat-model.md), and a [security policy](SECURITY.md).
 
-**Not yet built:** the Resolver modules (M1), the Proposer / convergence loop
-(M2), the grounding/verification backends, the definitiveness gate. See the
-roadmap below.
+**Not yet built:** the Proposer / convergence loop (M2), automatic artifact
+extraction from the recommendation, the two-part report composition, and the
+`/spar` adapter. See the roadmap below.
 
 ## Quickstart
 
@@ -69,8 +74,8 @@ two roles at two different vendors — without touching engine code.
 
 | Milestone | What |
 |---|---|
-| **M0** *(here)* | Skeleton + threat model + security baseline |
-| M1 | Port the Resolver (one shared grounding/verification service; `/spar` parity) |
+| M0 | Skeleton + threat model + security baseline |
+| **M1** *(here)* | Resolver ported (one shared grounding/verification service; `/spar` parity) |
 | M2 | Build the Proposer (the convergence primitive; SPARK / Pattern Lock / the Cut; cross-vendor roles) |
 | M3 | Full controller + adapters (the whole ceremony end-to-end) |
 | M4 | Hardening + packaging + first public release |
