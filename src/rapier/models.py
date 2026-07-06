@@ -117,28 +117,47 @@ class OpenAICompatibleModelClient(ModelClient):
         self.key_env = key_env
 
     def complete(self, system: str, prompt: str) -> ModelResponse:
+        import time
+
         import requests
 
         key = require_secret(self.key_env)
         register_secret_value(key)
-        resp = requests.post(
-            f"{self.base_url}/chat/completions",
-            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-            json={
-                "model": self.spec.model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": prompt},
-                ],
-                "max_tokens": self.spec.max_tokens,
-            },
-            timeout=60,
-        )
-        resp.raise_for_status()
-        data = resp.json()
-        choices = data.get("choices") or [{}]
-        text = (choices[0].get("message") or {}).get("content") or ""
-        return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model)
+        payload = {
+            "model": self.spec.model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": self.spec.max_tokens,
+        }
+        delay, last = 2.0, None
+        for _ in range(6):  # retry 429 / 5xx with exponential backoff (respect Retry-After)
+            try:
+                resp = requests.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+                    json=payload,
+                    timeout=120,
+                )
+            except requests.RequestException as exc:
+                last = str(exc)
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+            if resp.status_code == 429 or resp.status_code >= 500:
+                retry_after = resp.headers.get("Retry-After")
+                wait = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else delay
+                last = f"HTTP {resp.status_code}"
+                time.sleep(min(wait, 30))
+                delay = min(delay * 2, 30)
+                continue
+            resp.raise_for_status()
+            data = resp.json()
+            choices = data.get("choices") or [{}]
+            text = (choices[0].get("message") or {}).get("content") or ""
+            return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model)
+        raise RuntimeError(f"{self.spec.vendor} call failed after retries: {last}")
 
 
 # vendor -> (base_url, key_env, default_model). Defaults are overridable in the

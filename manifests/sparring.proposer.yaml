@@ -1,0 +1,17 @@
+# The Proposer as a Rapier pipeline — SPARK -> Pattern Lock -> the Cut.
+#
+# The Generator and Challenger auto-assign to DISTINCT vendors (G1) for genuine
+# cross-vendor independence; with one vendor available they share it (degraded).
+# Pin them per phase with generator_vendor / challenger_vendor if desired.
+#
+# Produces env.committed — the option the Cut commits to. In the full ceremony
+# (M3) this feeds the Resolver.
+name: proposer
+pipeline:
+  - stage: spark
+    config: {}                       # cap: 5  generator_vendor: gemini  challenger_vendor: xai
+  - stage: pattern_lock
+    config: {}                       # cap: 2
+  - stage: cut
+    config:
+      integrity_check: true          # G3: cross-vendor prematurity audit can reopen the Cut
