@@ -104,16 +104,91 @@ class OpenAIModelClient(ModelClient):
         )
 
 
-_VENDORS: dict[str, type[ModelClient]] = {
-    "mock": MockModelClient,
-    "anthropic": AnthropicModelClient,
-    "openai": OpenAIModelClient,
+class OpenAICompatibleModelClient(ModelClient):
+    """Any OpenAI-wire-format endpoint — Grok (xAI), DeepSeek, Mistral, Groq,
+    Together, OpenRouter, local Ollama/vLLM. One client, parameterized by
+    ``base_url`` + the env var holding its key. Uses ``requests`` directly (no
+    SDK), so adding a vendor is a config entry, not new code.
+    """
+
+    def __init__(self, spec: ModelSpec, base_url: str, key_env: str):
+        super().__init__(spec)
+        self.base_url = base_url.rstrip("/")
+        self.key_env = key_env
+
+    def complete(self, system: str, prompt: str) -> ModelResponse:
+        import requests
+
+        key = require_secret(self.key_env)
+        register_secret_value(key)
+        resp = requests.post(
+            f"{self.base_url}/chat/completions",
+            headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            json={
+                "model": self.spec.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": self.spec.max_tokens,
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        choices = data.get("choices") or [{}]
+        text = (choices[0].get("message") or {}).get("content") or ""
+        return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model)
+
+
+# vendor -> (base_url, key_env, default_model). Defaults are overridable in the
+# manifest; only xai's default is live-validated (2026-07-06 — Grok's API is
+# OpenAI-compatible). Others are best-effort until validated with a real key.
+_OPENAI_COMPATIBLE: dict[str, tuple[str, str, str]] = {
+    "xai":        ("https://api.x.ai/v1",            "XAI_API_KEY",        "grok-4.3"),
+    "deepseek":   ("https://api.deepseek.com/v1",    "DEEPSEEK_API_KEY",   "deepseek-chat"),
+    "mistral":    ("https://api.mistral.ai/v1",      "MISTRAL_API_KEY",    "mistral-large-latest"),
+    "groq":       ("https://api.groq.com/openai/v1", "GROQ_API_KEY",       "llama-3.3-70b-versatile"),
+    "together":   ("https://api.together.xyz/v1",    "TOGETHER_API_KEY",   "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
+    "openrouter": ("https://openrouter.ai/api/v1",   "OPENROUTER_API_KEY", "openai/gpt-4o"),
+    "ollama":     ("http://localhost:11434/v1",      "OLLAMA_API_KEY",     "llama3.1"),  # local, zero-egress
+}
+
+# vendor -> env var holding its key (for auto-detect). Native + compatible.
+_VENDOR_KEY_ENV: dict[str, str] = {
+    "anthropic": "ANTHROPIC_API_KEY",
+    "openai": "OPENAI_API_KEY",
+    **{v: cfg[1] for v, cfg in _OPENAI_COMPATIBLE.items()},
 }
 
 
 def build_client(spec: ModelSpec) -> ModelClient:
-    if spec.vendor not in _VENDORS:
-        raise ValueError(
-            f"unknown vendor '{spec.vendor}'; known vendors: {sorted(_VENDORS)}"
-        )
-    return _VENDORS[spec.vendor](spec)
+    vendor = spec.vendor
+    if vendor == "mock":
+        return MockModelClient(spec)
+    if vendor == "anthropic":
+        return AnthropicModelClient(spec)
+    if vendor == "openai":
+        return OpenAIModelClient(spec)
+    if vendor in _OPENAI_COMPATIBLE:
+        base_url, key_env, default_model = _OPENAI_COMPATIBLE[vendor]
+        if not spec.model:
+            spec.model = default_model
+        return OpenAICompatibleModelClient(spec, base_url, key_env)
+    known = ["mock", "anthropic", "openai", *sorted(_OPENAI_COMPATIBLE)]
+    raise ValueError(f"unknown vendor '{vendor}'; known vendors: {known}")
+
+
+def available_vendors() -> list[str]:
+    """Which vendors have a key present in the environment (auto-detect).
+
+    ``mock`` is always available; ``ollama`` is local and only appears if its
+    (optional) key env is set. Keys are read env-only (threat model S1).
+    """
+    from .secrets import get_secret
+
+    avail = ["mock"]
+    for vendor, key_env in _VENDOR_KEY_ENV.items():
+        if get_secret(key_env):
+            avail.append(vendor)
+    return avail

@@ -10,7 +10,14 @@ from __future__ import annotations
 
 from .envelope import Artifact, Envelope, TraceEntry
 from .manifest import Manifest
-from .models import ModelClient, ModelResponse, ModelSpec, build_client
+from .models import (
+    ModelClient,
+    ModelResponse,
+    ModelSpec,
+    OpenAICompatibleModelClient,
+    available_vendors,
+    build_client,
+)
 from .pipeline import Pipeline, StageSpec
 from .stage import (
     ConvergenceStage,
@@ -42,6 +49,8 @@ __all__ = [
     "ModelSpec",
     "ModelClient",
     "ModelResponse",
+    "OpenAICompatibleModelClient",
     "build_client",
+    "available_vendors",
     "__version__",
 ]
