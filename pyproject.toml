@@ -1,0 +1,42 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rapier-runtime"
+version = "0.0.1"
+description = "A code-orchestrated engine that runs the SPARRING method: grounded, cross-vendor adversarial review for AI-in-the-loop decisions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{ name = "Bart Niedner" }]
+keywords = [
+    "llm",
+    "adversarial-review",
+    "ai-governance",
+    "anti-sycophancy",
+    "sparring",
+    "decision-support",
+]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = ["pyyaml>=6.0"]
+
+[project.optional-dependencies]
+providers = ["anthropic>=0.40", "openai>=1.40"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+rapier = "rapier.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rapier"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

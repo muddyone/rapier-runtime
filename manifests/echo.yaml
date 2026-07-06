@@ -1,0 +1,12 @@
+# The M0 proof-of-bones manifest. No keys, no network — the `mock` vendor
+# returns deterministic output. Run it with:
+#   rapier run --manifest manifests/echo.yaml --request "should we ship X?"
+name: echo
+pipeline:
+  - stage: echo
+    config:
+      note: "hello from Rapier M0"
+    roles:
+      author:
+        vendor: mock
+        model: rapier-echo-1
