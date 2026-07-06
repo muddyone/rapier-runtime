@@ -55,6 +55,13 @@ class _PhaseStage(ConvergenceStage):
             "no_op": result.no_op,
             "integrity_reopened": result.integrity_reopened,
         }
+        # Disagreement-at-cap: when a phase exits unresolved, surface the
+        # Challenger's standing (artifact-cited) objections so the held
+        # disagreement is legible, not silently dropped.
+        if not result.converged and result.rounds:
+            env.meta["proposer"][self.PHASE]["standing_objections"] = (
+                result.rounds[-1].challenger.get("concerns") or []
+            )
         env.meta.setdefault("proposer_rounds", {})[self.PHASE] = [
             {
                 "round": r.index,
@@ -62,6 +69,7 @@ class _PhaseStage(ConvergenceStage):
                 "gen_agree": r.generator.get("agree"),
                 "chal_agree": r.challenger.get("agree"),
                 "n_concerns": len(r.challenger.get("concerns") or []),
+                "n_theatrical_dropped": r.challenger.get("theatrical_dropped", 0),
             }
             for r in result.rounds
         ]

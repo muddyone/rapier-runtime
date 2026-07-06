@@ -9,9 +9,9 @@
 name: proposer
 pipeline:
   - stage: spark
-    config: {}                       # cap: 5  generator_vendor: gemini  challenger_vendor: xai
+    config: { cap: 5 }               # generator_vendor: gemini  challenger_vendor: xai
   - stage: pattern_lock
-    config: {}                       # cap: 2
+    config: { cap: 3 }
   - stage: cut
     config:
       integrity_check: true          # G3: cross-vendor prematurity audit can reopen the Cut
