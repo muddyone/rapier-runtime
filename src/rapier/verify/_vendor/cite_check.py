@@ -46,7 +46,7 @@ EXTRACT_CHUNK_LINES = 150   # docs longer than this are extracted in <=this-many
 JUDGE_BATCH = 20            # docs are judged in batches of <=this-many citations (output-token budget)
 PROMPT_VERSION = "v1"
 
-CONTACT_EMAIL = "bart.niedner@gmail.com"
+CONTACT_EMAIL = "Contact@resourceforge.com"
 USER_AGENT = f"cite-check/0.1 (mailto:{CONTACT_EMAIL})"
 
 HTTP_TIMEOUT = 30

@@ -7,7 +7,7 @@ Most AI tooling helps you *build* agent workflows. Rapier is different: it
 *governs* them. It runs a structured, adversarial, grounded review over an AI's
 proposed answer — cross-vendor by construction, with mechanical grounding
 checks and a correctness gate — so that confident wrongness is structurally
-hard to ship. The method is [SPARRING](https://github.com/muddyone/sparring-framework);
+hard to ship. The method is [SPARRING](https://github.com/muddyone/sparring-publicaccess);
 Rapier is the runtime that executes it.
 
 > **Method vs. runtime.** *SPARRING* is the method (the concept, described in
@@ -19,42 +19,70 @@ Free and open source (Apache-2.0). Not monetized.
 
 ---
 
-## Status: M1 (Resolver ported; pre-alpha)
+## Status: pre-alpha — the full ceremony runs end-to-end (M0–M3 complete; M4 in progress)
 
-This is the foundation, not the finished tool. What works today:
+This is early software, pinned pre-1.0 — but the whole method runs. What works
+today:
 
-- **The Envelope** — the typed state that flows through every stage.
-- **The Stage contract** + registry — `run(envelope, ctx) -> envelope`, in two
-  kinds (transform stages and, coming in M2, convergence stages).
-- **The Pipeline controller** — runs a manifest's stages in order, fail-soft.
-- **The model layer** — a provider abstraction where vendor/model names live
-  only in config; cross-vendor is a manifest property. Ships a `mock` vendor
-  (no keys, no network) plus lazy Anthropic/OpenAI clients.
-- **The Resolver** *(M1)* — the SPARRING challenge half as a five-stage pipeline
-  (`author → cross_review → anchored_fix → definitiveness_gate → citation_gate`,
-  `manifests/sparring.spar.yaml`), wrapping the vendored, battle-tested SPARRING
-  grounding/gate stack behind one **single shared verification service** (the
-  collapse of the old pilot-vs-loom two-copies split).
-- **The ledger** — opt-in, redacted, owner-only run persistence.
-- **Security from day one** — env-only secrets + redaction, `yaml.safe_load`,
-  a [threat model](docs/threat-model.md), and a [security policy](SECURITY.md).
+- **The full SPARRING ceremony, end-to-end.** The **Proposer** (divergent
+  generation → false-novelty filter → the Cut — a cross-vendor convergence loop)
+  hands a committed option to the **Resolver** (author → cross-vendor review →
+  anchored correction → a correctness *definitiveness* gate → an external-canon
+  citation gate → a two-part report). Run the Resolver alone (`spar`) or the
+  whole loop (`sparring`).
+- **Cross-vendor by construction.** Author and reviewer are always distinct
+  vendors when two keys are present, and it degrades *honestly* to single-vendor
+  (and says so) when only one is. Any role can be Anthropic, OpenAI, Gemini,
+  Grok, or any OpenAI-compatible endpoint — vendor and model names live only in
+  a manifest.
+- **A manifest *is* the method.** Reorder stages, swap a model, or point two
+  roles at two vendors — with no engine-code change. Built-in presets (`spar`,
+  `sparring`, `proposer`) cover the common cases; `--settle` and `--verify` tune
+  the resolver.
+- **Grounding + a correctness gate.** The definitiveness gate checks that every
+  hard specific in the answer is traceable to the given facts or explicitly
+  flagged as an estimate; the citation gate resolves cited external canon
+  (CWE / RFC / DOI / …). Both wrap one shared, battle-tested verification
+  service — no duplicate copies.
+- **Auditable and safe by design.** Opt-in, redacted, owner-only run
+  persistence; a verbatim model-call transcript; env-only secrets + redaction;
+  `yaml.safe_load`; a [threat model](docs/threat-model.md) and a
+  [security policy](SECURITY.md).
 
-**Not yet built:** the Proposer / convergence loop (M2), automatic artifact
-extraction from the recommendation, the two-part report composition, and the
-`/spar` adapter. See the roadmap below.
+75 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
+
+**Honest boundary.** The definitiveness gate, anchored correction, and the
+two-part trust rider are *exploratory* governance instruments — useful, but not
+yet validated by a pre-registered study. Rapier makes confident wrongness
+structurally *harder to ship*; it does not make an answer correct.
 
 ## Quickstart
 
 ```bash
-# from the repo root (M0 dev: run from source)
-PYTHONPATH=src python -m rapier.cli run \
-  --manifest manifests/echo.yaml \
-  --request "should we ship X?"
+pip install .          # or: pip install git+https://github.com/muddyone/rapier-runtime.git
+
+export ANTHROPIC_API_KEY=...    # author + gate
+export OPENAI_API_KEY=...       # a distinct cross-vendor reviewer
+                                # (or GEMINI_API_KEY / XAI_API_KEY)
+
+rapier spar     --request "Should we adopt Kubernetes for one flat-traffic web app?"
+rapier sparring --request "Monorepo or separate repos for our three services?"
+```
+
+`spar` runs the Resolver on a chosen option; `sparring` runs the full four-phase
+ceremony. Add `--settle N` for extra decision-stability rounds, or
+`--verify off|gate|round` to tune the citation gate. Point `--ledger-dir` at a
+directory to persist the run's transcript, report, and records.
+
+No keys? The `mock` vendor needs none:
+
+```bash
+rapier run --manifest manifests/echo.yaml --request "should we ship X?"
 # -> [mock:rapier-echo-1] should we ship X?
 ```
 
-The `echo` manifest uses the `mock` vendor, so it needs no API keys. Real runs
-(M1+) will read `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` from the environment.
+Runtime dependencies are just `requests` and `pyyaml` — every vendor is called
+over the wire; no provider SDKs.
 
 ## A manifest is the method
 
@@ -62,7 +90,7 @@ The `echo` manifest uses the `mock` vendor, so it needs no API keys. Real runs
 name: echo
 pipeline:
   - stage: echo
-    config: { note: "hello from Rapier M0" }
+    config: { note: "hello from Rapier" }
     roles:
       author: { vendor: mock, model: rapier-echo-1 }
 ```
@@ -72,20 +100,19 @@ two roles at two different vendors — without touching engine code.
 
 ## Roadmap
 
-| Milestone | What |
-|---|---|
-| M0 | Skeleton + threat model + security baseline |
-| **M1** *(here)* | Resolver ported (one shared grounding/verification service; `/spar` parity) |
-| M2 | Build the Proposer (the convergence primitive; SPARK / Pattern Lock / the Cut; cross-vendor roles) |
-| M3 | Full controller + adapters (the whole ceremony end-to-end) |
-| M4 | Hardening + packaging + first public release |
+| Milestone | What | |
+|---|---|---|
+| M0 | Skeleton + threat model + security baseline | ✅ |
+| M1 | Resolver ported (one shared grounding/verification service) | ✅ |
+| M2 | The Proposer (convergence primitive; SPARK / Pattern Lock / the Cut; cross-vendor roles) | ✅ |
+| M3 | Full controller + the `spar` / `sparring` adapters (the whole ceremony end-to-end) | ✅ |
+| M4 | Hardening + packaging + first public release | in progress |
 
 ## Development
 
 ```bash
-python -m venv .venv --system-site-packages
-.venv/bin/pip install pytest
-.venv/bin/python -m pytest -q
+pip install -e '.[dev]'
+pytest -q
 ```
 
 ## License
