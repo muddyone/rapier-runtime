@@ -25,11 +25,12 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
-dependencies = ["pyyaml>=6.0"]
+# Runtime deps are deliberately tiny: every vendor (Anthropic/OpenAI/Gemini/Grok/
+# any OpenAI-compatible endpoint) goes over the wire through `requests` — no
+# provider SDKs are imported — and manifests are `pyyaml`.
+dependencies = ["pyyaml>=6.0", "requests>=2.31"]
 
 [project.optional-dependencies]
-providers = ["anthropic>=0.40", "openai>=1.40"]
-resolver = ["requests>=2.31"]  # the vendored SPARRING Resolver stack (lib_llm) uses requests
 dev = ["pytest>=8.0"]
 
 [project.scripts]
