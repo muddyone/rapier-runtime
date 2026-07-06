@@ -34,6 +34,56 @@ class ModelResponse:
     raw: dict[str, Any] | None = None
 
 
+# --- one HTTP path + one transcript hook for EVERY vendor -------------------
+# Every model call — native Anthropic/OpenAI, Gemini/Grok, any compatible
+# endpoint — goes through _post_with_retry and _record(), so retry/backoff and
+# transcript capture are identical regardless of the LLM pairing.
+
+_transcript_sink = None  # set per run; called with one dict per model call
+
+
+def set_transcript_sink(fn) -> None:
+    global _transcript_sink
+    _transcript_sink = fn
+
+
+def _record(vendor: str, model: str, system: str, prompt: str, response: str) -> None:
+    if _transcript_sink is not None:
+        try:
+            _transcript_sink(
+                {"vendor": vendor, "model": model, "system": system, "prompt": prompt, "response": response}
+            )
+        except Exception:  # transcript capture must never break a run
+            pass
+
+
+def _post_with_retry(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
+    """POST JSON with exponential backoff on 429/5xx (respects Retry-After)."""
+    import time
+
+    import requests
+
+    delay, last = 2.0, None
+    for _ in range(6):
+        try:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+        except requests.RequestException as exc:
+            last = str(exc)
+            time.sleep(delay)
+            delay = min(delay * 2, 30)
+            continue
+        if resp.status_code == 429 or resp.status_code >= 500:
+            retry_after = resp.headers.get("Retry-After")
+            wait = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else delay
+            last = f"HTTP {resp.status_code}"
+            time.sleep(min(wait, 30))
+            delay = min(delay * 2, 30)
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    raise RuntimeError(f"request to {url} failed after retries: {last}")
+
+
 class ModelClient(ABC):
     def __init__(self, spec: ModelSpec):
         self.spec = spec
@@ -47,33 +97,27 @@ class MockModelClient(ModelClient):
     """Deterministic, no network, no key. Used by the echo pipeline and tests."""
 
     def complete(self, system: str, prompt: str) -> ModelResponse:
-        return ModelResponse(
-            text=f"[mock:{self.spec.model}] {prompt.strip()}",
-            vendor="mock",
-            model=self.spec.model,
-        )
+        text = f"[mock:{self.spec.model}] {prompt.strip()}"
+        _record("mock", self.spec.model, system, prompt, text)
+        return ModelResponse(text=text, vendor="mock", model=self.spec.model)
 
 
 class AnthropicModelClient(ModelClient):
     def complete(self, system: str, prompt: str) -> ModelResponse:
         key = require_secret("ANTHROPIC_API_KEY")
         register_secret_value(key)
-        try:
-            import anthropic
-        except ImportError as exc:  # pragma: no cover - exercised only with SDK
-            raise RuntimeError(
-                "anthropic SDK not installed; `pip install rapier-runtime[providers]`"
-            ) from exc
-        client = anthropic.Anthropic(api_key=key)
-        msg = client.messages.create(
-            model=self.spec.model,
-            max_tokens=self.spec.max_tokens,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
+        data = _post_with_retry(
+            "https://api.anthropic.com/v1/messages",
+            {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"},
+            {
+                "model": self.spec.model,
+                "max_tokens": self.spec.max_tokens,
+                "system": system,
+                "messages": [{"role": "user", "content": prompt}],
+            },
         )
-        text = "".join(
-            b.text for b in msg.content if getattr(b, "type", None) == "text"
-        )
+        text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
+        _record("anthropic", self.spec.model, system, prompt, text)
         return ModelResponse(text=text, vendor="anthropic", model=self.spec.model)
 
 
@@ -81,27 +125,21 @@ class OpenAIModelClient(ModelClient):
     def complete(self, system: str, prompt: str) -> ModelResponse:
         key = require_secret("OPENAI_API_KEY")
         register_secret_value(key)
-        try:
-            import openai
-        except ImportError as exc:  # pragma: no cover - exercised only with SDK
-            raise RuntimeError(
-                "openai SDK not installed; `pip install rapier-runtime[providers]`"
-            ) from exc
-        client = openai.OpenAI(api_key=key)
-        resp = client.chat.completions.create(
-            model=self.spec.model,
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=self.spec.max_tokens,
-            temperature=self.spec.temperature,
+        data = _post_with_retry(
+            "https://api.openai.com/v1/chat/completions",
+            {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            {
+                "model": self.spec.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_completion_tokens": self.spec.max_tokens,
+            },
         )
-        return ModelResponse(
-            text=resp.choices[0].message.content or "",
-            vendor="openai",
-            model=self.spec.model,
-        )
+        text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+        _record("openai", self.spec.model, system, prompt, text)
+        return ModelResponse(text=text, vendor="openai", model=self.spec.model)
 
 
 class OpenAICompatibleModelClient(ModelClient):
@@ -117,47 +155,23 @@ class OpenAICompatibleModelClient(ModelClient):
         self.key_env = key_env
 
     def complete(self, system: str, prompt: str) -> ModelResponse:
-        import time
-
-        import requests
-
         key = require_secret(self.key_env)
         register_secret_value(key)
-        payload = {
-            "model": self.spec.model,
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": prompt},
-            ],
-            "max_tokens": self.spec.max_tokens,
-        }
-        delay, last = 2.0, None
-        for _ in range(6):  # retry 429 / 5xx with exponential backoff (respect Retry-After)
-            try:
-                resp = requests.post(
-                    f"{self.base_url}/chat/completions",
-                    headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
-                    json=payload,
-                    timeout=120,
-                )
-            except requests.RequestException as exc:
-                last = str(exc)
-                time.sleep(delay)
-                delay = min(delay * 2, 30)
-                continue
-            if resp.status_code == 429 or resp.status_code >= 500:
-                retry_after = resp.headers.get("Retry-After")
-                wait = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else delay
-                last = f"HTTP {resp.status_code}"
-                time.sleep(min(wait, 30))
-                delay = min(delay * 2, 30)
-                continue
-            resp.raise_for_status()
-            data = resp.json()
-            choices = data.get("choices") or [{}]
-            text = (choices[0].get("message") or {}).get("content") or ""
-            return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model)
-        raise RuntimeError(f"{self.spec.vendor} call failed after retries: {last}")
+        data = _post_with_retry(
+            f"{self.base_url}/chat/completions",
+            {"Authorization": f"Bearer {key}", "Content-Type": "application/json"},
+            {
+                "model": self.spec.model,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+                "max_tokens": self.spec.max_tokens,
+            },
+        )
+        text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
+        _record(self.spec.vendor, self.spec.model, system, prompt, text)
+        return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model)
 
 
 # vendor -> (base_url, key_env, default_model). Defaults are overridable in the

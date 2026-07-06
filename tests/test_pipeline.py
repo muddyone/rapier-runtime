@@ -40,6 +40,26 @@ def test_stage_without_client_echoes_verbatim():
     assert env.recommendation == "verbatim please"
 
 
+def test_transcript_captures_every_model_call(tmp_path):
+    import json
+
+    _echo_manifest().build().run("hello world", ledger_root=str(tmp_path))
+    run_dir = next(tmp_path.iterdir())
+    tx = run_dir / "transcript.jsonl"
+    assert tx.exists()
+    lines = [json.loads(l) for l in tx.read_text().splitlines()]
+    assert len(lines) == 1
+    assert lines[0]["vendor"] == "mock"
+    assert set(lines[0]) == {"vendor", "model", "system", "prompt", "response"}
+
+
+def test_transcript_sink_reset_after_run(tmp_path):
+    from rapier import models
+
+    _echo_manifest().build().run("x", ledger_root=str(tmp_path))
+    assert models._transcript_sink is None  # cleaned up so it can't leak across runs
+
+
 def test_ledger_persists_redacted_run(tmp_path):
     m = _echo_manifest()
     env = m.build().run("decide X", ledger_root=str(tmp_path))

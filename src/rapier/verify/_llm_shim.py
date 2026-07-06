@@ -107,29 +107,25 @@ def _rapier_call(vendor: str, model: str, system: str, user: str, max_tokens: in
     return client.complete(system, user).text
 
 
+# Every slot routes through Rapier's one client layer (build_client), regardless
+# of vendor — so retry/backoff and transcript capture are identical for all
+# pairings. The original lib_llm is kept only for extract_json / LLMError / model
+# constants / unbound keys_present.
 def call_claude(model, system, user, max_tokens=4000, temperature=None):
     vendor, m = _slot("primary")
-    if vendor == "anthropic":
-        return _orig.call_claude(m, system, user, max_tokens=max_tokens)
     return _rapier_call(vendor, m, system, user, max_tokens)
 
 
 def call_gpt(model, system, user, max_completion_tokens=16000):
     vendor, m = _slot("secondary")
-    if vendor == "openai":
-        return _orig.call_gpt(m, system, user, max_completion_tokens=max_completion_tokens)
     return _rapier_call(vendor, m, system, user, max_completion_tokens)
 
 
 def claude_json(model, system, user, max_tokens=4000, temperature=0.7):
     vendor, m = _slot("primary")
-    if vendor == "anthropic":
-        return _orig.claude_json(m, system, user, max_tokens, temperature)
     return extract_json(_rapier_call(vendor, m, system + _JSON_SUFFIX, user, max_tokens))
 
 
 def gpt_json(model, system, user, max_completion_tokens=16000):
     vendor, m = _slot("secondary")
-    if vendor == "openai":
-        return _orig.gpt_json(m, system, user, max_completion_tokens)
     return extract_json(_rapier_call(vendor, m, system + _JSON_SUFFIX, user, max_completion_tokens))

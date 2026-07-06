@@ -12,7 +12,7 @@ from typing import Any, Callable
 
 from .envelope import Envelope
 from .ledger import Ledger
-from .models import ModelSpec, build_client
+from .models import ModelSpec, build_client, set_transcript_sink
 from .stage import StageContext, get_stage
 
 
@@ -45,7 +45,16 @@ class Pipeline:
     ) -> Envelope:
         env = Envelope(request=request)
         ledger = Ledger(ledger_root, run_slug=self.name) if ledger_root else None
+        # Capture every model call (all vendors, one path) to the transcript.
+        if ledger:
+            set_transcript_sink(ledger.record_transcript)
 
+        try:
+            return self._run_stages(env, ledger, log)
+        finally:
+            set_transcript_sink(None)
+
+    def _run_stages(self, env: Envelope, ledger, log) -> Envelope:
         for spec in self.stages:
             stage = get_stage(spec.stage)()
             clients = {role: build_client(ms) for role, ms in spec.roles.items()}

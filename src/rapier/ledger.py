@@ -49,5 +49,12 @@ class Ledger:
         with os.fdopen(self._open_owner_only(self.ledger_path, append=True), "a") as fh:
             fh.write(line + "\n")
 
+    def record_transcript(self, event: dict) -> None:
+        """Append one verbatim model-call record (redacted) to transcript.jsonl."""
+        path = os.path.join(self.run_dir, "transcript.jsonl")
+        line = json.dumps(redact_obj(event), default=str)
+        with os.fdopen(self._open_owner_only(path, append=True), "a") as fh:
+            fh.write(line + "\n")
+
     def persist_envelope(self, env: Envelope) -> str:
         return self._write("envelope.json", env.to_dict())
