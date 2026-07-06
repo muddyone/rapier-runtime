@@ -38,6 +38,7 @@ def test_explicit_model_overrides_default():
 
 def test_other_compatible_vendors_resolve():
     for vendor, base in [
+        ("gemini", "https://generativelanguage.googleapis.com/v1beta/openai"),
         ("deepseek", "https://api.deepseek.com/v1"),
         ("mistral", "https://api.mistral.ai/v1"),
         ("openrouter", "https://openrouter.ai/api/v1"),

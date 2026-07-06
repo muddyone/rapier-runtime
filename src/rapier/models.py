@@ -145,6 +145,7 @@ class OpenAICompatibleModelClient(ModelClient):
 # manifest; only xai's default is live-validated (2026-07-06 — Grok's API is
 # OpenAI-compatible). Others are best-effort until validated with a real key.
 _OPENAI_COMPATIBLE: dict[str, tuple[str, str, str]] = {
+    "gemini":     ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", "gemini-2.5-flash"),  # frontier; also has a native API
     "xai":        ("https://api.x.ai/v1",            "XAI_API_KEY",        "grok-4.3"),
     "deepseek":   ("https://api.deepseek.com/v1",    "DEEPSEEK_API_KEY",   "deepseek-chat"),
     "mistral":    ("https://api.mistral.ai/v1",      "MISTRAL_API_KEY",    "mistral-large-latest"),
