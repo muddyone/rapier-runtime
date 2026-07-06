@@ -27,6 +27,44 @@ def test_presets_build():
     assert load_preset("spar").stages[0].stage == "author"
 
 
+def _stages(name, **kw):
+    return [s.stage for s in load_preset(name, **kw).stages]
+
+
+def test_default_spar_is_unchanged():
+    # settle=0, verify=gate must reproduce the historical resolver exactly.
+    assert _stages("spar") == [
+        "author", "cross_review", "anchored_fix", "definitiveness_gate", "citation_gate", "compose",
+    ]
+
+
+def test_settle_adds_review_rounds():
+    s = _stages("spar", settle=2)
+    # 1 base + 2 settle = 3 review rounds, each cross_review→anchored_fix→definitiveness_gate
+    assert s.count("cross_review") == 3
+    assert s.count("anchored_fix") == 3
+    assert s.count("definitiveness_gate") == 3
+    assert s.count("citation_gate") == 1  # verify=gate → once, before compose
+    assert s[0] == "author" and s[-1] == "compose"
+
+
+def test_verify_off_drops_citation_gate():
+    assert "citation_gate" not in _stages("spar", verify="off")
+
+
+def test_verify_round_gates_every_round():
+    s = _stages("spar", settle=1, verify="round")
+    assert s.count("citation_gate") == 2  # after each of the 2 review rounds
+    assert s[-1] == "compose"
+
+
+def test_settle_verify_flow_through_sparring():
+    s = _stages("sparring", settle=1, verify="off")
+    assert s[:3] == ["spark", "pattern_lock", "cut"]  # proposer intact
+    assert "citation_gate" not in s
+    assert s.count("cross_review") == 2  # 1 base + 1 settle
+
+
 def test_author_handoff_uses_committed_and_forwards_objections():
     env = Envelope(request="decide X", committed="Option B")
     env.meta["proposer"] = {"cut": {"standing_objections": [{"text": "cost risk", "artifact": "src/x.py:12"}]}}

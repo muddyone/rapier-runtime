@@ -14,7 +14,7 @@ import sys
 
 from . import stages  # noqa: F401  (ensure built-in stages are registered)
 from .manifest import Manifest
-from .presets import load_preset
+from .presets import VERIFY_MODES, load_preset
 
 
 def _run(manifest: Manifest, request: str, ledger_dir: str | None) -> int:
@@ -37,7 +37,17 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--ledger-dir", default=None, help="write run artifacts (transcript, report, records) here")
 
     for preset in ("spar", "sparring", "proposer"):
-        add_common(sub.add_parser(preset, help=f"run the '{preset}' ceremony preset"))
+        p = sub.add_parser(preset, help=f"run the '{preset}' ceremony preset")
+        add_common(p)
+        if preset in ("spar", "sparring"):  # resolver knobs — no-ops for proposer-only
+            p.add_argument(
+                "--settle", type=int, default=0, metavar="N",
+                help="extra review-and-revise rounds on the recommendation for decision-stability (default 0)",
+            )
+            p.add_argument(
+                "--verify", choices=list(VERIFY_MODES), default="gate",
+                help="external-canon citation gate: off | gate (default) | round",
+            )
 
     run = sub.add_parser("run", help="run a custom manifest")
     run.add_argument("--manifest", required=True, help="path to a pipeline manifest (YAML)")
@@ -46,7 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.cmd in ("spar", "sparring", "proposer"):
-        return _run(load_preset(args.cmd), args.request, args.ledger_dir)
+        preset = load_preset(
+            args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate")
+        )
+        return _run(preset, args.request, args.ledger_dir)
     if args.cmd == "run":
         return _run(Manifest.load(args.manifest), args.request, args.ledger_dir)
     return 1  # pragma: no cover
