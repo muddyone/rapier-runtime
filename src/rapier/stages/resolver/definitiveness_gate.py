@@ -17,9 +17,16 @@ class DefinitivenessGateStage(TransformStage):
         if not env.recommendation:
             env.add_trace("definitiveness_gate", self.kind, "no recommendation to gate — skipped")
             return env
-        from ...verify._bootstrap import run_gate
+        from ...verify import _bootstrap as B
+        from ._binding import bind_pair
 
-        result = run_gate(env.request, env.recommendation)
+        # Bind the gate's primary (author's vendor) + a distinct second vendor
+        # for the cross-vendor union (V4). No Anthropic required.
+        primary_v, secondary_v = bind_pair(env, secondary_pref=ctx.config.get("second_vendor"))
+        try:
+            result = B.run_gate(env.request, env.recommendation)
+        finally:
+            B.reset_slots()
         env.verdict = result.get("answer_verdict")
         env.meta["definitiveness"] = result
 
@@ -37,7 +44,10 @@ class DefinitivenessGateStage(TransformStage):
             "definitiveness_gate",
             self.kind,
             f"verdict={env.verdict} specifics={result.get('n_specifics')} "
-            f"fails={len(result.get('failures') or [])}",
+            f"fails={len(result.get('failures') or [])} "
+            f"primary={primary_v} second={secondary_v} cross_vendor={result.get('cross_vendor')}",
             cross_vendor=result.get("cross_vendor"),
+            primary_vendor=primary_v,
+            second_vendor=secondary_v,
         )
         return env

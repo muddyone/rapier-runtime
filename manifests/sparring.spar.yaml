@@ -2,16 +2,15 @@
 #
 #   author -> cross_review -> anchored_fix -> definitiveness_gate -> citation_gate
 #
-# Cross-vendor is a config property: the author runs on Anthropic, the reviewer
-# on OpenAI. The author/anchored stages use Rapier's model layer (the `author`
-# role below). The cross_review / definitiveness_gate / citation_gate stages
-# wrap the vendored SPARRING stack and use its own cross-vendor model selection
-# (Anthropic + OpenAI keys from the environment) — faithful to shipped /spar.
-# Unifying those onto the manifest's role bindings is a later milestone.
+# Cross-vendor is automatic (V4): the author runs on whatever the `author` role
+# names below; the reviewer and gate auto-pick a DISTINCT available vendor for
+# genuine cross-vendor independence. Swap the author's vendor to anything
+# (anthropic/openai/gemini/xai/…) and the rest follows — no Anthropic required.
+# With only one vendor available, the reviewer/gate degrade honestly to
+# single-vendor (cross_vendor:false) rather than going unchecked.
 #
-# Requires ANTHROPIC_API_KEY (author + gate) and OPENAI_API_KEY (reviewer) in
-# the environment. Fail-soft: missing keys degrade (cross_vendor:false /
-# unchecked) rather than aborting.
+# Pin the reviewer/gate's second vendor explicitly with `reviewer_vendor:` /
+# `second_vendor:` if you don't want auto-selection.
 name: spar
 pipeline:
   - stage: author
@@ -19,14 +18,14 @@ pipeline:
       author: { vendor: anthropic, model: claude-opus-4-8 }
 
   - stage: cross_review
-    config:
-      reviewer: gpt        # 'gpt' | 'claude' — reviewer vendor for the one pass
+    config: {}             # reviewer_vendor: xai   # optional: pin the second vendor
 
   - stage: anchored_fix
     roles:
       author: { vendor: anthropic, model: claude-opus-4-8 }
 
   - stage: definitiveness_gate
+    config: {}             # second_vendor: gemini  # optional: pin the gate's second vendor
 
   - stage: citation_gate
     config:

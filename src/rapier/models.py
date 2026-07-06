@@ -193,3 +193,50 @@ def available_vendors() -> list[str]:
         if get_secret(key_env):
             avail.append(vendor)
     return avail
+
+
+# vendor -> a sensible default model (used when a role has no explicit model).
+_DEFAULT_MODEL: dict[str, str] = {
+    "anthropic": "claude-opus-4-8",
+    "openai": "gpt-5.2",
+    **{v: cfg[2] for v, cfg in _OPENAI_COMPATIBLE.items()},
+}
+
+# preference order when auto-assigning frontier vendors to roles.
+_FRONTIER_ORDER = ["anthropic", "openai", "gemini", "xai"]
+
+
+def default_model(vendor: str) -> str:
+    return _DEFAULT_MODEL.get(vendor, "")
+
+
+def resolve_pair(
+    available: list[str],
+    primary_pref: str | None = None,
+    secondary_pref: str | None = None,
+) -> tuple[str | None, str | None]:
+    """Choose ``(primary, secondary)`` vendors from the available set.
+
+    ``primary`` backs the author/primary slot; ``secondary`` is a **distinct**
+    vendor for the reviewer/cross-vendor slot, or ``None`` when only one vendor
+    is available (honest single-vendor degradation). Preferences win when
+    available; otherwise frontier vendors are assigned in order.
+    """
+    avail = [v for v in available if v != "mock"]
+    if not avail:
+        return None, None
+
+    def pick(pref: str | None, exclude: str | None = None) -> str | None:
+        if pref and pref in avail and pref != exclude:
+            return pref
+        for v in _FRONTIER_ORDER:
+            if v in avail and v != exclude:
+                return v
+        for v in avail:
+            if v != exclude:
+                return v
+        return None
+
+    primary = pick(primary_pref)
+    secondary = pick(secondary_pref, exclude=primary)
+    return primary, secondary

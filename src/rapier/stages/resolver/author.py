@@ -28,6 +28,10 @@ class AuthorStage(TransformStage):
         system = ctx.config.get("system", _SYSTEM)
         resp = client.complete(system=system, prompt=env.request)
         env.recommendation = resp.text
+        # Record the author's vendor so the reviewer/gate can pick a *distinct*
+        # second vendor for cross-vendor independence (V4).
+        env.meta["author_vendor"] = client.spec.vendor
+        env.meta["author_model"] = client.spec.model
         env.add_trace(
             "author",
             self.kind,

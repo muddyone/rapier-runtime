@@ -17,18 +17,27 @@ class CrossReviewStage(TransformStage):
         if not env.recommendation:
             env.add_trace("cross_review", self.kind, "no recommendation to review — skipped")
             return env
-        from ...verify._bootstrap import review as _review
+        from ...verify import _bootstrap as B
+        from ._binding import bind_pair
 
-        requested_vendor = ctx.config.get("reviewer")  # 'gpt' | 'claude' | None
-        result = _review(env.request, env.recommendation, None, requested_vendor)
+        # Bind the vendored reviewer to a distinct second vendor (V4).
+        primary_v, secondary_v = bind_pair(env, secondary_pref=ctx.config.get("reviewer_vendor"))
+        try:
+            result = B.review(env.request, env.recommendation, None, None)
+        finally:
+            B.reset_slots()
+
         env.meta["review"] = result
         n = len(result.get("objections") or [])
+        reviewer_v = secondary_v if result.get("cross_vendor") else primary_v
         env.add_trace(
             "cross_review",
             self.kind,
-            f"reviewer={result.get('reviewer_vendor')} "
+            f"author={primary_v} reviewer={reviewer_v} "
             f"cross_vendor={result.get('cross_vendor')} objections={n}",
             cross_vendor=result.get("cross_vendor"),
             n_objections=n,
+            author_vendor=primary_v,
+            reviewer_vendor=reviewer_v,
         )
         return env
