@@ -15,6 +15,8 @@ from .models import (
     ModelResponse,
     ModelSpec,
     OpenAICompatibleModelClient,
+    Policy,
+    PolicyError,
     available_vendors,
     build_client,
 )
@@ -50,6 +52,8 @@ __all__ = [
     "ModelClient",
     "ModelResponse",
     "OpenAICompatibleModelClient",
+    "Policy",
+    "PolicyError",
     "build_client",
     "available_vendors",
     "__version__",

@@ -22,7 +22,9 @@ class DefinitivenessGateStage(TransformStage):
 
         # Bind the gate's primary (author's vendor) + a distinct second vendor
         # for the cross-vendor union (V4). No Anthropic required.
-        primary_v, secondary_v = bind_pair(env, secondary_pref=ctx.config.get("second_vendor"))
+        primary_v, secondary_v = bind_pair(
+            env, secondary_pref=ctx.config.get("second_vendor"), policy=ctx.policy
+        )
         try:
             result = B.run_gate(env.request, env.recommendation)
         finally:

@@ -21,7 +21,9 @@ class CrossReviewStage(TransformStage):
         from ._binding import bind_pair
 
         # Bind the vendored reviewer to a distinct second vendor (V4).
-        primary_v, secondary_v = bind_pair(env, secondary_pref=ctx.config.get("reviewer_vendor"))
+        primary_v, secondary_v = bind_pair(
+            env, secondary_pref=ctx.config.get("reviewer_vendor"), policy=ctx.policy
+        )
         try:
             result = B.review(env.request, env.recommendation, None, None)
         finally:

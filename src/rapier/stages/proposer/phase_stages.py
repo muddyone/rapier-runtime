@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from ...convergence import run_convergence
 from ...envelope import Envelope
-from ...models import ModelSpec, available_vendors, build_client, default_model, resolve_pair
+from ...models import ModelSpec, Policy, available_vendors, build_client, default_model
 from ...stage import ConvergenceStage, StageContext, register_stage
 from .phases import PHASES, integrity_check, make_agents
 
@@ -21,7 +21,7 @@ class _PhaseStage(ConvergenceStage):
 
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         cfg = PHASES[self.PHASE]
-        gen_v, chal_v = resolve_pair(
+        gen_v, chal_v = (ctx.policy or Policy()).resolve(
             available_vendors(),
             primary_pref=ctx.config.get("generator_vendor") or env.meta.get("author_vendor"),
             secondary_pref=ctx.config.get("challenger_vendor"),

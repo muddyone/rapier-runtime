@@ -11,7 +11,7 @@ Secrets are read exclusively through :mod:`rapier.secrets` (env-only, redacted).
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .secrets import register_secret_value, require_secret
@@ -259,3 +259,70 @@ def resolve_pair(
     primary = pick(primary_pref)
     secondary = pick(secondary_pref, exclude=primary)
     return primary, secondary
+
+
+# vendor -> hosting jurisdiction (for egress/data-residency policy; threat model S5).
+_VENDOR_JURISDICTION: dict[str, str] = {
+    "anthropic": "us", "openai": "us", "gemini": "us", "xai": "us",
+    "groq": "us", "together": "us", "openrouter": "us",
+    "mistral": "eu", "deepseek": "cn", "qwen": "cn", "ollama": "local",
+}
+
+
+class PolicyError(RuntimeError):
+    """Raised when the policy cannot be satisfied (e.g. independence=required,
+    but only one vendor is available)."""
+
+
+@dataclass
+class Policy:
+    """Declarative vendor policy (V3). Governs role->vendor assignment.
+
+    - ``vendors``: preference order (falls back to the frontier order).
+    - ``independence``: ``required`` (error if no distinct 2nd vendor) |
+      ``preferred`` (use a distinct 2nd if available, else single-vendor) |
+      ``off`` (single-vendor; don't seek a 2nd).
+    - ``avoid_jurisdictions``: drop vendors hosted in these (e.g. ``["cn"]``).
+    """
+
+    vendors: list[str] | None = None
+    independence: str = "preferred"
+    avoid_jurisdictions: list[str] = field(default_factory=list)
+
+    def _available(self, available: list[str]) -> list[str]:
+        avail = [v for v in available if v != "mock"]
+        if self.avoid_jurisdictions:
+            avail = [v for v in avail if _VENDOR_JURISDICTION.get(v) not in self.avoid_jurisdictions]
+        return avail
+
+    def resolve(
+        self, available: list[str], primary_pref: str | None = None, secondary_pref: str | None = None
+    ) -> tuple[str | None, str | None]:
+        avail = self._available(available)
+        if not avail:
+            if self.independence == "required":
+                raise PolicyError("independence=required but no vendors are available")
+            return None, None
+        order = self.vendors or _FRONTIER_ORDER
+
+        def pick(pref: str | None, exclude: str | None = None) -> str | None:
+            if pref and pref in avail and pref != exclude:
+                return pref
+            for v in order:
+                if v in avail and v != exclude:
+                    return v
+            for v in avail:
+                if v != exclude:
+                    return v
+            return None
+
+        primary = pick(primary_pref)
+        if self.independence == "off":
+            return primary, None
+        secondary = pick(secondary_pref, exclude=primary)
+        if self.independence == "required" and secondary is None:
+            raise PolicyError(
+                f"independence=required but only one vendor available ({primary}); "
+                "add a second vendor's key or set independence: preferred/off"
+            )
+        return primary, secondary

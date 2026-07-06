@@ -9,15 +9,17 @@ rather than going ``unchecked``.
 from __future__ import annotations
 
 from ...envelope import Envelope
-from ...models import available_vendors, default_model, resolve_pair
+from ...models import Policy, available_vendors, default_model
 
 
-def bind_pair(env: Envelope, secondary_pref: str | None = None) -> tuple[str | None, str | None]:
+def bind_pair(
+    env: Envelope, secondary_pref: str | None = None, policy: Policy | None = None
+) -> tuple[str | None, str | None]:
     from ...verify import _bootstrap as B
 
     author_vendor = env.meta.get("author_vendor")
     author_model = env.meta.get("author_model")
-    primary_v, secondary_v = resolve_pair(
+    primary_v, secondary_v = (policy or Policy()).resolve(
         available_vendors(), primary_pref=author_vendor, secondary_pref=secondary_pref
     )
 

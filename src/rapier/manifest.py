@@ -15,7 +15,7 @@ from typing import Any
 
 import yaml
 
-from .models import ModelSpec
+from .models import ModelSpec, Policy
 from .pipeline import Pipeline, StageSpec
 
 
@@ -23,6 +23,7 @@ from .pipeline import Pipeline, StageSpec
 class Manifest:
     name: str
     stages: list[StageSpec]
+    policy: Policy | None = None
 
     @classmethod
     def load(cls, path: str) -> "Manifest":
@@ -59,7 +60,16 @@ class Manifest:
             stages.append(
                 StageSpec(stage=entry["stage"], config=entry.get("config") or {}, roles=roles)
             )
-        return cls(name=name, stages=stages)
+
+        policy = None
+        pol = data.get("policy")
+        if isinstance(pol, dict):
+            policy = Policy(
+                vendors=pol.get("vendors"),
+                independence=pol.get("independence", "preferred"),
+                avoid_jurisdictions=pol.get("avoid_jurisdictions") or [],
+            )
+        return cls(name=name, stages=stages, policy=policy)
 
     def build(self) -> Pipeline:
         return Pipeline.from_manifest(self)

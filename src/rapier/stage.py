@@ -38,6 +38,7 @@ class StageContext:
     ledger: Any = None
     run_dir: str | None = None
     log: Callable[[str], None] = lambda _m: None
+    policy: Any = None  # a models.Policy governing vendor selection (V3); None => default
 
 
 class Stage(ABC):

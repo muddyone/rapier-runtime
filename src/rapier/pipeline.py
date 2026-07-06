@@ -26,14 +26,16 @@ class StageSpec:
 
 
 class Pipeline:
-    def __init__(self, stages: list[StageSpec], name: str = "pipeline"):
+    def __init__(self, stages: list[StageSpec], name: str = "pipeline", policy=None):
         self.stages = stages
         self.name = name
+        self.policy = policy  # a models.Policy governing vendor selection (V3)
 
     @classmethod
     def from_manifest(cls, manifest) -> "Pipeline":
-        # Duck-typed on .stages / .name to avoid a manifest<->pipeline import cycle.
-        return cls(list(manifest.stages), name=getattr(manifest, "name", "pipeline"))
+        # Duck-typed on .stages / .name / .policy to avoid a manifest<->pipeline cycle.
+        return cls(list(manifest.stages), name=getattr(manifest, "name", "pipeline"),
+                   policy=getattr(manifest, "policy", None))
 
     def run(
         self,
@@ -53,6 +55,7 @@ class Pipeline:
                 ledger=ledger,
                 run_dir=(ledger.run_dir if ledger else None),
                 log=log,
+                policy=self.policy,
             )
             log(f"stage: {spec.stage} ({stage.kind})")
             try:
