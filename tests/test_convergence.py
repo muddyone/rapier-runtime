@@ -68,3 +68,28 @@ def test_integrity_check_reopens_premature_convergence():
     assert r.converged is True
     assert r.integrity_reopened == 1
     assert r.payload == ["a", "b"]  # reopened round produced the second payload
+
+
+def test_nonconverged_commits_the_last_challenged_payload():
+    """Regression: a non-converged phase must return the payload the Challenger
+    actually last evaluated — never an extra, un-challenged generation — so the
+    committed option and its standing objections (rounds[-1].challenger) match."""
+    gen_calls = {"n": 0}
+
+    def generator(_prev, _concerns):
+        gen_calls["n"] += 1
+        return {"payload": {"committed": f"opt{gen_calls['n']}"}, "agree": False, "reasoning": ""}
+
+    def challenger(payload):
+        return {"concerns": [{"text": f"objection about {payload.get('committed')}", "artifact": "x"}],
+                "agree": False}
+
+    res = run_convergence(generator, challenger, cap=2)
+    assert res.converged is False
+    last = res.rounds[-1]
+    # returned/committed payload IS the one the last challenger round saw
+    assert res.payload == last.generator["payload"]
+    # so the standing objection refers to the committed option (no mismatch)
+    assert res.payload["committed"] in last.challenger["concerns"][0]["text"]
+    # and no extra un-challenged generation ran (exactly `cap` generator calls)
+    assert gen_calls["n"] == 2

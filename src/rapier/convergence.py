@@ -81,7 +81,13 @@ def run_convergence(
             no_op = not delta(first_payload, gen.get("payload"))
             return ConvergenceResult(True, gen.get("payload"), rounds, i + 1, no_op, reopened)
 
-        gen = generator(gen.get("payload"), chal.get("concerns"))
+        # Only revise if another challenge round follows. A final, un-challenged
+        # revision must NOT become the committed payload: the phase exits on the
+        # option the Challenger actually last evaluated, so the committed option
+        # and its standing objections (rounds[-1].challenger) refer to the SAME
+        # payload — no committed-vs-objection mismatch.
+        if i < cap - 1:
+            gen = generator(gen.get("payload"), chal.get("concerns"))
 
     no_op = not delta(first_payload, gen.get("payload"))
     return ConvergenceResult(False, gen.get("payload"), rounds, None, no_op, reopened)

@@ -45,7 +45,13 @@ def make_agents(gen_client, chal_client, cfg: PhaseConfig, request: str, phase_i
     def generator(prev_payload, concerns):
         raw = gen_client.complete(cfg.gen_system, cfg.gen_user(request, phase_input, prev_payload, concerns)).text
         d = parse_json_lenient(raw)
-        return {"payload": _payload(d), "agree": bool(d.get("agree")) if isinstance(d, dict) else False,
+        payload = _payload(d)
+        # A parse failure or an empty payload must not wipe out a good prior
+        # commitment — carry the previous payload forward (so a bad round holds
+        # position rather than committing/forwarding an empty `{}`).
+        if not payload and prev_payload:
+            payload = prev_payload
+        return {"payload": payload, "agree": bool(d.get("agree")) if isinstance(d, dict) else False,
                 "reasoning": str(d.get("reasoning", "")) if isinstance(d, dict) else ""}
 
     def challenger(payload):
@@ -182,7 +188,8 @@ PHASES: dict[str, PhaseConfig] = {
             "Commit to exactly one option with rationale."
         ),
         chal_user=lambda request, payload: (
-            f"DECISION:\n{request}\n\nGENERATOR COMMITTED TO:\n{payload}\n\n"
+            f"DECISION:\n{request}\n\nGENERATOR COMMITTED TO:\n"
+            f"{(payload or {}).get('committed') if isinstance(payload, dict) else payload}\n\n"
             "Pressure-test this commitment or counter-propose, each with a checkable artifact."
         ),
         read_input=lambda env: env.options,

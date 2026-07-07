@@ -56,3 +56,23 @@ def test_proposer_manifest_loads_and_registers():
     m = Manifest.load(str(path))
     assert [s.stage for s in m.stages] == ["spark", "pattern_lock", "cut"]
     m.build()
+
+
+def test_generator_carries_forward_on_empty_or_unparseable_payload():
+    """Regression: a parse failure / empty `{}` payload must not wipe out a good
+    prior commitment (the source of the phantom 'GENERATOR COMMITTED TO: {}')."""
+    import types
+    from rapier.stages.proposer.phases import PHASES, make_agents
+
+    class FakeClient:
+        def __init__(self, text):
+            self._t = text
+
+        def complete(self, system, user):
+            return types.SimpleNamespace(text=self._t)
+
+    cfg = PHASES["cut"]
+    gen, _chal = make_agents(FakeClient("(garbage, not json)"), FakeClient("{}"), cfg, "req", ["A", "B"])
+    prev = {"committed": "Option A", "rationale": "r"}
+    assert gen(prev, None)["payload"] == prev          # carried forward, not {}
+    assert gen(None, None)["payload"] in ({}, None)     # nothing to carry -> honest empty
