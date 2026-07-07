@@ -20,31 +20,143 @@ def _texts(objs) -> list[str]:
     return [o.get("text", "") for o in (objs or []) if isinstance(o, dict)]
 
 
+def _verdict_sentence(verdict, gate) -> str:
+    """The correctness (definitiveness) gate verdict in plain words — no shorthand."""
+    fails = len(gate.get("failures") or [])
+    v = (verdict or "unchecked").upper()
+    if v == "PASS":
+        return ("It passed the correctness check: every hard specific it states either traces "
+                "to a fact you gave or is flagged as an estimate to verify.")
+    if v == "FAIL":
+        noun = "figure is" if fails == 1 else "figures are"
+        return (f"It did NOT pass the correctness check: {fails or 'one or more'} stated {noun} "
+                "asserted as fact without tracing to your givens — treat those as unverified until you check them.")
+    if v == "REVIEW":
+        return ("It needs your call on the correctness check: at least one stated specific reads "
+                "ambiguously between fact and estimate — see WHAT TO CHECK below.")
+    return ("The correctness check could not return a verdict here (there were no hard specifics "
+            "to check, or the checker was unavailable), so treat the stated specifics as unverified.")
+
+
+def _reviewer_sentence(review) -> str:
+    """Whether the challenge was genuinely independent — in plain words."""
+    if review.get("cross_vendor"):
+        v = review.get("reviewer_vendor") or "a different vendor"
+        return (f"An independent reviewer from a different vendor ({v}) pressure-tested it, so the "
+                "challenge was genuinely cross-vendor — not the same model checking its own work.")
+    return ("The reviewer ran on the same vendor as the author (no second vendor's key was available), "
+            "so this challenge was NOT independent — weigh it with that in mind.")
+
+
 def _render_report(env: Envelope) -> str:
     review = env.meta.get("review") or {}
     gate = env.meta.get("definitiveness") or {}
     rider = env.trust_rider or {}
-    lines = [f"# Rapier report: {env.request[:80]}", ""]
-    lines += [f"**Answer verdict**: {env.verdict}", ""]
-    lines += ["## Recommendation", "", env.recommendation or "(none)", ""]
-    lines += ["## Trust rider", ""]
-    if rider.get("assumptions_to_verify"):
-        lines += ["**Assumptions to verify against your context:**"]
-        lines += [f"- {a}" for a in rider["assumptions_to_verify"]] + [""]
+    topic = (env.request or "").strip().splitlines()[0][:100] if env.request else ""
+
+    L = ["# RAPIER — RESOLVER REPORT", ""]
+    if topic:
+        L += [f"*On: {topic}*", ""]
+
+    L += ["## SUMMARY", "*The bottom line — how far to trust this, in one breath.*", "",
+          _verdict_sentence(env.verdict, gate) + " The full advice is under THE RECOMMENDATION below.", ""]
+
+    L += ["## THE RECOMMENDATION", "*The answer on the merits — read this as the actual advice.*", "",
+          env.recommendation or "(none produced)", ""]
+
+    L += ["## WHAT TO CHECK AGAINST YOUR SITUATION",
+          "*Figures that rest on an assumption rather than a fact you gave — verify these before you lean on them.*", ""]
+    assumptions = rider.get("assumptions_to_verify") or []
+    L += ([f"- {a}" for a in assumptions] if assumptions
+          else ["Nothing flagged — the load-bearing specifics trace to the facts you provided."]) + [""]
+
+    L += ["## WHERE IT WAS PUSHED BACK ON",
+          "*The material objections the independent reviewer raised, and that the recommendation was revised to address.*", ""]
     contested = _texts(review.get("objections"))
-    if contested:
-        lines += ["**Contested and resolved (cross-vendor review):**"]
-        lines += [f"- {c}" for c in contested] + [""]
-    if rider.get("proposer_dissent_forwarded"):
-        lines += ["**Standing objections from the deliberation (forwarded, weigh these):**"]
-        lines += [f"- {c}" for c in rider["proposer_dissent_forwarded"]] + [""]
-    lines += [
-        "**Overall confidence:** "
-        f"gate={env.verdict}; review cross_vendor={review.get('cross_vendor')}; "
-        f"gate cross_vendor={gate.get('cross_vendor')}.",
-        "",
-    ]
-    return "\n".join(lines)
+    L += ([f"- {c}" for c in contested] if contested
+          else ["The independent review raised no material objections."]) + [""]
+
+    dissent = rider.get("proposer_dissent_forwarded")
+    if dissent:
+        L += ["## STANDING OBJECTIONS FROM THE DELIBERATION",
+              "*Unresolved concerns the Proposer half handed forward — weigh these yourself.*", ""]
+        L += [f"- {c}" for c in dissent] + [""]
+
+    L += ["## HOW MUCH TO TRUST THIS",
+          "*The confidence read, in plain words — kept separate from the recommendation itself.*", "",
+          _reviewer_sentence(review),
+          "What this cannot know: your real constraints, costs, and priorities — the load-bearing call stays yours.", ""]
+
+    return "\n".join(L)
+
+
+def _proposer_phase_line(ph, label, settled, unsettled):
+    if not ph or ph.get("no_op"):
+        return None
+    r = ph.get("rounds")
+    rtxt = f" over {r} round" + ("s" if r != 1 else "") if r else ""
+    return f"- **{label}**{rtxt}: " + (settled if ph.get("converged") else unsettled) + "."
+
+
+def _render_proposer_report(env: Envelope) -> str | None:
+    """The first half of SPARRING as a reader-facing report: the option the
+    Proposer (SPARK -> Pattern Lock -> the Cut) committed, the objections it
+    hands forward, and the shape of how it got there. Returns None when no
+    Proposer ran (e.g. the Resolver-only /spar preset)."""
+    prop = env.meta.get("proposer") or {}
+    if not prop and not env.committed:
+        return None
+    spark, plock, cut = (prop.get("spark") or {}), (prop.get("pattern_lock") or {}), (prop.get("cut") or {})
+    topic = (env.request or "").strip().splitlines()[0][:100] if env.request else ""
+
+    L = ["# RAPIER — PROPOSER REPORT", ""]
+    if topic:
+        L += [f"*On: {topic}*", ""]
+    L += ["*The first half of SPARRING: widen the options, filter false novelty, and commit one — "
+          "with its unresolved objections — for the Resolver to pressure-test.*", ""]
+
+    L += ["## THE COMMITTED OPTION",
+          "*What the deliberation chose to put forward for pressure-testing.*", "",
+          (env.committed or "(no single option was committed — the deliberation did not converge)").strip(), ""]
+
+    L += ["## STANDING OBJECTIONS CARRIED FORWARD",
+          "*Unresolved concerns the deliberation could not settle — handed forward to weigh, not buried.*", ""]
+    objs = []
+    for ph in (cut, plock):
+        for o in ph.get("standing_objections") or []:
+            if isinstance(o, dict) and o.get("text"):
+                art = o.get("artifact")
+                objs.append(f"- {o['text']}" + (f"  _(basis: {art})_" if art else ""))
+    L += (objs if objs else ["None — the deliberation closed without unresolved objections."]) + [""]
+
+    L += ["## HOW IT WAS REACHED",
+          "*The shape of the deliberation — the three phases, and whether each settled.*", ""]
+    for line in (
+        _proposer_phase_line(spark, "SPARK — widened the options",
+                             "both roles agreed the option space was saturated",
+                             "the roles did not agree the space was saturated (hit the round cap)"),
+        _proposer_phase_line(plock, "PATTERN LOCK — filtered repetition",
+                             "both roles agreed on the de-duplicated set",
+                             "the roles did not agree on the de-duplicated set (hit the round cap)"),
+        _proposer_phase_line(cut, "THE CUT — committed one option",
+                             "both roles agreed on the option to put forward",
+                             "the roles could not agree on a single option"),
+    ):
+        if line:
+            L.append(line)
+    gv = cut.get("generator_vendor") or spark.get("generator_vendor")
+    cv = cut.get("challenger_vendor") or spark.get("challenger_vendor")
+    xv = cut.get("cross_vendor") if cut.get("cross_vendor") is not None else spark.get("cross_vendor")
+    if xv is not None:
+        L += [""]
+        if xv and gv and cv:
+            L += [f"The generator and challenger ran on different vendors ({gv} vs {cv}) — "
+                  "a genuinely independent deliberation."]
+        else:
+            L += [f"The generator and challenger ran on the same vendor ({gv or '—'}) — "
+                  "the deliberation was NOT cross-vendor; weigh it accordingly."]
+    L += [""]
+    return "\n".join(L)
 
 
 def _ceremony_row(env: Envelope) -> dict:
@@ -102,11 +214,18 @@ class ComposeStage(TransformStage):
         report_md = _render_report(env)
         env.meta["report_md"] = report_md
 
+        # The Proposer half's handoff as its own report (only when a Proposer ran).
+        proposer_md = _render_proposer_report(env)
+        if proposer_md:
+            env.meta["proposer_report_md"] = proposer_md
+
         # /spar-parity named files + the ceremony-ledger row.
         row = _ceremony_row(env)
         env.meta["ceremony_row"] = row
         if ctx.ledger is not None:
             ctx.ledger.write_text("report.md", report_md)
+            if proposer_md:
+                ctx.ledger.write_text("proposer-report.md", proposer_md)
             ctx.ledger.write_text("recommendation.md", env.recommendation or "")
             ctx.ledger.write_text("pack.md", env.request)
             if review:

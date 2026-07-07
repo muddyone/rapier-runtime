@@ -110,7 +110,37 @@ def test_compose_builds_report_and_ceremony_row():
     rider = env.trust_rider
     assert "the $12k is unsupported" in rider["contested_and_resolved"]
     assert "lock-in risk" in rider["proposer_dissent_forwarded"]
-    assert "## Trust rider" in env.meta["report_md"]
+    # Credence-style report: ALL-CAPS sections, plain-language confidence
+    md = env.meta["report_md"]
+    assert "## SUMMARY" in md and "## HOW MUCH TO TRUST THIS" in md
+    assert "## STANDING OBJECTIONS FROM THE DELIBERATION" in md  # dissent forwarded
+    assert "the $12k is unsupported" in md  # a reviewer objection surfaced
+    assert "gate=" not in md  # the old shorthand line is gone
+
+
+def test_proposer_report_renders_the_handoff():
+    from rapier.stages.resolver.compose import _render_proposer_report
+    env = Envelope(request="pick a path", committed="Option C: do the thing")
+    env.meta["proposer"] = {
+        "spark": {"rounds": 4, "converged": True, "cross_vendor": True,
+                  "generator_vendor": "anthropic", "challenger_vendor": "openai"},
+        "pattern_lock": {"rounds": 3, "converged": False},
+        "cut": {"rounds": 2, "converged": True, "cross_vendor": True,
+                "generator_vendor": "anthropic", "challenger_vendor": "openai",
+                "standing_objections": [{"text": "cost risk", "artifact": "adr-3"}]},
+    }
+    md = _render_proposer_report(env)
+    assert "# RAPIER — PROPOSER REPORT" in md
+    assert "Option C: do the thing" in md                       # the committed option
+    assert "cost risk" in md and "adr-3" in md                  # a standing objection + its basis
+    assert "SPARK" in md and "THE CUT" in md                    # how it was reached
+    assert "different vendors (anthropic vs openai)" in md       # cross-vendor deliberation
+
+
+def test_no_proposer_report_for_resolver_only():
+    # /spar (Resolver-only) has no Proposer half -> no report to surface.
+    from rapier.stages.resolver.compose import _render_proposer_report
+    assert _render_proposer_report(Envelope(request="q", recommendation="ans")) is None
 
 
 def test_ceremony_row_not_load_bearing_when_nothing_changed():
