@@ -58,6 +58,15 @@ def test_verify_round_gates_every_round():
     assert s[-1] == "compose"
 
 
+def test_author_role_has_generous_max_tokens():
+    # 1024 truncates a real recommendation mid-sentence; the generative stages
+    # must carry real headroom in both presets.
+    for name in ("spar", "sparring"):
+        author = next((s for s in load_preset(name).stages if s.stage == "author"), None)
+        assert author is not None, f"{name} has no author stage"
+        assert author.roles["author"].max_tokens >= 4096
+
+
 def test_settle_verify_flow_through_sparring():
     s = _stages("sparring", settle=1, verify="off")
     assert s[:3] == ["spark", "pattern_lock", "cut"]  # proposer intact

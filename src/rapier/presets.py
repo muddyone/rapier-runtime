@@ -16,7 +16,10 @@ falling back to an in-session path:
 """
 from __future__ import annotations
 
-_AUTHOR = {"vendor": "anthropic", "model": "claude-opus-4-8"}
+# The resolver's generative stages (author + anchored_fix) need real headroom —
+# 1024 truncates a recommendation mid-sentence. Match the Proposer's budget.
+_RESOLVER_MAX_TOKENS = 8000
+_AUTHOR = {"vendor": "anthropic", "model": "claude-opus-4-8", "max_tokens": _RESOLVER_MAX_TOKENS}
 
 _PROPOSER = [
     {"stage": "spark", "config": {"cap": 5}},

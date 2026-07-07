@@ -54,7 +54,7 @@ class Manifest:
                     vendor=binding["vendor"],
                     model=binding["model"],
                     prompt_template=binding.get("prompt"),
-                    max_tokens=binding.get("max_tokens", 1024),
+                    max_tokens=binding.get("max_tokens", 4096),
                     temperature=binding.get("temperature", 1.0),
                 )
             stages.append(

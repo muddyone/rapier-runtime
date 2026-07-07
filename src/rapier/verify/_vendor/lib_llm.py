@@ -134,6 +134,37 @@ def call_gpt(model, system, user, max_completion_tokens=16000):
     return _retry(_do, f"gpt({model})")
 
 
+def _salvage_truncated_array(t):
+    """Recover complete leading elements of a truncated JSON array.
+
+    An over-long list output (e.g. the gate's specifics enumeration) can be cut
+    off mid-element by an output-token cap, leaving unparseable JSON. Rather than
+    fail the whole call, parse each complete element with ``raw_decode`` (which is
+    string-aware, so braces inside string values don't fool it) and stop at the
+    truncated tail. Returns ``{key: elems}`` if the array was wrapped in
+    ``{"key": [ ... ]}``, else the bare list, or ``None`` if nothing is salvageable.
+    """
+    astart = t.find("[")
+    if astart == -1:
+        return None
+    dec = json.JSONDecoder()
+    idx, n, elems = astart + 1, len(t), []
+    while True:
+        while idx < n and t[idx] in " \t\r\n,":
+            idx += 1
+        if idx >= n or t[idx] == "]":
+            break
+        try:
+            val, idx = dec.raw_decode(t, idx)
+        except ValueError:
+            break  # the truncated final element — keep what parsed
+        elems.append(val)
+    if not elems:
+        return None
+    m = re.search(r'"([^"]+)"\s*:\s*$', t[:astart].rstrip())
+    return {m.group(1): elems} if m else elems
+
+
 def extract_json(text):
     """Tolerant: strip code fences, grab the outermost {...} or [...]."""
     if text is None:
@@ -162,6 +193,10 @@ def extract_json(text):
                         return json.loads(t[start : i + 1])
                     except Exception:
                         break
+    # Last resort: salvage a truncated array's complete leading elements.
+    salvaged = _salvage_truncated_array(t)
+    if salvaged is not None:
+        return salvaged
     raise LLMError(f"could not extract JSON from: {text[:200]}")
 
 

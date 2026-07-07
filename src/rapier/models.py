@@ -22,7 +22,7 @@ class ModelSpec:
     vendor: str  # mock | anthropic | openai
     model: str
     prompt_template: str | None = None
-    max_tokens: int = 1024
+    max_tokens: int = 4096  # generative floor; 1024 truncates real recommendations
     temperature: float = 1.0
 
 
