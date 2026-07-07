@@ -17,16 +17,16 @@ from .manifest import Manifest
 from .presets import VERIFY_MODES, load_preset
 
 
-def _run(manifest: Manifest, request: str, ledger_dir: str | None, show_proposer: bool = False) -> int:
+def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False) -> int:
     env = manifest.build().run(
         request, ledger_root=ledger_dir, log=lambda msg: print(f"· {msg}", file=sys.stderr)
     )
     # Prefer the composed report if the pipeline produced one.
     out = env.meta.get("report_md") or env.recommendation or ""
-    # --show-proposer: prepend the first half's handoff report (SPARRING is two
+    # --report-all: prepend the first half's handoff report (SPARRING is two
     # parts — the Proposer commits an option, the Resolver pressure-tests it).
     proposer_md = env.meta.get("proposer_report_md")
-    if show_proposer and proposer_md:
+    if report_all and proposer_md:
         out = f"{proposer_md}\n\n---\n\n{out}"
     print(out)
     return 0
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
             )
         if preset == "sparring":  # the Proposer half only exists in the full ceremony
             p.add_argument(
-                "--show-proposer", action="store_true",
+                "--report-all", action="store_true",
                 help="also surface the Proposer report (the committed option + its standing objections) above the Resolver report",
             )
 
@@ -70,7 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         preset = load_preset(
             args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate")
         )
-        return _run(preset, args.request, args.ledger_dir, show_proposer=getattr(args, "show_proposer", False))
+        return _run(preset, args.request, args.ledger_dir, report_all=getattr(args, "report_all", False))
     if args.cmd == "run":
         return _run(Manifest.load(args.manifest), args.request, args.ledger_dir)
     return 1  # pragma: no cover
