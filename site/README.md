@@ -10,17 +10,25 @@ step, no external assets (inline CSS/JS, system fonts, emoji favicon), theme-awa
 - **`index.html`** — the full MVP landing page. Swaps in at M4/launch once the
   placeholders below are resolved.
 
-## Status: MVP draft (approved 2026-07-07), pre-M4
+## Status: launch-ready (M4 pass 2026-07-08) — swap after PyPI is live
 
-Resolve these before it goes live:
+Resolved for launch:
 
-1. **`pip install rapier-runtime`** — the PyPI package name is a placeholder; confirm it
-   when the package is published (M4).
-2. **Dead links** to wire to real URLs: `#paper` (arXiv/Zenodo), `#pypi`, and `#spec`
-   (the SPARRING spec — must point at a **public** repo; `muddyone/sparring` is private,
-   the public artifacts live in `muddyone/sparring-publicaccess`).
-3. **Evidence copy is intentionally number-free.** If you add figures (catch-rate,
-   grounding %), pull them **verbatim** from the final paper — do not paraphrase.
+1. ✅ **`pip install rapier-runtime`** — package name confirmed (available on PyPI).
+2. ✅ **Links wired** to real URLs: `#paper` → Zenodo concept DOI
+   `10.5281/zenodo.21210265`, `#pypi` → the PyPI project page, `#spec` → the **public**
+   `muddyone/sparring-publicaccess` spec (`framework/sparring-specification.md`).
+   (arXiv link deferred — endorsement pending; wire it in as a fast-follow.)
+3. ✅ **Accessibility pass** (Zoe review, 2026-07-08): AA-compliant small-text accent
+   token (`--accent-text`, light-only), real `<h2>` on the SPARRING↔Rapier band,
+   `aria-live` copy-status region + clipboard `.catch()` fallback, skip-to-content
+   link, and the mobile nav kept as a compact second row.
+
+Standing note: **Evidence copy is intentionally number-free.** If you add figures
+(catch-rate, grounding %), pull them **verbatim** from the final paper — do not paraphrase.
+
+**Gate:** swap only **after** the PyPI package is live — the `pip install` line and the
+`#pypi` link must resolve.
 
 ## Deploy
 

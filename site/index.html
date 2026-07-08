@@ -7,14 +7,15 @@
 <meta name="description" content="Rapier runs the SPARRING method: one AI drafts a recommendation, a different one challenges it on evidence you can check, and you get an answer plus a plain account of what to trust in it.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>%F0%9F%97%A1</text></svg>">
 <!--
-  Rapier Runtime — landing page (MVP draft, approved 2026-07-07).
-  DRAFT / pre-M4. Resolve these before going live:
-    1. pip package name ("rapier-runtime") — confirm at PyPI publish.
-    2. Dead anchors to wire to real URLs: #paper (arXiv/Zenodo), #pypi, #spec
-       (SPARRING spec — must be a PUBLIC repo; muddyone/sparring is private,
-       the public artifacts live in muddyone/sparring-publicaccess).
-    3. Evidence copy is intentionally number-free — if adding figures, pull them
-       verbatim from the final paper.
+  Rapier Runtime — landing page (MVP, approved 2026-07-07; M4-launch pass 2026-07-08).
+  Resolved for launch: pip name confirmed (rapier-runtime); real links wired —
+    #paper -> Zenodo concept DOI 10.5281/zenodo.21210265, #pypi -> the PyPI project
+    page, #spec -> the PUBLIC muddyone/sparring-publicaccess spec. Accessibility
+    pass applied (Zoe review 2026-07-08): AA small-text accent token, real <h2>
+    on the relationship band, aria-live copy status, skip link, mobile nav kept.
+  Standing note: Evidence copy is intentionally number-free — if adding figures,
+    pull them verbatim from the final paper. arXiv link deferred (endorsement pending).
+  Swap AFTER PyPI is live (the pip line + #pypi link must resolve).
   Deploy target: rapierruntime.com  (VPS 160.153.180.205, ~/public_html/rapierruntime.com/).
 -->
 <style>
@@ -28,6 +29,10 @@
     /* SPARRING gold — the only accent */
     --accent: #9a6a1f;
     --accent-2: #b5772e;
+    /* AA-compliant small-text accent: #9a6a1f is only 4.36:1 on the light
+       ground, under the 4.5:1 floor for text <24px. Darker shade, small text
+       only — the display-size gold is unchanged. (light 5.2:1) */
+    --accent-text: #8a5f1c;
     /* code is always dark steel, both themes */
     --code-bg: #0c0e12;
     --code-ink: #d7dae0;
@@ -50,15 +55,16 @@
       --line: #242a34;
       --accent: #b5772e;
       --accent-2: #c68a3a;
+      --accent-text: #b5772e; /* dark accent already clears 4.5:1 (5.07) */
     }
   }
   :root[data-theme="light"] {
     --bg: #f5f6f7; --surface: #ffffff; --ink: #16181d; --muted: #586069;
-    --line: #e2e5e9; --accent: #9a6a1f; --accent-2: #b5772e;
+    --line: #e2e5e9; --accent: #9a6a1f; --accent-2: #b5772e; --accent-text: #8a5f1c;
   }
   :root[data-theme="dark"] {
     --bg: #0f1116; --surface: #161922; --ink: #e8eaef; --muted: #969ca7;
-    --line: #242a34; --accent: #b5772e; --accent-2: #c68a3a;
+    --line: #242a34; --accent: #b5772e; --accent-2: #c68a3a; --accent-text: #b5772e;
   }
 
   * { box-sizing: border-box; }
@@ -74,13 +80,23 @@
   a:focus-visible, button:focus-visible {
     outline: 2px solid var(--accent-2); outline-offset: 3px; border-radius: 1px;
   }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0;
+  }
+  .skip {
+    position: absolute; left: -999px; top: 0; z-index: 20;
+    background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+    padding: 0.6rem 1rem; font-size: 0.95rem;
+  }
+  .skip:focus { left: 0.75rem; top: 0.75rem; }
   .eyebrow {
     font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.18em;
     text-transform: uppercase; color: var(--muted); margin: 0 0 1rem;
   }
-  .eyebrow .n { color: var(--accent); }
+  .eyebrow .n { color: var(--accent-text); }
   h1, h2, h3 { font-family: var(--serif); font-weight: 600; text-wrap: balance; letter-spacing: -0.01em; }
-  .gold { color: var(--accent); }
+  .gold { color: var(--accent-text); }
 
   /* ---- header ---- */
   header {
@@ -99,7 +115,12 @@
   .nav-links a { color: var(--muted); }
   .nav-links a:hover { color: var(--ink); }
   .nav-links .ghlink { color: var(--ink); }
-  @media (max-width: 560px) { .nav-links .hide-sm { display: none; } }
+  @media (max-width: 560px) {
+    /* keep the section links — wrap the nav to a compact second row rather
+       than dropping "How it works" / "Evidence" off the header entirely */
+    .nav { flex-wrap: wrap; height: auto; padding-top: 0.6rem; padding-bottom: 0.6rem; row-gap: 0.35rem; }
+    .nav-links { width: 100%; justify-content: flex-start; gap: 1.1rem; font-size: 0.86rem; }
+  }
 
   /* ---- hero ---- */
   .hero { padding: 5.5rem 0 4rem; border-bottom: 1px solid var(--line); }
@@ -116,8 +137,13 @@
   .btn-primary { background: var(--accent); color: #fff; }
   :root[data-theme="dark"] .btn-primary { color: #14161b; }
   @media (prefers-color-scheme: dark) { .btn-primary { color: #14161b; } }
-  .btn-primary:hover { background: var(--accent-2); color: #fff; }
-  :root[data-theme="dark"] .btn-primary:hover { color: #14161b; }
+  /* Primary hover must keep the label >=4.5:1 in every theme. In LIGHT the gold
+     darkens (brightening to --accent-2 #b5772e drops white text to 3.72:1); in
+     DARK it brightens to --accent-2 against the dark button text. */
+  .btn-primary:hover { background: var(--accent-text); color: #fff; }
+  @media (prefers-color-scheme: dark) { .btn-primary:hover { background: var(--accent-2); color: #14161b; } }
+  :root[data-theme="light"] .btn-primary:hover { background: var(--accent-text); color: #fff; }
+  :root[data-theme="dark"]  .btn-primary:hover { background: var(--accent-2); color: #14161b; }
   .btn-ghost { background: transparent; color: var(--ink); border-color: var(--line); }
   .btn-ghost:hover { border-color: var(--accent); color: var(--ink); }
   .btn:hover { transform: translateY(-1px); }
@@ -131,11 +157,12 @@
 
   /* ---- relationship band ---- */
   .rel { background: var(--surface); }
-  .rel .rel-lead { font-family: var(--serif); font-size: clamp(1.15rem, 2.6vw, 1.6rem); color: var(--muted); margin: 0; }
+  .rel .rel-h { margin: 0; font-weight: 400; }
+  .rel .rel-lead { display: block; font-family: var(--serif); font-weight: 400; font-size: clamp(1.15rem, 2.6vw, 1.6rem); color: var(--muted); margin: 0; }
   .rel .rel-name { font-family: var(--serif); font-weight: 600; font-size: clamp(3.2rem, 11vw, 7rem); line-height: 0.95; letter-spacing: -0.025em; color: var(--ink); display: flex; align-items: center; gap: clamp(0.8rem, 2vw, 1.4rem); margin: 0.35rem 0; }
   .rel .rel-name .blade-lg { position: relative; width: clamp(2.2rem, 6vw, 4.2rem); height: 3px; background: linear-gradient(90deg, var(--accent), transparent); flex: none; }
   .rel .rel-name .blade-lg::before { content: ""; position: absolute; left: 3px; top: -9px; width: 3px; height: 21px; background: var(--accent); }
-  .rel .rel-sub { font-family: var(--serif); font-style: italic; font-size: clamp(1.15rem, 2.6vw, 1.6rem); color: var(--accent); margin: 0 0 1.6rem; }
+  .rel .rel-sub { display: block; font-family: var(--serif); font-weight: 400; font-style: italic; font-size: clamp(1.15rem, 2.6vw, 1.6rem); color: var(--accent); margin: 0 0 1.6rem; }
   .rel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2rem 3rem; margin-top: 0.5rem; }
   @media (max-width: 640px) { .rel-grid { grid-template-columns: 1fr; } }
   .rel-grid .item .k { font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin: 0 0 0.5rem; }
@@ -151,7 +178,7 @@
   .duel .panel p { margin: 0; color: var(--muted); font-size: 0.98rem; }
   .duel .panel p em { color: var(--ink); font-style: normal; font-weight: 600; }
   .centerline { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; transform: translateX(-1px); background: linear-gradient(180deg, transparent, var(--accent), transparent); }
-  .centerline .vs { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg); color: var(--accent); font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; padding: 0.3rem 0.4rem; border: 1px solid var(--line); text-transform: uppercase; }
+  .centerline .vs { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg); color: var(--accent-text); font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.1em; padding: 0.3rem 0.4rem; border: 1px solid var(--line); text-transform: uppercase; }
   @media (max-width: 640px) {
     .duel { grid-template-columns: 1fr; }
     .duel .panel:first-child { border-right: 0; border-bottom: 1px solid var(--line); }
@@ -207,6 +234,8 @@
 </head>
 <body>
 
+<a class="skip" href="#main">Skip to content</a>
+
 <header>
   <div class="wrap nav">
     <span class="brand"><span class="blade"></span><span class="name">Rapier</span><span class="rt">Runtime</span></span>
@@ -218,7 +247,7 @@
   </div>
 </header>
 
-<main>
+<main id="main">
   <section class="hero">
     <div class="wrap">
       <p class="eyebrow reveal d1">Free · Open source · The SPARRING runtime</p>
@@ -226,16 +255,18 @@
       <p class="lead reveal d3">AI is fluent, fast, and agreeable — which is exactly how a confident wrong answer slips into a real decision. <strong>Rapier</strong> runs the SPARRING method: one AI drafts the recommendation, a different one challenges it on evidence you can check, and you get back an answer <strong>plus a plain account of what to trust in it</strong>.</p>
       <div class="cta-row reveal d4">
         <a class="btn btn-primary" href="#quickstart">Get started</a>
-        <a class="btn btn-ghost" href="#paper">Read the paper&nbsp;&rarr;</a>
+        <a class="btn btn-ghost" href="https://doi.org/10.5281/zenodo.21210265">Read the paper&nbsp;&rarr;</a>
       </div>
     </div>
   </section>
 
   <section class="rel">
     <div class="wrap">
-      <p class="rel-lead">SPARRING is the method.</p>
-      <div class="rel-name"><span class="blade-lg"></span>Rapier</div>
-      <p class="rel-sub">— the engine that runs it.</p>
+      <h2 class="rel-h">
+        <span class="rel-lead">SPARRING is the method.</span>
+        <span class="rel-name"><span class="blade-lg" aria-hidden="true"></span>Rapier</span>
+        <span class="rel-sub">— the engine that runs it.</span>
+      </h2>
       <div class="rel-grid">
         <div class="item">
           <p class="k">The method — SPARRING</p>
@@ -270,7 +301,7 @@
         <div class="centerline"><span class="vs">vs</span></div>
       </div>
       <div class="resolve">
-        <p class="eyebrow"><span class="n" style="color:var(--accent)">03</span> · Resolve</p>
+        <p class="eyebrow"><span class="n">03</span> · Resolve</p>
         <h3>You get an answer — and a trust rider</h3>
         <p>Rapier returns the recommendation, plus a separate, plain-English account of <strong>which specifics are solid and which are estimates</strong> — so you know exactly what you're acting on.</p>
       </div>
@@ -317,7 +348,7 @@ rapier <span class="p">spar</span> --request <span class="s">"Should we drop Pos
         </div>
       </div>
       <div class="ev-cta">
-        <a class="btn btn-ghost" href="#paper" id="paper">Read the empirical report&nbsp;&rarr;</a>
+        <a class="btn btn-ghost" href="https://doi.org/10.5281/zenodo.21210265">Read the empirical report&nbsp;&rarr;</a>
       </div>
     </div>
   </section>
@@ -327,9 +358,9 @@ rapier <span class="p">spar</span> --request <span class="s">"Should we drop Pos
   <div class="wrap foot-grid">
     <div class="foot-links">
       <a href="https://github.com/muddyone/rapier-runtime">GitHub</a>
-      <a href="#pypi">PyPI</a>
-      <a href="#paper">The paper</a>
-      <a href="#spec">SPARRING spec</a>
+      <a href="https://pypi.org/project/rapier-runtime/">PyPI</a>
+      <a href="https://doi.org/10.5281/zenodo.21210265">The paper</a>
+      <a href="https://github.com/muddyone/sparring-publicaccess/blob/main/framework/sparring-specification.md">SPARRING spec</a>
       <a href="mailto:Contact@resourceforge.com">Contact</a>
     </div>
     <div class="foot-meta">
@@ -339,13 +370,21 @@ rapier <span class="p">spar</span> --request <span class="s">"Should we drop Pos
   </div>
 </footer>
 
+<span id="copy-status" class="sr-only" role="status" aria-live="polite"></span>
+
 <script>
+  var copyStatus = document.getElementById('copy-status');
   document.querySelectorAll('.copy').forEach(function (b) {
     b.addEventListener('click', function () {
       var text = b.getAttribute('data-copy') || '';
       navigator.clipboard.writeText(text).then(function () {
-        var prev = b.textContent; b.textContent = 'Copied';
-        setTimeout(function () { b.textContent = prev; }, 1600);
+        b.textContent = 'Copied';
+        if (copyStatus) copyStatus.textContent = 'Copied to clipboard';
+        setTimeout(function () { b.textContent = 'Copy'; }, 1600);
+      }).catch(function () {
+        b.textContent = 'Press ⌘/Ctrl-C';
+        if (copyStatus) copyStatus.textContent = 'Copy failed — select the text and press Command or Control C.';
+        setTimeout(function () { b.textContent = 'Copy'; }, 2600);
       });
     });
   });
