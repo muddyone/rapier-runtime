@@ -181,3 +181,56 @@ def test_spar_manifest_loads_and_all_stages_registered():
         "citation_gate",
     ]
     m.build()  # must not raise — every stage is registered
+
+
+def _defin_env(with_cost_failure=True):
+    from rapier.envelope import Envelope
+    rows = [{"text": "CVE-2021-44228 (Log4Shell)", "claim": "CVE id",
+             "bucket": "BUCKET3_FAIL", "rider": "Assumes cve_id — not in the problem; verify."}]
+    fails = [{"text": "CVE-2021-44228 (Log4Shell)", "claim": "CVE id"}]
+    riders = ["Assumes cve_id — not in the problem; verify."]
+    if with_cost_failure:
+        rows.append({"text": "roughly $50k/yr", "claim": "cost",
+                     "bucket": "BUCKET3_FAIL", "rider": "Assumes cost — verify."})
+        fails.append({"text": "roughly $50k/yr", "claim": "cost"})
+        riders.append("Assumes cost — verify.")
+    env = Envelope(request="x")
+    env.verdict = "FAIL"
+    env.meta["definitiveness"] = {"answer_verdict": "FAIL", "rows": rows,
+                                  "failures": fails, "rider_lines": riders}
+    env.trust_rider = {"assumptions_to_verify": riders}
+    return env
+
+
+def test_grounding_reconciles_verified_ref_out_of_failures():
+    from rapier.stages.resolver.citation_gate import _reconcile_definitiveness_with_grounding
+    env = _defin_env(with_cost_failure=True)
+    _reconcile_definitiveness_with_grounding(
+        env, [{"artifact_ref": "CVE-2021-44228", "status": "verified", "backend": "mitre-cve"}])
+    d = env.meta["definitiveness"]
+    # verified CVE reconciled out; the genuine cost estimate remains -> still FAIL, right reason
+    assert env.verdict == "FAIL"
+    assert [f["claim"] for f in d["failures"]] == ["cost"]
+    assert d["rider_lines"] == ["Assumes cost — verify."]
+    assert [g["ref"] for g in d["grounded_specifics"]] == ["CVE-2021-44228"]
+    assert env.trust_rider["verified_externally"]
+    assert env.trust_rider["assumptions_to_verify"] == ["Assumes cost — verify."]
+
+
+def test_grounding_reconcile_lifts_verdict_when_only_failure_was_verified():
+    from rapier.stages.resolver.citation_gate import _reconcile_definitiveness_with_grounding
+    env = _defin_env(with_cost_failure=False)  # CVE is the ONLY failure
+    _reconcile_definitiveness_with_grounding(
+        env, [{"artifact_ref": "CVE-2021-44228", "status": "verified", "backend": "mitre-cve"}])
+    assert env.verdict == "PASS"
+    assert env.meta["definitiveness"]["failures"] == []
+
+
+def test_grounding_reconcile_leaves_refuted_ref_as_failure():
+    from rapier.stages.resolver.citation_gate import _reconcile_definitiveness_with_grounding
+    env = _defin_env(with_cost_failure=False)
+    _reconcile_definitiveness_with_grounding(
+        env, [{"artifact_ref": "CVE-2021-44228", "status": "refuted", "backend": "mitre-cve"}])
+    # a hallucinated (refuted) CVE must NOT be reconciled away
+    assert env.verdict == "FAIL"
+    assert env.meta["definitiveness"].get("reconciled_against_grounding") is not True

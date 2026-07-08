@@ -197,6 +197,18 @@ def _grounding_body(env: Envelope) -> str:
     lines += ["", textwrap.fill(
         f"Grounding: {nver} of {n} checkable {plural} confirmed against public "
         "canon, with no model in the loop.", width=_W)]
+    # If any of these were also flagged by the correctness gate as "external
+    # knowledge not in your problem", say plainly that they are confirmed real —
+    # so the two gates don't appear to contradict each other.
+    grounded = ((env.meta.get("definitiveness") or {}).get("grounded_specifics")) or []
+    if grounded:
+        refs = ", ".join(dict.fromkeys(g.get("ref") for g in grounded if g.get("ref")))
+        lines += ["", textwrap.fill(
+            f"Note: {refs} came from the model's own knowledge, not from your "
+            "problem statement — the correctness gate flagged them for that reason, "
+            "and the check above confirms each is a real, published identifier. What "
+            "remains yours to confirm is that they apply to your exact situation.",
+            width=_W)]
     return "\n".join(lines)
 
 
