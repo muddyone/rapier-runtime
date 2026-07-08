@@ -1,7 +1,8 @@
 # Security Policy
 
-Rapier Runtime is an AI-governance tool, so its own security is part of its
-purpose. We take reports seriously and aim to respond quickly.
+Rapier Runtime is an AI-governance tool from **ResourceForge**, so its own
+security is part of its purpose. We take reports seriously and aim to respond
+quickly.
 
 ## Reporting a vulnerability
 
@@ -10,7 +11,7 @@ purpose. We take reports seriously and aim to respond quickly.
 Report privately via GitHub's **[Security Advisories](https://github.com/muddyone/rapier-runtime/security/advisories/new)**
 (Report a vulnerability), or by email to:
 
-> `security@rapierruntime.com`  <!-- TODO(bart): confirm/route this alias before public release -->
+> `contact@resourceforge.com`
 
 Include, where possible: the affected version/commit, a description, and a
 minimal reproduction. We support coordinated disclosure and will credit

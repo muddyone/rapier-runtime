@@ -213,3 +213,7 @@ pytest -q
 ## License
 
 Apache-2.0. See [LICENSE](LICENSE).
+
+---
+
+Rapier Runtime and the SPARRING method are projects of **[ResourceForge](https://resourceforge.com)**.
