@@ -101,6 +101,74 @@ def test_citation_gate_skips_without_artifacts():
     assert env.trace[-1].summary.startswith("no artifacts")
 
 
+# --- artifact extraction (wiring the external-canon gate into a normal run) ---
+
+def test_extract_artifacts_finds_each_backend_family():
+    from rapier.stages.resolver._extract import extract_artifacts
+
+    text = (
+        "We rely on CWE-89 for injection, per RFC 6749, and the paper "
+        "doi:10.1145/3292500.3330701. See https://example.com/spec and the "
+        "check in src/auth/login.py:42."
+    )
+    refs = [a["artifact_ref"] for a in extract_artifacts(text)]
+    assert "CWE-89" in refs
+    assert any(r.upper().startswith("RFC") and "6749" in r for r in refs)
+    assert any(r.startswith("10.1145/") for r in refs)
+    assert "https://example.com/spec" in refs
+    assert "src/auth/login.py:42" in refs
+
+
+def test_extract_artifacts_dedups_and_drops_doi_inside_url():
+    from rapier.stages.resolver._extract import extract_artifacts
+
+    text = "See https://doi.org/10.1145/3292500 and again https://doi.org/10.1145/3292500."
+    refs = [a["artifact_ref"] for a in extract_artifacts(text)]
+    assert refs == ["https://doi.org/10.1145/3292500"]  # one url; nested DOI not double-emitted
+
+
+def test_extract_artifacts_empty_on_none_or_plain():
+    from rapier.stages.resolver._extract import extract_artifacts
+
+    assert extract_artifacts(None) == []
+    assert extract_artifacts("no checkable artifacts here, only prose.") == []
+
+
+def test_citation_gate_auto_extracts_from_recommendation(monkeypatch):
+    from rapier.verify import service
+
+    captured = {}
+
+    def _fake(artifacts, pack_text=None, judge=False, map_claims=False):
+        captured["artifacts"] = artifacts
+        return ([{"status": "verified"}], {"gate": "clean", "grounding_rate": 1.0, "theater_flags": 0})
+
+    monkeypatch.setattr(service, "verify_artifacts", _fake)
+    env = Envelope(request="p", recommendation="Grounded in CWE-79 and https://example.org/x.")
+    get_stage("citation_gate")().run(env, StageContext())
+    refs = [a["artifact_ref"] for a in env.meta["artifacts"]]
+    assert "CWE-79" in refs and "https://example.org/x" in refs
+    assert captured["artifacts"] == env.meta["artifacts"]  # extracted artifacts were verified
+    assert env.meta["citation_gate"]["gate"] == "clean"
+
+
+def test_citation_gate_prepopulated_overrides_extraction(monkeypatch):
+    from rapier.verify import service
+
+    seen = {}
+
+    def _fake(artifacts, pack_text=None, judge=False, map_claims=False):
+        seen["artifacts"] = artifacts
+        return ([], {"gate": "clean"})
+
+    monkeypatch.setattr(service, "verify_artifacts", _fake)
+    pre = [{"concern_id": "x1", "artifact_ref": "CWE-1", "concern_text": "pre", "load_bearing": True}]
+    env = Envelope(request="p", recommendation="text that mentions CWE-999")
+    env.meta["artifacts"] = list(pre)
+    get_stage("citation_gate")().run(env, StageContext())
+    assert seen["artifacts"] == pre  # caller-supplied artifacts win; CWE-999 not extracted over them
+
+
 def test_spar_manifest_loads_and_all_stages_registered():
     path = pathlib.Path(__file__).parent.parent / "manifests" / "sparring.spar.yaml"
     m = Manifest.load(str(path))
