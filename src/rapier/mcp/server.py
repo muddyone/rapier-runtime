@@ -18,33 +18,45 @@ annotations`` — FastMCP evaluates each tool's signature, and the lazily-import
 ``Context`` annotation must be a real class object at definition time, not a
 string it cannot resolve.
 """
+import os
 import sys
 from typing import Any, Callable
 
 
 async def _run_with_progress(
-    fn: Callable[..., dict], ctx: Any, total: int, **kwargs: Any
+    fn: Callable[..., dict],
+    ctx: Any,
+    total: int,
+    timeout_s: float | None = None,
+    ledger_root: str | None = None,
+    **kwargs: Any,
 ) -> dict:
-    """Run a blocking tool ``fn(log=…, **kwargs)`` in a worker thread while
-    streaming its log lines to the MCP client as info + progress notifications.
+    """Run a blocking tool ``fn(log=…, cancel=…, ledger_root=…, **kwargs)`` in a
+    worker thread while streaming its log lines to the MCP client as info +
+    progress notifications, with cooperative cancellation and an optional timeout.
 
-    ``ctx`` may be ``None`` (e.g. in a unit test with no session), in which case
-    the run proceeds silently. Progress ticks once per pipeline stage (``stage:``
-    log lines); every line is also sent as an ``info`` message.
+    ``ctx`` may be ``None`` (a unit test with no session), in which case the run
+    proceeds silently. On client cancellation or timeout the cancel flag is set,
+    so the (abandoned) worker stops at the next stage boundary rather than being
+    killed mid-call. Progress ticks once per pipeline stage (``stage:`` log lines).
     """
     import queue as _queue
+    import threading
 
     import anyio
 
     q: _queue.Queue = _queue.Queue()
     sentinel = object()
     box: dict[str, dict] = {}
+    cancel_event = threading.Event()
 
     def _log(msg: str) -> None:
         q.put(str(msg))
 
     def _work() -> None:
-        box["result"] = fn(log=_log, **kwargs)
+        box["result"] = fn(
+            log=_log, cancel=cancel_event.is_set, ledger_root=ledger_root, **kwargs
+        )
 
     async def _drain() -> None:
         done = 0
@@ -65,10 +77,24 @@ async def _run_with_progress(
                     except Exception:
                         pass  # progress is best-effort; never fail a run over it
 
-    async with anyio.create_task_group() as tg:
-        tg.start_soon(_drain)
-        await anyio.to_thread.run_sync(_work)
-        q.put(sentinel)
+    timed_out = False
+    try:
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(_drain)
+            if timeout_s:
+                try:
+                    with anyio.fail_after(timeout_s):
+                        await anyio.to_thread.run_sync(_work, abandon_on_cancel=True)
+                except TimeoutError:
+                    timed_out = True
+            else:
+                await anyio.to_thread.run_sync(_work, abandon_on_cancel=True)
+            q.put(sentinel)
+    finally:
+        cancel_event.set()  # stop the (possibly abandoned) worker at the next boundary
+
+    if timed_out:
+        return {"ok": False, "error": f"timed out after {timeout_s}s; partial run abandoned"}
     return box.get("result", {"ok": False, "error": "run produced no result"})
 
 
@@ -84,6 +110,9 @@ def build_server():
     from . import tools
 
     server = FastMCP("rapier")
+    # Opt-in run persistence: when set, ceremonies are written here and become
+    # retrievable via list_runs / get_run. Off by default (no surprise disk writes).
+    ledger_root = os.environ.get("RAPIER_MCP_LEDGER") or None
 
     def _stage_total(name: str, settle: int, verify: str) -> int:
         try:
@@ -93,27 +122,31 @@ def build_server():
 
     @server.tool()
     async def spar(
-        request: str, settle: int = 0, verify: str = "gate", ctx: Context = None
+        request: str, settle: int = 0, verify: str = "gate",
+        timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the SPARRING Resolver on a decision: one grounded, cross-vendor
         challenge plus a definitiveness gate. Returns a recommendation, a trust
         rider, and the grounding verdict. ``settle`` adds review-and-revise rounds
-        (default 0); ``verify`` is off|gate|round for the external-canon gate."""
+        (default 0); ``verify`` is off|gate|round for the external-canon gate;
+        ``timeout_s`` > 0 caps the run (partial run abandoned on timeout)."""
         return await _run_with_progress(
             tools.run_spar, ctx, _stage_total("spar", settle, verify),
+            timeout_s=timeout_s or None, ledger_root=ledger_root,
             request=request, settle=settle, verify=verify,
         )
 
     @server.tool()
     async def sparring(
         request: str, settle: int = 0, verify: str = "gate",
-        report_all: bool = False, ctx: Context = None,
+        report_all: bool = False, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the full SPARRING ceremony (Proposer, then Resolver) on a decision.
         ``report_all`` also returns the Proposer handoff (the committed option and
-        its standing objections)."""
+        its standing objections); ``timeout_s`` > 0 caps the run."""
         return await _run_with_progress(
             tools.run_sparring, ctx, _stage_total("sparring", settle, verify),
+            timeout_s=timeout_s or None, ledger_root=ledger_root,
             request=request, settle=settle, verify=verify, report_all=report_all,
         )
 
@@ -122,6 +155,16 @@ def build_server():
         """Report which AI vendor keys this server has (env-var names only, never
         values) and whether cross-vendor review is available."""
         return tools.doctor()
+
+    @server.tool()
+    def list_runs() -> dict:
+        """List persisted run ids (requires the server's RAPIER_MCP_LEDGER)."""
+        return tools.list_runs(ledger_root)
+
+    @server.tool()
+    def get_run(run_id: str) -> dict:
+        """Fetch a persisted run's report + verdict by id (requires RAPIER_MCP_LEDGER)."""
+        return tools.get_run(ledger_root, run_id)
 
     return server
 

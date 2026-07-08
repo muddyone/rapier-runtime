@@ -101,4 +101,59 @@ def test_build_server_registers_all_tools():
     pytest.importorskip("mcp")
     srv = server.build_server()
     names = {t.name for t in anyio.run(srv.list_tools)}
-    assert {"spar", "sparring", "rapier_doctor"} <= names
+    assert {"spar", "sparring", "rapier_doctor", "list_runs", "get_run"} <= names
+
+
+# --- MCP-2: timeout + ledger-run access ---
+
+def test_run_with_progress_times_out():
+    import time
+
+    import pytest
+
+    anyio = pytest.importorskip("anyio")
+
+    def _slow(log=None, cancel=None, ledger_root=None, **kw):
+        for _ in range(200):
+            if cancel and cancel():
+                return {"ok": True, "stopped": True}
+            time.sleep(0.02)
+        return {"ok": True, "stopped": False}
+
+    out = anyio.run(server._run_with_progress, _slow, None, 1, 0.1)  # 0.1s timeout
+    assert out["ok"] is False
+    assert "timed out" in out["error"]
+
+
+def test_list_and_get_run_roundtrip(tmp_path):
+    import json
+    import os
+
+    from rapier.mcp import tools
+
+    rid = "run-1"
+    os.makedirs(tmp_path / rid)
+    (tmp_path / rid / "envelope.json").write_text(
+        json.dumps({"recommendation": "REC", "verdict": "PASS", "meta": {"report_md": "# Report"}})
+    )
+    lr = str(tmp_path)
+
+    listing = tools.list_runs(lr)
+    assert listing["ok"] and "run-1" in listing["runs"]
+
+    got = tools.get_run(lr, "run-1")
+    assert got["ok"] and got["report_md"] == "# Report" and got["verdict"] == "PASS"
+
+
+def test_get_run_rejects_path_traversal(tmp_path):
+    from rapier.mcp import tools
+
+    out = tools.get_run(str(tmp_path), "../secrets")
+    assert out["ok"] is False and "invalid" in out["error"]
+
+
+def test_runs_disabled_without_ledger():
+    from rapier.mcp import tools
+
+    assert tools.list_runs(None)["ok"] is False
+    assert tools.get_run(None, "x")["ok"] is False

@@ -77,6 +77,7 @@ class Pipeline:
         request: str,
         ledger_root: str | None = None,
         log: Callable[[str], None] = lambda _m: None,
+        cancel: Callable[[], bool] | None = None,
     ) -> Envelope:
         env = Envelope(request=request)
         ledger = Ledger(ledger_root, run_slug=self.name) if ledger_root else None
@@ -85,13 +86,25 @@ class Pipeline:
             set_transcript_sink(ledger.record_transcript)
 
         try:
-            return self._run_stages(env, ledger, log)
+            return self._run_stages(env, ledger, log, cancel)
         finally:
             set_transcript_sink(None)
 
-    def _run_stages(self, env: Envelope, ledger, log) -> Envelope:
+    def _run_stages(self, env: Envelope, ledger, log, cancel=None) -> Envelope:
+        import os
+
+        if ledger is not None:
+            run_dir = getattr(ledger, "run_dir", None)
+            if run_dir:
+                env.meta["run_id"] = os.path.basename(run_dir)
         available = available_vendors()
         for spec in self.stages:
+            # Cooperative cancellation: stop at a stage boundary (never mid-call)
+            # so the partial envelope stays coherent and auditable.
+            if cancel is not None and cancel():
+                env.add_trace(spec.stage, "control", "run cancelled — stopping before this stage")
+                log(f"  cancelled — stopping before {spec.stage}")
+                break
             stage = get_stage(spec.stage)()
             clients = {}
             for role, ms in spec.roles.items():

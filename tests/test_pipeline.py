@@ -134,3 +134,22 @@ def test_pipeline_authors_on_available_vendor_when_default_absent(monkeypatch):
     assert env.meta.get("author_vendor") == "openai"  # authored on the available vendor
     assert any(ms.vendor == "openai" and ms.max_tokens == 8000 for ms in built)
     assert any("vendor substitution" in t.summary for t in env.trace)
+
+
+def test_pipeline_cancels_between_stages():
+    """Cooperative cancel: the run stops at a stage boundary, leaving a coherent
+    partial envelope with a 'cancelled' trace."""
+    from rapier.pipeline import Pipeline, StageSpec
+
+    calls = {"n": 0}
+
+    def _cancel() -> bool:
+        calls["n"] += 1
+        return calls["n"] >= 2  # allow stage 1, cancel before stage 2
+
+    env = Pipeline([StageSpec(stage="echo"), StageSpec(stage="echo")], name="t").run(
+        "go", cancel=_cancel
+    )
+    assert any(t.kind == "control" and "cancelled" in t.summary for t in env.trace)
+    ran = sum(1 for t in env.trace if t.stage == "echo" and t.kind == "transform")
+    assert ran == 1  # only the first stage executed
