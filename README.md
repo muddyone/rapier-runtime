@@ -49,7 +49,7 @@ today:
   `yaml.safe_load`; a [threat model](docs/threat-model.md) and a
   [security policy](SECURITY.md).
 
-75 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
+99 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
 
 **Honest boundary.** The definitiveness gate, anchored correction, and the
 two-part trust rider are *exploratory* governance instruments — useful, but not
@@ -83,6 +83,22 @@ rapier run --manifest manifests/echo.yaml --request "should we ship X?"
 
 Runtime dependencies are just `requests` and `pyyaml` — every vendor is called
 over the wire; no provider SDKs.
+
+## Configure your keys
+
+Rapier reads vendor keys from the **environment only** — never from a file it
+reads itself. Scaffold and check your setup:
+
+```bash
+rapier init      # writes .env.example (key names, no values)
+# fill in .env, then load it into your shell:
+set -a; source .env; set +a
+rapier doctor    # shows which vendors are configured (names only — never values)
+```
+
+`doctor` reports each vendor's key env var as set/unset and whether cross-vendor
+review is available (two or more keys). A ceremony launched with **no** keys
+fails loudly with an actionable message instead of producing empty output.
 
 ## A manifest is the method
 

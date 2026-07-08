@@ -243,6 +243,16 @@ def default_model(vendor: str) -> str:
     return _DEFAULT_MODEL.get(vendor, "")
 
 
+def vendor_key_envs() -> dict[str, str]:
+    """Vendor -> the env var holding its key (public, for onboarding / doctor)."""
+    return dict(_VENDOR_KEY_ENV)
+
+
+def frontier_vendors() -> list[str]:
+    """The frontier vendors, in preference order (for onboarding hints)."""
+    return list(_FRONTIER_ORDER)
+
+
 def resolve_pair(
     available: list[str],
     primary_pref: str | None = None,

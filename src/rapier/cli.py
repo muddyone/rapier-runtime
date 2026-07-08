@@ -4,6 +4,8 @@
     rapier spar     --request "should we do X?"       # Resolver only
     rapier proposer --request "should we do X?"       # Proposer only
     rapier run --manifest path.yaml --request "..."   # a custom manifest
+    rapier doctor                                     # which vendor keys are set
+    rapier init                                       # scaffold a .env.example
 
 ``spar`` / ``sparring`` are the thin adapters the SPARRING skills call.
 """
@@ -64,9 +66,31 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--manifest", required=True, help="path to a pipeline manifest (YAML)")
     add_common(run)
 
+    sub.add_parser("doctor", help="check which AI vendor keys are configured")
+    ip = sub.add_parser("init", help="scaffold a .env.example for vendor keys")
+    ip.add_argument("--dir", default=".", help="directory to write .env.example into (default: cwd)")
+
     args = parser.parse_args(argv)
 
+    if args.cmd == "doctor":
+        from .onboarding import doctor_report
+
+        print(doctor_report())
+        return 0
+    if args.cmd == "init":
+        from .onboarding import init as _init
+
+        _path, _created, instructions = _init(args.dir)
+        print(instructions)
+        return 0
+
     if args.cmd in ("spar", "sparring", "proposer"):
+        from .onboarding import preflight_error
+
+        err = preflight_error()
+        if err:  # no vendor keys — fail loudly, not silently
+            print(err, file=sys.stderr)
+            return 2
         preset = load_preset(
             args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate")
         )
