@@ -1,9 +1,10 @@
 """The ``rapier`` CLI.
 
-    rapier sparring --request "should we do X?"      # full ceremony
-    rapier spar     --request "should we do X?"       # Resolver only
-    rapier proposer --request "should we do X?"       # Proposer only
-    rapier run --manifest path.yaml --request "..."   # a custom manifest
+    rapier sparring --request "should we do X?"          # full ceremony
+    rapier spar     --request "should we do X?"           # Resolver only
+    rapier spar     --request-file pack.md                # read the pack from a file
+    rapier proposer --request "should we do X?"           # Proposer only
+    rapier run --manifest path.yaml --request-file pack.md  # a custom manifest
     rapier doctor                                     # which vendor keys are set
     rapier init                                       # scaffold a .env.example
     rapier mcp                                        # run the MCP server (stdio)
@@ -48,6 +49,18 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     return 0
 
 
+def _resolve_request(args) -> str:
+    """The decision text — inline via --request, or read from --request-file
+    (``-`` for stdin). The mutually-exclusive group guarantees exactly one."""
+    path = getattr(args, "request_file", None)
+    if path:
+        if path == "-":
+            return sys.stdin.read()
+        with open(path, encoding="utf-8") as fh:
+            return fh.read()
+    return args.request
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="rapier", description="Rapier Runtime — run a SPARRING method from a manifest or preset."
@@ -55,7 +68,13 @@ def main(argv: list[str] | None = None) -> int:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     def add_common(p):
-        p.add_argument("--request", required=True, help="the decision/request text")
+        src = p.add_mutually_exclusive_group(required=True)
+        src.add_argument("--request", help="the decision/request text, given inline")
+        src.add_argument(
+            "--request-file", metavar="PATH",
+            help="read the decision/request text from a file (use '-' for stdin) — "
+                 "friendlier than --request for a multi-line context pack",
+        )
         p.add_argument("--ledger-dir", default=None, help="write run artifacts (transcript, report, records) here")
 
     for preset in ("spar", "sparring", "proposer"):
@@ -103,6 +122,15 @@ def main(argv: list[str] | None = None) -> int:
 
         return serve()
 
+    try:
+        request = _resolve_request(args)
+    except OSError as e:
+        print(f"rapier: cannot read --request-file: {e}", file=sys.stderr)
+        return 2
+    if not (request or "").strip():
+        print("rapier: the request is empty", file=sys.stderr)
+        return 2
+
     if args.cmd in ("spar", "sparring", "proposer"):
         from .onboarding import preflight_error
 
@@ -113,9 +141,9 @@ def main(argv: list[str] | None = None) -> int:
         preset = load_preset(
             args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate")
         )
-        return _run(preset, args.request, args.ledger_dir, report_all=getattr(args, "report_all", False))
+        return _run(preset, request, args.ledger_dir, report_all=getattr(args, "report_all", False))
     if args.cmd == "run":
-        return _run(Manifest.load(args.manifest), args.request, args.ledger_dir)
+        return _run(Manifest.load(args.manifest), request, args.ledger_dir)
     return 1  # pragma: no cover
 
 
