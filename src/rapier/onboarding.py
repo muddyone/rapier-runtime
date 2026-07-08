@@ -106,8 +106,13 @@ def init(target_dir: str = ".") -> tuple[str, bool, str]:
         f"{verb} {path}.\n"
         "Next:\n"
         "  1. cp .env.example .env\n"
-        "  2. edit .env and fill in the key(s) you have\n"
+        "  2. edit .env and fill in the key(s) you have  (quote any value with spaces)\n"
         "  3. set -a; source .env; set +a\n"
-        "  4. rapier doctor        # confirm they're detected"
+        "  4. rapier doctor        # confirm they're detected\n"
+        "\n"
+        "Step 3 loads the keys for THIS shell only — a new terminal starts empty.\n"
+        "To load them automatically every session, add that same line to your\n"
+        "~/.bashrc pointing at a keys file (or use direnv for per-directory loading).\n"
+        "See the README's \"Keep your keys loaded\" section."
     )
     return path, created, instructions

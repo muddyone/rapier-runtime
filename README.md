@@ -100,6 +100,37 @@ rapier doctor    # shows which vendors are configured (names only — never valu
 review is available (two or more keys). A ceremony launched with **no** keys
 fails loudly with an actionable message instead of producing empty output.
 
+### Keep your keys loaded
+
+Environment variables last only for the current shell, so `source .env` sets
+them up for **this session** — a new terminal starts empty. That's the same as
+`aws`, `gh`, and most API-key CLIs, and it's deliberate here: Rapier reads keys
+only from the environment and never persists a secret itself. To avoid re-running
+the command each time, set it up once:
+
+- **Load in every shell** — add the source line to your shell profile (e.g.
+  `~/.bashrc` or `~/.zshrc`), pointing at a keys file you keep outside any repo:
+
+  ```bash
+  # add once to ~/.bashrc
+  set -a; source ~/.config/rapier/keys.env; set +a
+  ```
+
+  Simplest for a personal machine. (Trade-off: the keys then load into *every*
+  shell, and live in a file on disk — fine for your own box, less so on a shared
+  one.)
+
+- **Load per directory — [`direnv`](https://direnv.net/)** — auto-loads a
+  project's `.env` when you `cd` in and unloads it when you leave. Cleaner
+  isolation; a one-time `direnv allow` per directory.
+
+- **Per session** — just run `set -a; source .env; set +a` when you sit down to
+  use it. Fine for occasional use.
+
+One gotcha: `source` runs the file as shell, so every value with spaces must be
+**quoted** (`FOO="a b c"`, not `FOO=a b c`) or `source` will try to run the extra
+words as a command. If sourcing errors, that's usually the cause.
+
 ## Use it from an MCP client (optional)
 
 Expose `spar` / `sparring` (and a `rapier_doctor` check) as tools to any MCP
