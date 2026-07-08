@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rapier-runtime"
-version = "0.0.1"
+version = "0.1.0"
 description = "A code-orchestrated engine that runs the SPARRING method: grounded, cross-vendor adversarial review for AI-in-the-loop decisions."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,15 +20,26 @@ keywords = [
     "decision-support",
 ]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 # Runtime deps are deliberately tiny: every vendor (Anthropic/OpenAI/Gemini/Grok/
 # any OpenAI-compatible endpoint) goes over the wire through `requests` — no
 # provider SDKs are imported — and manifests are `pyyaml`.
 dependencies = ["pyyaml>=6.0", "requests>=2.31"]
+
+[project.urls]
+Homepage = "https://rapierruntime.com"
+Repository = "https://github.com/muddyone/rapier-runtime"
+Issues = "https://github.com/muddyone/rapier-runtime/issues"
+Paper = "https://doi.org/10.5281/zenodo.21210265"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
