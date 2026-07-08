@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rapier Runtime — in development</title>
+<meta name="description" content="Rapier Runtime — the engine that runs the SPARRING method. In active development, built in the open.">
+<meta name="robots" content="noindex">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>%F0%9F%97%A1</text></svg>">
+<!--
+  Rapier Runtime — INTERIM "in development" page.
+  Design-consistent with the full MVP landing (site/index.html) but safe to serve now:
+  no placeholder pip command, no dead paper/pypi links. Swap for index.html at M4/launch.
+  Deployed as index.html at rapierruntime.com (VPS ~/public_html/rapierruntime.com/).
+-->
+<style>
+  :root {
+    --bg: #f5f6f7; --surface: #ffffff; --ink: #16181d; --muted: #586069; --line: #e2e5e9;
+    --accent: #9a6a1f; --accent-2: #b5772e;
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, "Times New Roman", serif;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --mono: "SF Mono", "JetBrains Mono", "Fira Code", ui-monospace, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1116; --surface: #161922; --ink: #e8eaef; --muted: #969ca7; --line: #242a34; --accent: #b5772e; --accent-2: #c68a3a; }
+  }
+  :root[data-theme="light"] { --bg: #f5f6f7; --surface: #ffffff; --ink: #16181d; --muted: #586069; --line: #e2e5e9; --accent: #9a6a1f; --accent-2: #b5772e; }
+  :root[data-theme="dark"] { --bg: #0f1116; --surface: #161922; --ink: #e8eaef; --muted: #969ca7; --line: #242a34; --accent: #b5772e; --accent-2: #c68a3a; }
+
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); line-height: 1.6; -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column; min-height: 100%;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { color: var(--accent-2); }
+  a:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 3px; }
+
+  main { flex: 1; display: flex; align-items: center; justify-content: center; padding: 2.5rem 1.75rem; }
+  .card { max-width: 40rem; width: 100%; }
+
+  .status {
+    display: inline-flex; align-items: center; gap: 0.55rem;
+    font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.2em; text-transform: uppercase;
+    color: var(--muted); border: 1px solid var(--line); padding: 0.4rem 0.8rem; margin: 0 0 2rem;
+  }
+  .status .dot { width: 7px; height: 7px; background: var(--accent); border-radius: 50%; }
+  @media (prefers-reduced-motion: no-preference) {
+    .status .dot { animation: pulse 2.4s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  }
+
+  .wordmark {
+    font-family: var(--serif); font-weight: 600; letter-spacing: -0.025em; color: var(--ink);
+    font-size: clamp(3.4rem, 13vw, 6.5rem); line-height: 0.95;
+    display: flex; align-items: center; gap: clamp(0.9rem, 2.5vw, 1.5rem); margin: 0;
+  }
+  .wordmark .blade { position: relative; width: clamp(2.4rem, 7vw, 4.4rem); height: 3px; background: linear-gradient(90deg, var(--accent), transparent); flex: none; }
+  .wordmark .blade::before { content: ""; position: absolute; left: 3px; top: -9px; width: 3px; height: 21px; background: var(--accent); }
+  .rt { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.28em; text-transform: uppercase; color: var(--muted); margin: 0.9rem 0 0; }
+
+  .sub { font-family: var(--serif); font-style: italic; font-size: clamp(1.2rem, 3vw, 1.6rem); color: var(--accent); margin: 1.6rem 0 0; }
+  .desc { font-size: 1.08rem; color: var(--muted); margin: 1.1rem 0 0; max-width: 34rem; }
+  .desc strong { color: var(--ink); font-weight: 600; }
+
+  .links { display: flex; flex-wrap: wrap; gap: 0.8rem; margin: 2.4rem 0 0; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--sans);
+    font-size: 0.96rem; font-weight: 600; padding: 0.68rem 1.2rem; border: 1px solid var(--line);
+    color: var(--ink); background: transparent; transition: border-color 0.15s ease, transform 0.12s ease;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--ink); transform: translateY(-1px); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  :root[data-theme="dark"] .btn.primary { color: #14161b; }
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #14161b; } }
+  .btn.primary:hover { background: var(--accent-2); border-color: var(--accent-2); }
+
+  footer { padding: 1.75rem; border-top: 1px solid var(--line); }
+  .foot { max-width: 40rem; margin: 0 auto; font-size: 0.85rem; color: var(--muted); }
+  .foot a { color: var(--accent); }
+  .foot .gold { color: var(--accent); }
+</style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <span class="status"><span class="dot"></span>In development</span>
+      <h1 class="wordmark"><span class="blade"></span>Rapier</h1>
+      <p class="rt">Runtime</p>
+      <p class="sub">The engine that runs the SPARRING method.</p>
+      <p class="desc">A tool for pressure-testing AI-assisted decisions: one AI drafts a recommendation, a different one challenges it on evidence you can check, and you get back an answer <strong>plus a plain account of what to trust in it</strong>. We're building it in the open.</p>
+      <div class="links">
+        <a class="btn primary" href="https://github.com/muddyone/rapier-runtime">Follow on GitHub&nbsp;&rarr;</a>
+        <a class="btn" href="mailto:Contact@resourceforge.com">Get in touch</a>
+      </div>
+    </div>
+  </main>
+  <footer>
+    <div class="foot">
+      Rapier Runtime · a <a href="https://resourceforge.com">Resource Forge</a> project · © 2026 Resource Forge LLC · runs the <span class="gold">SPARRING</span> method
+    </div>
+  </footer>
+</body>
+</html>

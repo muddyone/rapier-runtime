@@ -1,10 +1,14 @@
-# site/ — rapierruntime.com landing page
+# site/ — rapierruntime.com
 
-The public landing page for **rapierruntime.com**, the product front door for Rapier
-Runtime (the engine that runs the SPARRING method).
+The public site for **rapierruntime.com**, the product front door for Rapier Runtime
+(the engine that runs the SPARRING method). Both files are self-contained — no build
+step, no external assets (inline CSS/JS, system fonts, emoji favicon), theme-aware.
 
-- **`index.html`** — self-contained, no build step, no external assets (inline CSS/JS,
-  system fonts, emoji favicon). Theme-aware (light/dark). Just upload it.
+- **`coming-soon.html`** — the interim **"in development"** page. Design-consistent with
+  the full landing but safe to serve now: no placeholder pip command, no dead links.
+  **This is what is currently deployed** (as `index.html`) at rapierruntime.com.
+- **`index.html`** — the full MVP landing page. Swaps in at M4/launch once the
+  placeholders below are resolved.
 
 ## Status: MVP draft (approved 2026-07-07), pre-M4
 
@@ -22,10 +26,14 @@ Resolve these before it goes live:
 
 Target: the GoDaddy cPanel VPS at `160.153.180.205`, docroot
 `~/public_html/rapierruntime.com/`. DNS + Let's Encrypt (AutoSSL) are already live;
-HTTP→HTTPS redirect is set in that directory's `.htaccess`. Deploy is a file copy:
+HTTP→HTTPS redirect is set in that directory's `.htaccess`. Deploy is a file copy —
+whichever page is current gets uploaded **as `index.html`**:
 
 ```bash
-scp site/index.html <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/index.html
+# now (interim):
+scp site/coming-soon.html <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/index.html
+# at launch (once placeholders are resolved):
+scp site/index.html       <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/index.html
 ```
 
-(A temporary "coming soon" placeholder is currently served there; this replaces it.)
+The previous file is kept server-side as `index.html.prev` on each deploy.
