@@ -80,11 +80,15 @@ Runs locally; the only network is the vendor APIs plus the grounding registries
 existing redaction on every tool result. No new secret surface — keys stay in env.
 
 ## Milestones
-- **MCP-0:** `rapier mcp` stdio server exposing `spar` + `sparring` (text output),
-  optional `[mcp]` extra, client-config docs. Usable end-to-end.
-- **MCP-1:** structured output block (verdict + grounding + cross_vendor),
-  progress notifications, `rapier_doctor` tool.
-- **MCP-2:** cancellation, per-tool timeouts, optional ledger-run resource access.
+- **MCP-0 ✅ (done, 2d4a017):** `rapier mcp` stdio server exposing `spar` +
+  `sparring` + `rapier_doctor`, optional `[mcp]` extra, client-config docs.
+- **MCP-1 ✅ (done, 6752181):** structured output (verdict + grounding +
+  cross_vendor + standing_objections), per-stage progress notifications.
+- **MCP-2 ✅ (done, 508298b):** cooperative cancellation, per-tool `timeout_s`,
+  opt-in ledger-run access (`RAPIER_MCP_LEDGER` + `list_runs`/`get_run`).
+
+Follow-ups: end-to-end live-session test with a real client (Claude Desktop);
+consider exposing runs as MCP *resources* (currently tools).
 
 ## Open decisions
 1. `rapier mcp` subcommand (recommended) vs a separate `rapier-mcp` entry point.
