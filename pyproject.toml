@@ -32,6 +32,9 @@ dependencies = ["pyyaml>=6.0", "requests>=2.31"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+# The MCP server (`rapier mcp`) — kept out of the core so the tiny runtime stays
+# `requests` + `pyyaml`. Install with: pip install "rapier-runtime[mcp]".
+mcp = ["mcp>=1.2"]
 
 [project.scripts]
 rapier = "rapier.cli:main"

@@ -6,6 +6,7 @@
     rapier run --manifest path.yaml --request "..."   # a custom manifest
     rapier doctor                                     # which vendor keys are set
     rapier init                                       # scaffold a .env.example
+    rapier mcp                                        # run the MCP server (stdio)
 
 ``spar`` / ``sparring`` are the thin adapters the SPARRING skills call.
 """
@@ -69,6 +70,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="check which AI vendor keys are configured")
     ip = sub.add_parser("init", help="scaffold a .env.example for vendor keys")
     ip.add_argument("--dir", default=".", help="directory to write .env.example into (default: cwd)")
+    sub.add_parser("mcp", help="run the MCP server (stdio) exposing spar/sparring as tools")
 
     args = parser.parse_args(argv)
 
@@ -83,6 +85,10 @@ def main(argv: list[str] | None = None) -> int:
         _path, _created, instructions = _init(args.dir)
         print(instructions)
         return 0
+    if args.cmd == "mcp":
+        from .mcp import serve
+
+        return serve()
 
     if args.cmd in ("spar", "sparring", "proposer"):
         from .onboarding import preflight_error

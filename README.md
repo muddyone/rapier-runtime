@@ -49,7 +49,7 @@ today:
   `yaml.safe_load`; a [threat model](docs/threat-model.md) and a
   [security policy](SECURITY.md).
 
-103 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
+108 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
 
 **Honest boundary.** The definitiveness gate, anchored correction, and the
 two-part trust rider are *exploratory* governance instruments — useful, but not
@@ -99,6 +99,31 @@ rapier doctor    # shows which vendors are configured (names only — never valu
 `doctor` reports each vendor's key env var as set/unset and whether cross-vendor
 review is available (two or more keys). A ceremony launched with **no** keys
 fails loudly with an actionable message instead of producing empty output.
+
+## Use it from an MCP client (optional)
+
+Expose `spar` / `sparring` (and a `rapier_doctor` check) as tools to any MCP
+client — Claude Desktop, editors, agents:
+
+```bash
+pip install "rapier-runtime[mcp]"
+```
+
+Point the client at the stdio server. Keys travel in the server's `env` block —
+the client launches the process with them, and the engine reads them from the
+environment (it still reads no secret from a file):
+
+```jsonc
+{
+  "mcpServers": {
+    "rapier": {
+      "command": "rapier",
+      "args": ["mcp"],
+      "env": { "ANTHROPIC_API_KEY": "…", "OPENAI_API_KEY": "…" }
+    }
+  }
+}
+```
 
 ## A manifest is the method
 
