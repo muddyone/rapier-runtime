@@ -12,7 +12,14 @@ from typing import Any, Callable
 
 from .envelope import Envelope
 from .ledger import Ledger
-from .models import ModelSpec, build_client, set_transcript_sink
+from .models import (
+    ModelSpec,
+    Policy,
+    available_vendors,
+    build_client,
+    default_model,
+    set_transcript_sink,
+)
 from .stage import StageContext, get_stage
 
 
@@ -23,6 +30,34 @@ class StageSpec:
     stage: str
     config: dict[str, Any] = field(default_factory=dict)
     roles: dict[str, ModelSpec] = field(default_factory=dict)
+
+
+def _resolve_role_spec(
+    ms: ModelSpec, policy: Policy | None, available: list[str]
+) -> tuple[ModelSpec, str | None]:
+    """Keep a role's declared vendor when its key is present; otherwise remap it to
+    a policy-resolved *available* vendor (so BYO-any-vendor works, not just the
+    vendor a preset happened to name).
+
+    ``mock`` needs no key and is always kept; an explicit choice whose key IS
+    present is respected. Returns ``(spec, substituted_from)`` — ``substituted_from``
+    is the original vendor when a swap happened, else ``None``. When nothing is
+    available it leaves the spec as-is (the CLI preflight / honest skip handle
+    the no-keys case).
+    """
+    if ms.vendor == "mock" or ms.vendor in available:
+        return ms, None
+    primary, _ = (policy or Policy()).resolve(available, primary_pref=None)
+    if not primary:
+        return ms, None
+    swapped = ModelSpec(
+        vendor=primary,
+        model=default_model(primary),
+        prompt_template=ms.prompt_template,
+        max_tokens=ms.max_tokens,
+        temperature=ms.temperature,
+    )
+    return swapped, ms.vendor
 
 
 class Pipeline:
@@ -55,9 +90,20 @@ class Pipeline:
             set_transcript_sink(None)
 
     def _run_stages(self, env: Envelope, ledger, log) -> Envelope:
+        available = available_vendors()
         for spec in self.stages:
             stage = get_stage(spec.stage)()
-            clients = {role: build_client(ms) for role, ms in spec.roles.items()}
+            clients = {}
+            for role, ms in spec.roles.items():
+                rms, sub_from = _resolve_role_spec(ms, self.policy, available)
+                clients[role] = build_client(rms)
+                if sub_from:
+                    msg = (
+                        f"vendor substitution: {role} {sub_from}->{rms.vendor} "
+                        f"(no {sub_from} key; using an available vendor)"
+                    )
+                    env.add_trace(spec.stage, stage.kind, msg)
+                    log(f"  {msg}")
             ctx = StageContext(
                 config=spec.config,
                 clients=clients,

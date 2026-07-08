@@ -69,3 +69,68 @@ def test_ledger_persists_redacted_run(tmp_path):
     assert (runs[0] / "ledger.jsonl").exists()
     # owner-only permissions
     assert oct((runs[0] / "envelope.json").stat().st_mode)[-3:] == "600"
+
+
+# --- vendor-adaptive author (BYO any vendor, not just the preset's default) ---
+
+def test_resolve_role_keeps_available_and_mock():
+    from rapier.pipeline import _resolve_role_spec
+    from rapier.models import ModelSpec
+
+    ok = ModelSpec(vendor="openai", model="gpt-5.2")
+    out, sub = _resolve_role_spec(ok, None, ["mock", "openai"])
+    assert sub is None and out is ok  # key present -> declared vendor respected
+
+    mk = ModelSpec(vendor="mock", model="m1")
+    out, sub = _resolve_role_spec(mk, None, ["mock"])
+    assert sub is None and out is mk  # mock needs no key
+
+
+def test_resolve_role_substitutes_unavailable_vendor():
+    from rapier.pipeline import _resolve_role_spec
+    from rapier.models import ModelSpec, default_model
+
+    ms = ModelSpec(vendor="anthropic", model="claude-opus-4-8", max_tokens=8000)
+    out, sub = _resolve_role_spec(ms, None, ["mock", "openai"])
+    assert sub == "anthropic"
+    assert out.vendor == "openai"
+    assert out.model == default_model("openai")
+    assert out.max_tokens == 8000  # non-vendor knobs preserved
+
+
+def test_resolve_role_no_vendor_available_leaves_original():
+    from rapier.pipeline import _resolve_role_spec
+    from rapier.models import ModelSpec
+
+    ms = ModelSpec(vendor="anthropic", model="x")
+    out, sub = _resolve_role_spec(ms, None, ["mock"])  # only mock -> nothing to swap to
+    assert sub is None and out is ms
+
+
+def test_pipeline_authors_on_available_vendor_when_default_absent(monkeypatch):
+    """A user with only (say) OpenAI: the anthropic-default author runs on OpenAI."""
+    from rapier import pipeline as P
+    from rapier.models import ModelResponse, ModelSpec
+
+    monkeypatch.setattr(P, "available_vendors", lambda: ["mock", "openai"])
+
+    built: list[ModelSpec] = []
+
+    class _Stub:
+        def __init__(self, spec):
+            self.spec = spec
+
+        def complete(self, system, prompt):
+            return ModelResponse(text="ok", vendor=self.spec.vendor, model=self.spec.model)
+
+    monkeypatch.setattr(P, "build_client", lambda ms: (built.append(ms), _Stub(ms))[1])
+
+    spec = P.StageSpec(
+        stage="author",
+        roles={"author": ModelSpec(vendor="anthropic", model="claude-opus-4-8", max_tokens=8000)},
+    )
+    env = P.Pipeline([spec], name="t").run("decide X")
+
+    assert env.meta.get("author_vendor") == "openai"  # authored on the available vendor
+    assert any(ms.vendor == "openai" and ms.max_tokens == 8000 for ms in built)
+    assert any("vendor substitution" in t.summary for t in env.trace)

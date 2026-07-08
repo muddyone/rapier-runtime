@@ -1,8 +1,10 @@
 """Author stage — write the recommendation on the merits.
 
 Native model-call stage on the M0 model layer: it uses the injected ``author``
-role client (Anthropic in the spar manifest). In the original /spar this was
-the Claude orchestrator; here it is a first-class stage.
+role client. The preset names Anthropic, but the pipeline remaps the role to an
+available vendor when that key is absent (BYO-any-vendor), so a run authors on
+whatever the user actually configured. In the original /spar this was the Claude
+orchestrator; here it is a first-class stage.
 """
 from __future__ import annotations
 
