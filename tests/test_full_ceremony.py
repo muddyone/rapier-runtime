@@ -110,11 +110,14 @@ def test_compose_builds_report_and_ceremony_row():
     rider = env.trust_rider
     assert "the $12k is unsupported" in rider["contested_and_resolved"]
     assert "lock-in risk" in rider["proposer_dissent_forwarded"]
-    # Credence-style report: ALL-CAPS sections, plain-language confidence
+    # Plain-text report: ALL-CAPS ruled sections, plain-language confidence, the
+    # single ═ part break before the trust rider, and no raw markdown/shorthand.
     md = env.meta["report_md"]
-    assert "## SUMMARY" in md and "## HOW MUCH TO TRUST THIS" in md
-    assert "## STANDING OBJECTIONS FROM THE DELIBERATION" in md  # dissent forwarded
+    assert "BOTTOM LINE" in md and "HOW MUCH TO TRUST THIS" in md
+    assert "TRUST RIDER" in md and "═" in md  # the hard recommendation→rider break
+    assert "STANDING OBJECTIONS FROM THE DELIBERATION" in md  # dissent forwarded
     assert "the $12k is unsupported" in md  # a reviewer objection surfaced
+    assert "## " not in md  # no unrendered markdown headings leak through
     assert "gate=" not in md  # the old shorthand line is gone
 
 
@@ -130,7 +133,7 @@ def test_proposer_report_renders_the_handoff():
                 "standing_objections": [{"text": "cost risk", "artifact": "adr-3"}]},
     }
     md = _render_proposer_report(env)
-    assert "# RAPIER — PROPOSER REPORT" in md
+    assert "RAPIER — PROPOSER REPORT" in md and "## " not in md  # plain-text title, no markdown
     assert "Option C: do the thing" in md                       # the committed option
     assert "cost risk" in md and "adr-3" in md                  # a standing objection + its basis
     assert "SPARK" in md and "THE CUT" in md                    # how it was reached

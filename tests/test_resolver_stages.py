@@ -108,11 +108,12 @@ def test_extract_artifacts_finds_each_backend_family():
 
     text = (
         "We rely on CWE-89 for injection, per RFC 6749, and the paper "
-        "doi:10.1145/3292500.3330701. See https://example.com/spec and the "
-        "check in src/auth/login.py:42."
+        "doi:10.1145/3292500.3330701. The Log4Shell flaw (CVE-2021-44228) "
+        "applies. See https://example.com/spec and the check in src/auth/login.py:42."
     )
     refs = [a["artifact_ref"] for a in extract_artifacts(text)]
     assert "CWE-89" in refs
+    assert "CVE-2021-44228" in refs  # CVE is extracted, distinct from CWE
     assert any(r.upper().startswith("RFC") and "6749" in r for r in refs)
     assert any(r.startswith("10.1145/") for r in refs)
     assert "https://example.com/spec" in refs

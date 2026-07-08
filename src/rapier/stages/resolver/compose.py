@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import textwrap
 
 from ...envelope import Envelope
 from ...secrets import redact_obj
@@ -48,46 +50,213 @@ def _reviewer_sentence(review) -> str:
             "so this challenge was NOT independent — weigh it with that in mind.")
 
 
+# ── plain-text layout ────────────────────────────────────────────────────────
+# The report prints to a terminal where NO markdown renders, so hierarchy comes
+# from case, rules, and whitespace — never from `#`/`**`. One character, one job:
+#   ═  the single RECOMMENDATION → TRUST RIDER part break, used nowhere else
+#   ─  ordinary section rule (under an ALL-CAPS title)
+#   =  the document-title underline
+# Body is indented two spaces so an embedded recommendation's own Title-case
+# sub-headings read as content *inside* a section, never as peers of it.
+_W = 64
+_RULE = "─" * _W
+_HEAVY = "═" * _W
+
+
+def _indent(body: str, n: int = 2) -> str:
+    pad = " " * n
+    return "\n".join((pad + ln) if ln.strip() else "" for ln in (body or "").split("\n"))
+
+
+def _para(text: str, width: int = _W - 2) -> str:
+    """Hard-wrap generated prose to the measure, preserving blank-line paragraph
+    breaks. For the report's own sentences — NOT the author's recommendation,
+    which is reflowed separately so its lists and structure survive."""
+    blocks = re.split(r"\n\s*\n", text or "")
+    return "\n\n".join(textwrap.fill(b.strip(), width=width) for b in blocks if b.strip())
+
+
+_LIST_RE = re.compile(r"^\s*([-*•]|\d+[.)])\s+(.*)$")
+
+
+def _reflow(text: str, width: int = _W - 2) -> str:
+    """Reflow the author's recommendation to the measure WITHOUT mangling it:
+    consecutive prose lines wrap as one paragraph, list items wrap individually
+    with a hanging indent (markers preserved; ordered numbering kept), and blank
+    lines / demoted sub-headings are left as their own lines."""
+    out: list[str] = []
+    para: list[str] = []
+
+    def flush():
+        if para:
+            out.append(textwrap.fill(" ".join(para), width=width))
+            para.clear()
+
+    for ln in (text or "").split("\n"):
+        if not ln.strip():
+            flush()
+            out.append("")
+            continue
+        m = _LIST_RE.match(ln)
+        if m:
+            flush()
+            mk = "•" if m.group(1) in ("-", "*", "•") else m.group(1)
+            init = mk + " "
+            out.append(textwrap.fill(m.group(2).strip(), width=width,
+                                     initial_indent=init, subsequent_indent=" " * len(init)))
+        else:
+            para.append(ln.strip())
+    flush()
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip("\n")
+
+
+def _sec(title: str, gloss: str, body: str) -> list[str]:
+    """An ALL-CAPS section: title, a full-width rule under it, a flush-left one-line
+    gloss (what the section is for), then the indented body."""
+    out = ["", "", title, _RULE]
+    if gloss:
+        out += [textwrap.fill(gloss, width=_W), ""]
+    out += [_indent(body)]
+    return out
+
+
+def _bullets(items) -> str:
+    """One finding per bullet, hanging-indented so the marker column stays a clean
+    vertical scan-line."""
+    return "\n".join(
+        textwrap.fill(str(it).strip(), width=_W, initial_indent="• ", subsequent_indent="  ")
+        for it in items
+    )
+
+
+def _demote_md(text: str) -> str:
+    """Neutralize an embedded recommendation's own markdown so it cannot compete
+    with the report's structure: ATX headings (`## X`) become bare Title-case
+    lines, and `**bold**` / `` `code` `` markers are stripped (they render as
+    literal punctuation in a terminal)."""
+    lines = []
+    for ln in (text or "").split("\n"):
+        m = re.match(r"^\s*#{1,6}\s+(.*?)\s*#*\s*$", ln)
+        lines.append(m.group(1) if m else ln)
+    s = "\n".join(lines)
+    s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)   # bold
+    s = re.sub(r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])", r"\1", s)  # italic
+    s = re.sub(r"(?<!\w)`([^`]+)`(?!\w)", r"\1", s)  # inline code
+    return s
+
+
+# The stored verdicts carry the citation gate's shape (``status``:
+# verified|refuted|unverifiable|unverified-not-checked); we also tolerate the raw
+# backend shape (``grounding``: GROUNDED_VERIFIED …) so either reaches the reader.
+_GROUNDING_LABEL = {
+    "verified": "VERIFIED", "grounded_verified": "VERIFIED",
+    "refuted": "REFUTED", "grounded_refuted": "REFUTED",
+    "unverifiable": "COULD NOT CHECK",
+    "unverified-not-checked": "COULD NOT CHECK", "unverified_not_checked": "COULD NOT CHECK",
+    "ungrounded": "NOT CHECKABLE",
+}
+_GROUNDING_BACKEND = {
+    "mitre-cve": "MITRE CVE Services", "mitre-cwe": "MITRE CWE",
+    "ietf-datatracker": "IETF datatracker", "crossref": "Crossref",
+    "web-fetch": "live fetch", "repo": "the repository", "in-pack": "the briefing",
+}
+
+
+def _v_status(v: dict) -> str:
+    return (v.get("status") or v.get("grounding") or "").lower()
+
+
+def _grounding_body(env: Envelope) -> str:
+    """Surface the citation gate's per-reference verdicts — the flagship
+    'confirmed against public registries, no model in the loop' property. Was
+    computed and discarded before; now it is shown."""
+    verdicts = env.meta.get("citation_verdicts") or []
+    if not verdicts:
+        return ("The recommendation cited nothing externally checkable — no CVE, CWE, "
+                "RFC, DOI, or URL — so there was nothing to confirm against a public "
+                "registry. This is normal for judgment and strategy questions, where the "
+                "load-bearing work is the cross-vendor challenge above, not citation.")
+    lines = []
+    nver = 0
+    for v in verdicts:
+        ref = v.get("artifact_ref", "?")
+        key = _v_status(v)
+        is_ver = key in ("verified", "grounded_verified")
+        nver += is_ver
+        status = _GROUNDING_LABEL.get(key, (key or "?").upper())
+        backend = _GROUNDING_BACKEND.get(v.get("backend", ""), v.get("backend", ""))
+        head = f"{ref} — {status}" + (f"  ·  {backend}" if backend else "")
+        lines.append(textwrap.fill(head, width=_W, subsequent_indent="    "))
+        if is_ver:
+            ev = (v.get("evidence") or "").split(":", 1)[-1].strip()
+            if ev:
+                lines.append(textwrap.fill(ev[:200], width=_W - 4,
+                                           initial_indent="    ", subsequent_indent="    "))
+    n = len(verdicts)
+    plural = "reference" if n == 1 else "references"
+    lines += ["", textwrap.fill(
+        f"Grounding: {nver} of {n} checkable {plural} confirmed against public "
+        "canon, with no model in the loop.", width=_W)]
+    return "\n".join(lines)
+
+
 def _render_report(env: Envelope) -> str:
     review = env.meta.get("review") or {}
     gate = env.meta.get("definitiveness") or {}
     rider = env.trust_rider or {}
     topic = (env.request or "").strip().splitlines()[0][:100] if env.request else ""
 
-    L = ["# RAPIER — RESOLVER REPORT", ""]
+    title = "RAPIER — RESOLVER REPORT"
+    L = [title, "=" * len(title)]
     if topic:
-        L += [f"*On: {topic}*", ""]
+        L += ["", f"On: {topic}"]
 
-    L += ["## SUMMARY", "*The bottom line — how far to trust this, in one breath.*", "",
-          _verdict_sentence(env.verdict, gate) + " The full advice is under THE RECOMMENDATION below.", ""]
+    L += _sec("BOTTOM LINE",
+              "How far to trust this, in one breath.",
+              _para(_verdict_sentence(env.verdict, gate)
+                    + " The full advice is under THE RECOMMENDATION below."))
 
-    L += ["## THE RECOMMENDATION", "*The answer on the merits — read this as the actual advice.*", "",
-          env.recommendation or "(none produced)", ""]
+    L += _sec("THE RECOMMENDATION",
+              "The answer on the merits — read this as the actual advice.",
+              _reflow(_demote_md(env.recommendation or "(none produced)")))
 
-    L += ["## WHAT TO CHECK AGAINST YOUR SITUATION",
-          "*Figures that rest on an assumption rather than a fact you gave — verify these before you lean on them.*", ""]
+    # ── the single hard break: advice ends, trust rider begins ────────────────
+    L += ["", "", _HEAVY, "  TRUST RIDER", _HEAVY, "",
+          "Everything below is about how far to trust the recommendation above —",
+          "kept deliberately separate from the advice itself."]
+
     assumptions = rider.get("assumptions_to_verify") or []
-    L += ([f"- {a}" for a in assumptions] if assumptions
-          else ["Nothing flagged — the load-bearing specifics trace to the facts you provided."]) + [""]
+    L += _sec("WHAT TO CHECK AGAINST YOUR SITUATION",
+              "Figures that rest on an assumption rather than a fact you gave — "
+              "verify these before you lean on them.",
+              _bullets(assumptions) if assumptions
+              else "Nothing flagged — the load-bearing specifics trace to the facts you provided.")
 
-    L += ["## WHERE IT WAS PUSHED BACK ON",
-          "*The material objections the independent reviewer raised, and that the recommendation was revised to address.*", ""]
+    L += _sec("WHAT WAS VERIFIED AGAINST PUBLIC REGISTRIES",
+              "Checkable references the recommendation cites, each resolved against "
+              "external canon (MITRE, IETF, Crossref, live web) with no model in the loop.",
+              _grounding_body(env))
+
     contested = _texts(review.get("objections"))
-    L += ([f"- {c}" for c in contested] if contested
-          else ["The independent review raised no material objections."]) + [""]
+    L += _sec("WHERE IT WAS PUSHED BACK ON",
+              "The material objections the independent reviewer raised, and that the "
+              "recommendation was revised to address.",
+              _bullets(contested) if contested
+              else "The independent review raised no material objections.")
 
     dissent = rider.get("proposer_dissent_forwarded")
     if dissent:
-        L += ["## STANDING OBJECTIONS FROM THE DELIBERATION",
-              "*Unresolved concerns the Proposer half handed forward — weigh these yourself.*", ""]
-        L += [f"- {c}" for c in dissent] + [""]
+        L += _sec("STANDING OBJECTIONS FROM THE DELIBERATION",
+                  "Unresolved concerns the Proposer half handed forward — weigh these yourself.",
+                  _bullets(dissent))
 
-    L += ["## HOW MUCH TO TRUST THIS",
-          "*The confidence read, in plain words — kept separate from the recommendation itself.*", "",
-          _reviewer_sentence(review),
-          "What this cannot know: your real constraints, costs, and priorities — the load-bearing call stays yours.", ""]
+    L += _sec("HOW MUCH TO TRUST THIS",
+              "The confidence read, in plain words — kept separate from the recommendation itself.",
+              _para(_reviewer_sentence(review)
+                    + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
+                    "the load-bearing call stays yours."))
 
-    return "\n".join(L)
+    return "\n".join(L).rstrip() + "\n"
 
 
 def _proposer_phase_line(ph, label, settled, unsettled):
@@ -95,7 +264,7 @@ def _proposer_phase_line(ph, label, settled, unsettled):
         return None
     r = ph.get("rounds")
     rtxt = f" over {r} round" + ("s" if r != 1 else "") if r else ""
-    return f"- **{label}**{rtxt}: " + (settled if ph.get("converged") else unsettled) + "."
+    return f"{label}{rtxt} — " + (settled if ph.get("converged") else unsettled) + "."
 
 
 def _render_proposer_report(env: Envelope) -> str | None:
@@ -109,29 +278,33 @@ def _render_proposer_report(env: Envelope) -> str | None:
     spark, plock, cut = (prop.get("spark") or {}), (prop.get("pattern_lock") or {}), (prop.get("cut") or {})
     topic = (env.request or "").strip().splitlines()[0][:100] if env.request else ""
 
-    L = ["# RAPIER — PROPOSER REPORT", ""]
+    title = "RAPIER — PROPOSER REPORT"
+    L = [title, "=" * len(title)]
     if topic:
-        L += [f"*On: {topic}*", ""]
-    L += ["*The first half of SPARRING: widen the options, filter false novelty, and commit one — "
-          "with its unresolved objections — for the Resolver to pressure-test.*", ""]
+        L += ["", f"On: {topic}"]
+    L += ["",
+          textwrap.fill("The first half of SPARRING: widen the options, filter false "
+                        "novelty, and commit one — with its unresolved objections — for "
+                        "the Resolver to pressure-test.", width=_W)]
 
-    L += ["## THE COMMITTED OPTION",
-          "*What the deliberation chose to put forward for pressure-testing.*", "",
-          (env.committed or "(no single option was committed — the deliberation did not converge)").strip(), ""]
+    L += _sec("THE COMMITTED OPTION",
+              "What the deliberation chose to put forward for pressure-testing.",
+              _reflow(_demote_md((env.committed
+                       or "(no single option was committed — the deliberation did not converge)").strip())))
 
-    L += ["## STANDING OBJECTIONS CARRIED FORWARD",
-          "*Unresolved concerns the deliberation could not settle — handed forward to weigh, not buried.*", ""]
     objs = []
     for ph in (cut, plock):
         for o in ph.get("standing_objections") or []:
             if isinstance(o, dict) and o.get("text"):
                 art = o.get("artifact")
-                objs.append(f"- {o['text']}" + (f"  _(basis: {art})_" if art else ""))
-    L += (objs if objs else ["None — the deliberation closed without unresolved objections."]) + [""]
+                objs.append(o["text"] + (f"  (basis: {art})" if art else ""))
+    L += _sec("STANDING OBJECTIONS CARRIED FORWARD",
+              "Unresolved concerns the deliberation could not settle — handed forward "
+              "to weigh, not buried.",
+              _bullets(objs) if objs
+              else "None — the deliberation closed without unresolved objections.")
 
-    L += ["## HOW IT WAS REACHED",
-          "*The shape of the deliberation — the three phases, and whether each settled.*", ""]
-    for line in (
+    how = [ln for ln in (
         _proposer_phase_line(spark, "SPARK — widened the options",
                              "both roles agreed the option space was saturated",
                              "the roles did not agree the space was saturated (hit the round cap)"),
@@ -141,22 +314,22 @@ def _render_proposer_report(env: Envelope) -> str | None:
         _proposer_phase_line(cut, "THE CUT — committed one option",
                              "both roles agreed on the option to put forward",
                              "the roles could not agree on a single option"),
-    ):
-        if line:
-            L.append(line)
+    ) if ln]
     gv = cut.get("generator_vendor") or spark.get("generator_vendor")
     cv = cut.get("challenger_vendor") or spark.get("challenger_vendor")
     xv = cut.get("cross_vendor") if cut.get("cross_vendor") is not None else spark.get("cross_vendor")
     if xv is not None:
-        L += [""]
         if xv and gv and cv:
-            L += [f"The generator and challenger ran on different vendors ({gv} vs {cv}) — "
-                  "a genuinely independent deliberation."]
+            how += ["", f"The generator and challenger ran on different vendors ({gv} vs {cv}) — "
+                        "a genuinely independent deliberation."]
         else:
-            L += [f"The generator and challenger ran on the same vendor ({gv or '—'}) — "
-                  "the deliberation was NOT cross-vendor; weigh it accordingly."]
-    L += [""]
-    return "\n".join(L)
+            how += ["", f"The generator and challenger ran on the same vendor ({gv or '—'}) — "
+                        "the deliberation was NOT cross-vendor; weigh it accordingly."]
+    L += _sec("HOW IT WAS REACHED",
+              "The shape of the deliberation — the three phases, and whether each settled.",
+              "\n".join(how))
+
+    return "\n".join(L).rstrip() + "\n"
 
 
 def _ceremony_row(env: Envelope) -> dict:
@@ -232,6 +405,12 @@ class ComposeStage(TransformStage):
                 ctx.ledger.write_json("review.json", review)
             if gate:
                 ctx.ledger.write_json("definitiveness.json", gate)
+            verdicts = env.meta.get("citation_verdicts")
+            if verdicts is not None:
+                ctx.ledger.write_json("grounding.json", {
+                    "summary": env.meta.get("citation_gate"),
+                    "verdicts": verdicts,
+                })
             ctx.ledger.write_json("ceremony.json", row)
         _append_corpus_ledger(row)
 

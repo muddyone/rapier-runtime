@@ -1,8 +1,8 @@
 """Extract checkable artifacts from recommendation text for the citation gate.
 
 The vendored grounding checker (``verify_grounding.classify``) routes a ref to a
-backend by pattern — CWE (MITRE), RFC (IETF datatracker), DOI / arXiv (Crossref),
-url (liveness), code (``path:line``). This module's only job is to *find* those
+backend by pattern — CVE (MITRE CVE Services), CWE (MITRE), RFC (IETF datatracker),
+DOI / arXiv (Crossref), url (liveness), code (``path:line``). This module's only job is to *find* those
 tokens in free-form prose and hand them over as artifact dicts; the checker
 decides what each one is and whether it resolves against external canon.
 
@@ -22,6 +22,7 @@ _PATTERNS = (
     re.compile(r"https?://[^\s)>\]}\"'`]+", re.I),                              # url
     re.compile(r"\b10\.\d{4,9}/[^\s)>\]}\"'`]+", re.I),                         # doi
     re.compile(r"\barxiv[:/ ]?\d{4}\.\d{4,5}\b", re.I),                        # arxiv
+    re.compile(r"\bCVE-\d{4}-\d{3,}\b", re.I),                                 # cve
     re.compile(r"\bCWE-\d+\b", re.I),                                          # cwe
     re.compile(r"\bRFC[\s-]?\d+\b", re.I),                                     # rfc
     re.compile(r"\b[\w/][\w/.\-]*\.(?:php|py|js|ts|go|java|rb|cpp|sql):\d+\b"),  # code path:line

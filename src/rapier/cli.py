@@ -13,7 +13,9 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tempfile
 
 from . import stages  # noqa: F401  (ensure built-in stages are registered)
 from .manifest import Manifest
@@ -21,8 +23,12 @@ from .presets import VERIFY_MODES, load_preset
 
 
 def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False) -> int:
+    # Always capture a run: without an explicit --ledger-dir, write the full
+    # transcript + per-stage records under a temp dir and tell the user where.
+    default_root = ledger_dir is None
+    root = ledger_dir or os.path.join(tempfile.gettempdir(), "rapier-runs")
     env = manifest.build().run(
-        request, ledger_root=ledger_dir, log=lambda msg: print(f"· {msg}", file=sys.stderr)
+        request, ledger_root=root, log=lambda msg: print(f"· {msg}", file=sys.stderr)
     )
     # Prefer the composed report if the pipeline produced one.
     out = env.meta.get("report_md") or env.recommendation or ""
@@ -30,8 +36,15 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     # parts — the Proposer commits an option, the Resolver pressure-tests it).
     proposer_md = env.meta.get("proposer_report_md")
     if report_all and proposer_md:
-        out = f"{proposer_md}\n\n---\n\n{out}"
+        out = f"{proposer_md}\n\n{out}"
     print(out)
+    run_id = env.meta.get("run_id")
+    if run_id:
+        run_dir = os.path.join(root, run_id)
+        hint = "Full transcript, per-stage records, and this report saved to:"
+        if default_root:
+            hint = "No --ledger-dir given, so the full transcript + records were saved to:"
+        print(f"\n· {hint}\n  {run_dir}", file=sys.stderr)
     return 0
 
 

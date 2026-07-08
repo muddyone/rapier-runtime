@@ -55,6 +55,7 @@ CITE_CHECK_PY = os.environ.get(
     os.path.join(os.path.dirname(os.path.abspath(__file__)),
                  "..", "..", "cite-check", "scripts", "cite_check.py"))
 CWE_API = "https://cwe-api.mitre.org/api/v1/cwe/weakness/{id}"
+CVE_API = "https://cveawg.mitre.org/api/cve/CVE-{id}"
 RFC_API = "https://datatracker.ietf.org/api/v1/doc/document/rfc{id}/?format=json"
 HTTP_TIMEOUT = 30
 _STOP = set("the a an of for and or to in on at by with from is are was were be as that this "
@@ -88,6 +89,8 @@ def classify(ref):
     s = (ref or "").strip()
     if not s:
         return "none"
+    if re.search(r"\bCVE-\d{4}-\d{3,}\b", s, re.I):
+        return "cve"
     if re.search(r"\bCWE-\d+\b", s, re.I):
         return "cwe"
     if re.search(r"\bRFC[\s-]?\d+\b", s, re.I):
@@ -170,6 +173,39 @@ def backend_cwe(ref):
         desc = " ".join(filter(None, [w.get("Description"), w.get("ExtendedDescription")]))
         return "GROUNDED_VERIFIED", f"CWE-{cid}: {name}", f"CWE-{cid} {name}. {desc}"
     return "GROUNDED_REFUTED", f"CWE-{cid} not found at MITRE", None
+
+
+# ---------------- CVE backend (MITRE CVE Services) ----------------
+def backend_cve(ref):
+    """A CVE is real iff MITRE's CVE Services API has a record for it. A published
+    record -> VERIFIED; a REJECTED (withdrawn) record or a 404 -> REFUTED.
+    Returns (grounding, evidence_str, judge_evidence)."""
+    m = re.search(r"CVE-(\d{4}-\d{3,})", ref, re.I)
+    if not m:
+        return "UNVERIFIED_NOT_CHECKED", "no CVE id parsed", None
+    cid = m.group(1)
+    try:
+        _, data = _http_json(CVE_API.format(id=cid))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return "GROUNDED_REFUTED", f"CVE-{cid} does not exist (MITRE 404)", None
+        return "UNVERIFIED_NOT_CHECKED", f"MITRE http {e.code}", None
+    except Exception as e:
+        return "UNVERIFIED_NOT_CHECKED", f"MITRE error: {e}", None
+    state = (data.get("cveMetadata") or {}).get("state") or ""
+    if state.upper() == "REJECTED":
+        return "GROUNDED_REFUTED", f"CVE-{cid} was REJECTED/withdrawn at MITRE", None
+    cna = (data.get("containers") or {}).get("cna") or {}
+    title = cna.get("title") or ""
+    desc = ""
+    for d in cna.get("descriptions") or []:
+        if (d.get("lang") or "").lower().startswith("en"):
+            desc = d.get("value") or ""
+            break
+    if not desc and (cna.get("descriptions") or []):
+        desc = cna["descriptions"][0].get("value") or ""
+    label = title or (desc[:80] + ("…" if len(desc) > 80 else "")) or f"CVE-{cid}"
+    return "GROUNDED_VERIFIED", f"CVE-{cid}: {label}", f"CVE-{cid} {title}. {desc}"
 
 
 # ---------------- RFC / IETF backend (datatracker) ----------------
@@ -509,6 +545,8 @@ def verify_concern(c, judge=False, map_claims=False):
         grounding, backend, ev = "UNGROUNDED", "none", "no checkable artifact cited"
     elif atype == "literature":
         grounding, ev, judge_ev = backend_literature(ref, text); backend = "crossref"
+    elif atype == "cve":
+        grounding, ev, judge_ev = backend_cve(ref); backend = "mitre-cve"
     elif atype == "cwe":
         grounding, ev, judge_ev = backend_cwe(ref); backend = "mitre-cwe"
     elif atype == "rfc":
