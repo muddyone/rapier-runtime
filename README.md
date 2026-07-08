@@ -49,7 +49,7 @@ today:
   `yaml.safe_load`; a [threat model](docs/threat-model.md) and a
   [security policy](SECURITY.md).
 
-108 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
+111 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
 
 **Honest boundary.** The definitiveness gate, anchored correction, and the
 two-part trust rider are *exploratory* governance instruments — useful, but not

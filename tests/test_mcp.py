@@ -49,3 +49,56 @@ def test_cli_mcp_is_wired(monkeypatch):
 
     monkeypatch.setattr(mcp_pkg, "serve", lambda: 0)  # don't launch a real server
     assert cli.main(["mcp"]) == 0
+
+
+# --- MCP-1: progress streaming + tool registration (need the SDK/anyio) ---
+
+def test_run_with_progress_streams_stage_progress():
+    import pytest
+
+    anyio = pytest.importorskip("anyio")
+
+    class _Ctx:
+        def __init__(self):
+            self.infos: list[str] = []
+            self.progress: list[tuple] = []
+
+        async def info(self, m):
+            self.infos.append(m)
+
+        async def report_progress(self, done, total=None):
+            self.progress.append((done, total))
+
+    def _fn(log=None, **kw):
+        log("stage: author (transform)")
+        log("  vendor substitution: author anthropic->openai (no anthropic key)")
+        log("stage: compose (transform)")
+        return {"ok": True, "report_md": "R"}
+
+    ctx = _Ctx()
+    out = anyio.run(server._run_with_progress, _fn, ctx, 2)
+    assert out == {"ok": True, "report_md": "R"}
+    assert ctx.progress == [(1, 2), (2, 2)]  # one tick per 'stage:' line
+    assert any("substitution" in m for m in ctx.infos)  # every line streamed as info
+
+
+def test_run_with_progress_tolerates_no_ctx():
+    import pytest
+
+    anyio = pytest.importorskip("anyio")
+
+    def _fn(log=None, **kw):
+        log("stage: author (transform)")
+        return {"ok": True}
+
+    assert anyio.run(server._run_with_progress, _fn, None, 1) == {"ok": True}
+
+
+def test_build_server_registers_all_tools():
+    import pytest
+
+    anyio = pytest.importorskip("anyio")
+    pytest.importorskip("mcp")
+    srv = server.build_server()
+    names = {t.name for t in anyio.run(srv.list_tools)}
+    assert {"spar", "sparring", "rapier_doctor"} <= names

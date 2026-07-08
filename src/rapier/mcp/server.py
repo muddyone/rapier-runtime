@@ -5,10 +5,71 @@ SDK is imported lazily inside :func:`build_server`, so importing this module (an
 the rest of the CLI) never needs it. Keys are supplied by the MCP client in the
 server's ``env`` block and read from the environment like everywhere else — the
 engine still reads no secret from a file.
-"""
-from __future__ import annotations
 
+Tools return a **structured** result (recommendation + trust rider markdown, the
+definitiveness verdict, the live grounding summary, cross-vendor status, and any
+forwarded standing objections). A ceremony is many model calls and can run for
+minutes, so the tools **stream per-stage progress** to the client: the engine's
+run-log lines are bridged from the worker thread to MCP ``info`` + ``report_progress``
+notifications, so the client shows life instead of a hang.
+
+NOTE: this module deliberately does *not* use ``from __future__ import
+annotations`` — FastMCP evaluates each tool's signature, and the lazily-imported
+``Context`` annotation must be a real class object at definition time, not a
+string it cannot resolve.
+"""
 import sys
+from typing import Any, Callable
+
+
+async def _run_with_progress(
+    fn: Callable[..., dict], ctx: Any, total: int, **kwargs: Any
+) -> dict:
+    """Run a blocking tool ``fn(log=…, **kwargs)`` in a worker thread while
+    streaming its log lines to the MCP client as info + progress notifications.
+
+    ``ctx`` may be ``None`` (e.g. in a unit test with no session), in which case
+    the run proceeds silently. Progress ticks once per pipeline stage (``stage:``
+    log lines); every line is also sent as an ``info`` message.
+    """
+    import queue as _queue
+
+    import anyio
+
+    q: _queue.Queue = _queue.Queue()
+    sentinel = object()
+    box: dict[str, dict] = {}
+
+    def _log(msg: str) -> None:
+        q.put(str(msg))
+
+    def _work() -> None:
+        box["result"] = fn(log=_log, **kwargs)
+
+    async def _drain() -> None:
+        done = 0
+        while True:
+            try:
+                msg = q.get_nowait()
+            except _queue.Empty:
+                await anyio.sleep(0.02)
+                continue
+            if msg is sentinel:
+                return
+            if ctx is not None:
+                await ctx.info(msg)
+                if msg.startswith("stage:"):
+                    done += 1
+                    try:
+                        await ctx.report_progress(done, total)
+                    except Exception:
+                        pass  # progress is best-effort; never fail a run over it
+
+    async with anyio.create_task_group() as tg:
+        tg.start_soon(_drain)
+        await anyio.to_thread.run_sync(_work)
+        q.put(sentinel)
+    return box.get("result", {"ok": False, "error": "run produced no result"})
 
 
 def build_server():
@@ -17,29 +78,43 @@ def build_server():
     Raises ``ImportError`` if the ``mcp`` extra is not installed (handled by
     :func:`serve`).
     """
-    from mcp.server.fastmcp import FastMCP  # optional dependency
+    from mcp.server.fastmcp import Context, FastMCP  # optional dependency
 
+    from ..presets import load_preset
     from . import tools
 
     server = FastMCP("rapier")
 
+    def _stage_total(name: str, settle: int, verify: str) -> int:
+        try:
+            return len(load_preset(name, settle=settle, verify=verify).stages)
+        except Exception:
+            return 0
+
     @server.tool()
-    def spar(request: str, settle: int = 0, verify: str = "gate") -> dict:
+    async def spar(
+        request: str, settle: int = 0, verify: str = "gate", ctx: Context = None
+    ) -> dict:
         """Run the SPARRING Resolver on a decision: one grounded, cross-vendor
         challenge plus a definitiveness gate. Returns a recommendation, a trust
         rider, and the grounding verdict. ``settle`` adds review-and-revise rounds
         (default 0); ``verify`` is off|gate|round for the external-canon gate."""
-        return tools.run_spar(request, settle=settle, verify=verify)
+        return await _run_with_progress(
+            tools.run_spar, ctx, _stage_total("spar", settle, verify),
+            request=request, settle=settle, verify=verify,
+        )
 
     @server.tool()
-    def sparring(
-        request: str, settle: int = 0, verify: str = "gate", report_all: bool = False
+    async def sparring(
+        request: str, settle: int = 0, verify: str = "gate",
+        report_all: bool = False, ctx: Context = None,
     ) -> dict:
         """Run the full SPARRING ceremony (Proposer, then Resolver) on a decision.
         ``report_all`` also returns the Proposer handoff (the committed option and
         its standing objections)."""
-        return tools.run_sparring(
-            request, settle=settle, verify=verify, report_all=report_all
+        return await _run_with_progress(
+            tools.run_sparring, ctx, _stage_total("sparring", settle, verify),
+            request=request, settle=settle, verify=verify, report_all=report_all,
         )
 
     @server.tool()
