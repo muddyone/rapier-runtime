@@ -32,7 +32,17 @@ from .stage import (
 )
 from . import stages  # noqa: F401  (registers built-in stages on import)
 
-__version__ = "0.0.1"
+# Single source of truth is pyproject's version; read it from the installed
+# package metadata so __version__ can never drift from what was published.
+try:
+    from importlib.metadata import PackageNotFoundError, version as _pkg_version
+
+    try:
+        __version__ = _pkg_version("rapier-runtime")
+    except PackageNotFoundError:  # running from a source tree, not installed
+        __version__ = "0.0.0+source"
+except Exception:  # pragma: no cover - defensive
+    __version__ = "0.0.0+source"
 
 __all__ = [
     "Envelope",

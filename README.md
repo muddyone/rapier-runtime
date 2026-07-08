@@ -156,6 +156,29 @@ environment (it still reads no secret from a file):
 }
 ```
 
+## Updating & staying current
+
+Check your version, and update to the latest release:
+
+```bash
+rapier --version                    # what you have (also shown by `rapier doctor`)
+pip install -U rapier-runtime       # update to the latest ( add [mcp] if you use the MCP server )
+```
+
+Because Rapier can read files, fetch URLs, and call model vendors, **staying
+current matters for security.** How to hear about issues:
+
+- **Security fixes** are published as **GitHub Security Advisories**, which flow
+  into the Python vulnerability databases — so `pip-audit` and GitHub Dependabot
+  will flag an affected version automatically if you use them.
+- **Watch [Releases](https://github.com/muddyone/rapier-runtime/releases)** on
+  GitHub (Watch → Custom → Releases) to be notified of new versions.
+- **Found a vulnerability?** Report it privately — see
+  [`SECURITY.md`](SECURITY.md). Please don't open a public issue.
+
+Rapier does **not** phone home to check for updates — nothing about your usage
+leaves your machine except the model calls you configure.
+
 ## A manifest is the method
 
 ```yaml

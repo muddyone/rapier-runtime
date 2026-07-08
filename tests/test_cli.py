@@ -58,3 +58,26 @@ def test_empty_request_exits_2(tmp_path, capsys):
     rc = main(["spar", "--request-file", str(p)])
     assert rc == 2
     assert "empty" in capsys.readouterr().err
+
+
+def test_version_flag_exits_0_and_prints(capsys):
+    with pytest.raises(SystemExit) as e:
+        main(["--version"])
+    assert e.value.code == 0
+    assert "rapier-runtime" in capsys.readouterr().out
+
+
+def test_progress_non_tty_numbers_stages_no_control_chars():
+    import io
+
+    from rapier.cli import _Progress
+
+    buf = io.StringIO()  # isatty() -> False, so the plain (piped) path
+    p = _Progress(total=2, stream=buf)
+    p.log("stage: author (transform)")
+    p.log("stage: compose (transform)")
+    p.done()
+    out = buf.getvalue()
+    assert "[1/2] Drafting the recommendation" in out
+    assert "[2/2] Composing the report" in out
+    assert "\r" not in out  # no spinner/carriage-returns when piped

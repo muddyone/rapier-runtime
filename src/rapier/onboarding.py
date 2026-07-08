@@ -44,10 +44,20 @@ def preflight_error() -> str | None:
 
 
 def doctor_report() -> str:
-    """Human-readable setup report. Reports env-var *presence* only — never values."""
+    """Human-readable setup + about report. Reports env-var *presence* only — never values."""
+    from . import __version__
+
     envs = vendor_key_envs()
     configured = set(configured_vendors())
-    lines = ["Rapier — vendor key check", ""]
+    lines = [
+        f"Rapier Runtime {__version__}",
+        "  home       https://rapierruntime.com",
+        "  update     pip install -U rapier-runtime",
+        "  security   report privately — see SECURITY.md (GitHub advisories)",
+        "",
+        "Vendor keys (presence only — values are never shown)",
+        "",
+    ]
     for v in _ordered_vendors():
         mark = "✓" if v in configured else "·"  # ✓ / ·
         tag = " (frontier)" if v in frontier_vendors() else ""

@@ -89,3 +89,11 @@ def test_cli_doctor_and_init_run(monkeypatch, tmp_path):
     assert cli.main(["doctor"]) == 0
     assert cli.main(["init", "--dir", str(tmp_path)]) == 0
     assert (tmp_path / ".env.example").exists()
+
+
+def test_doctor_shows_version_home_and_update(monkeypatch):
+    _clear_all_keys(monkeypatch)
+    r = onboarding.doctor_report()
+    assert "Rapier Runtime" in r
+    assert "rapierruntime.com" in r
+    assert "pip install -U rapier-runtime" in r

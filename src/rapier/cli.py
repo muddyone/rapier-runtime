@@ -14,13 +14,96 @@
 from __future__ import annotations
 
 import argparse
+import itertools
 import os
+import re
 import sys
 import tempfile
+import threading
+import time
 
-from . import stages  # noqa: F401  (ensure built-in stages are registered)
+from . import __version__, stages  # noqa: F401  (ensure built-in stages are registered)
 from .manifest import Manifest
 from .presets import VERIFY_MODES, load_preset
+
+# A ceremony is a sequence of model calls that each take tens of seconds — long
+# enough that a novice fears it hung. Give each stage a plain-language label and,
+# on a TTY, a live spinner + elapsed clock + "N/M" so it plainly reads as working.
+_STAGE_LABELS = {
+    "author": "Drafting the recommendation",
+    "cross_review": "Independent cross-vendor challenge",
+    "anchored_fix": "Revising to address the challenge",
+    "definitiveness_gate": "Correctness check",
+    "citation_gate": "Grounding citations against public registries",
+    "compose": "Composing the report",
+    "spark": "Widening the options (SPARK)",
+    "pattern_lock": "Filtering repetition (Pattern Lock)",
+    "cut": "Committing one option (the Cut)",
+    "echo": "Echo",
+}
+
+
+class _Progress:
+    """Render stage progress. On a TTY: an in-place spinner + elapsed seconds +
+    N/M counter, animated on a background thread while the (blocking) stage runs.
+    Piped/redirected: plain one-line-per-stage output, no control characters, so
+    logs stay clean."""
+
+    _FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def __init__(self, total: int, stream=None):
+        self.total = total
+        self.stream = stream or sys.stderr
+        self.tty = bool(getattr(self.stream, "isatty", lambda: False)())
+        self.i = 0
+        self._label = ""
+        self._start = 0.0
+        self._stop = None
+        self._thread = None
+
+    def log(self, msg: str) -> None:
+        m = re.match(r"stage: (\w+)", msg)
+        if m:
+            self._finish()
+            self.i += 1
+            self._label = _STAGE_LABELS.get(m.group(1), m.group(1).replace("_", " "))
+            self._begin()
+        elif any(w in msg.lower() for w in ("fail", "cancel", "error")):
+            if self.tty:
+                self.stream.write("\r" + " " * 72 + "\r")
+            print(f"· {msg.strip()}", file=self.stream, flush=True)
+        elif not self.tty:
+            print(f"·   {msg.strip()}", file=self.stream, flush=True)
+
+    def _begin(self) -> None:
+        if not self.tty:
+            print(f"· [{self.i}/{self.total}] {self._label}…", file=self.stream, flush=True)
+            return
+        self._start = time.monotonic()
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def _spin(self) -> None:
+        frames = itertools.cycle(self._FRAMES)
+        while not self._stop.is_set():
+            el = int(time.monotonic() - self._start)
+            self.stream.write(f"\r  {next(frames)} [{self.i}/{self.total}] {self._label}… {el}s   ")
+            self.stream.flush()
+            self._stop.wait(0.1)
+
+    def _finish(self) -> None:
+        if not self._thread:
+            return
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+        el = int(time.monotonic() - self._start)
+        self.stream.write(f"\r  ✓ [{self.i}/{self.total}] {self._label}  ({el}s){' ' * 12}\n")
+        self.stream.flush()
+        self._thread = None
+
+    def done(self) -> None:
+        self._finish()
 
 
 def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False) -> int:
@@ -28,9 +111,12 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     # transcript + per-stage records under a temp dir and tell the user where.
     default_root = ledger_dir is None
     root = ledger_dir or os.path.join(tempfile.gettempdir(), "rapier-runs")
-    env = manifest.build().run(
-        request, ledger_root=root, log=lambda msg: print(f"· {msg}", file=sys.stderr)
-    )
+    pipe = manifest.build()
+    progress = _Progress(total=len(pipe.stages))
+    try:
+        env = pipe.run(request, ledger_root=root, log=progress.log)
+    finally:
+        progress.done()
     # Prefer the composed report if the pipeline produced one.
     out = env.meta.get("report_md") or env.recommendation or ""
     # --report-all: prepend the first half's handoff report (SPARRING is two
@@ -63,7 +149,13 @@ def _resolve_request(args) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="rapier", description="Rapier Runtime — run a SPARRING method from a manifest or preset."
+        prog="rapier",
+        description="Rapier Runtime — run a SPARRING method from a manifest or preset.",
+        epilog="update: pip install -U rapier-runtime   ·   docs: https://rapierruntime.com",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"rapier-runtime {__version__}",
+        help="print the installed version and exit",
     )
     sub = parser.add_subparsers(dest="cmd", required=True)
 
