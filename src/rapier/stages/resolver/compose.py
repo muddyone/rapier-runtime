@@ -35,7 +35,7 @@ def _verdict_sentence(verdict, gate) -> str:
                 "asserted as fact without tracing to your givens — treat those as unverified until you check them.")
     if v == "REVIEW":
         return ("It needs your call on the correctness check: at least one stated specific reads "
-                "ambiguously between fact and estimate — see WHAT TO CHECK below.")
+                "ambiguously between fact and estimate — see STILL YOURS TO CHECK below.")
     return ("The correctness check could not return a verdict here (there were no hard specifics "
             "to check, or the checker was unavailable), so treat the stated specifics as unverified.")
 
@@ -234,13 +234,15 @@ def _render_report(env: Envelope) -> str:
 
     # ── the single hard break: advice ends, trust rider begins ────────────────
     L += ["", "", _HEAVY, "  TRUST RIDER", _HEAVY, "",
-          "Everything below is about how far to trust the recommendation above —",
-          "kept deliberately separate from the advice itself."]
+          "How far to trust the recommendation above: what is still yours to",
+          "confirm, what was verified for you, and how the answer held up under",
+          "an independent challenge."]
 
     assumptions = rider.get("assumptions_to_verify") or []
-    L += _sec("WHAT TO CHECK AGAINST YOUR SITUATION",
-              "Figures that rest on an assumption rather than a fact you gave — "
-              "verify these before you lean on them.",
+    L += _sec("STILL YOURS TO CHECK",
+              "Open items. Specifics the answer states that rest on an assumption "
+              "rather than a fact you gave — confirm these against your situation "
+              "before you rely on them.",
               _bullets(assumptions) if assumptions
               else "Nothing flagged — the load-bearing specifics trace to the facts you provided.")
 
@@ -250,11 +252,14 @@ def _render_report(env: Envelope) -> str:
               _grounding_body(env))
 
     contested = _texts(review.get("objections"))
-    L += _sec("WHERE IT WAS PUSHED BACK ON",
-              "The material objections the independent reviewer raised, and that the "
-              "recommendation was revised to address.",
+    L += _sec("ALREADY FIXED UNDER CHALLENGE",
+              "Not action items — already folded into the recommendation above. An "
+              "independent, different-vendor reviewer raised each of these, and the "
+              "answer was revised to address it. Shown so you can see what the "
+              "challenge caught and how the recommendation got stronger.",
               _bullets(contested) if contested
-              else "The independent review raised no material objections.")
+              else "The independent review found nothing material to change — the "
+                   "recommendation held up as written.")
 
     dissent = rider.get("proposer_dissent_forwarded")
     if dissent:
@@ -263,7 +268,8 @@ def _render_report(env: Envelope) -> str:
                   _bullets(dissent))
 
     L += _sec("HOW MUCH TO TRUST THIS",
-              "The confidence read, in plain words — kept separate from the recommendation itself.",
+              "How independent the challenge really was — and the limits no model "
+              "here can see past.",
               _para(_reviewer_sentence(review)
                     + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
                     "the load-bearing call stays yours."))
