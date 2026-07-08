@@ -50,7 +50,7 @@ def doctor_report() -> str:
     envs = vendor_key_envs()
     configured = set(configured_vendors())
     lines = [
-        f"Rapier Runtime {__version__}",
+        f"Rapier Runtime {__version__} — a ResourceForge project",
         "  home       https://rapierruntime.com",
         "  update     pip install -U rapier-runtime",
         "  security   report privately — see SECURITY.md (GitHub advisories)",

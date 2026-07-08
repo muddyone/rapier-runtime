@@ -274,6 +274,9 @@ def _render_report(env: Envelope) -> str:
                     + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
                     "the load-bearing call stays yours."))
 
+    L += ["", "", _RULE,
+          "Produced by Rapier Runtime — a ResourceForge project · rapierruntime.com"]
+
     return "\n".join(L).rstrip() + "\n"
 
 

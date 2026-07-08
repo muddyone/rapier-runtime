@@ -151,7 +151,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="rapier",
         description="Rapier Runtime — run a SPARRING method from a manifest or preset.",
-        epilog="update: pip install -U rapier-runtime   ·   docs: https://rapierruntime.com",
+        epilog="a ResourceForge project  ·  docs: https://rapierruntime.com  ·  "
+               "update: pip install -U rapier-runtime",
     )
     parser.add_argument(
         "--version", action="version", version=f"rapier-runtime {__version__}",
