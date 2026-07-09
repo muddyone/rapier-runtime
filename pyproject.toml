@@ -39,7 +39,7 @@ dependencies = ["pyyaml>=6.0", "requests>=2.31"]
 Homepage = "https://rapierruntime.com"
 Repository = "https://github.com/muddyone/rapier-runtime"
 Issues = "https://github.com/muddyone/rapier-runtime/issues"
-Paper = "https://doi.org/10.5281/zenodo.21210265"
+Paper = "https://doi.org/10.5281/zenodo.21210264"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
