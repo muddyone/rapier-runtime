@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Rapier Runtime</title>
 <meta name="description" content="Rapier runs the SPARRING method: one AI drafts a recommendation, a different one challenges it on evidence you can check, and you get an answer plus a plain account of what to trust in it.">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='88'>%F0%9F%97%A1</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='2 1 60 60'><g fill='%23b5772e' stroke='%23b5772e'><polygon points='32,6 34.1,37 29.9,37'/><path d='M20 37 C 9 31, 11 16, 26.5 12.5' fill='none' stroke-width='2.8' stroke-linecap='round'/><path d='M44 37 C 55 31, 53 16, 37.5 12.5' fill='none' stroke-width='2.8' stroke-linecap='round'/><rect x='16' y='35.9' width='32' height='2.8' rx='1.2'/><rect x='30.4' y='39' width='3.2' height='11' rx='1.2'/><circle cx='32' cy='53' r='3.3'/></g></svg>">
 <!--
-  Rapier Runtime — landing page (MVP, approved 2026-07-07; M4-launch pass 2026-07-08).
+  Rapier Runtime — landing page (MVP, approved 2026-07-07; M4-launch pass 2026-07-08;
+    logo lockup wired into the header + favicon 2026-07-09). The brand lockup is the
+    assembled guard-mark + "Rapier" + "RUNTIME" outlined-vector logo, inlined with
+    theme-token fills (no external asset; adapts to either ground). Favicon = guard mark.
   Resolved for launch: pip name confirmed (rapier-runtime); real links wired —
     #paper -> Zenodo concept DOI 10.5281/zenodo.21210264 (all-versions; resolves to
     the latest — NOT the version DOI ...265, which pins v1), #pypi -> the PyPI project
@@ -107,11 +110,14 @@
     border-bottom: 1px solid var(--line);
   }
   .nav { display: flex; align-items: center; justify-content: space-between; height: 4rem; }
-  .brand { display: flex; align-items: baseline; gap: 0.5rem; }
-  .brand .blade { align-self: center; position: relative; width: 1.55rem; height: 2px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 12%, transparent)); }
-  .brand .blade::before { content: ""; position: absolute; left: 2px; top: -4px; width: 2px; height: 10px; background: var(--accent); }
-  .brand .name { font-family: var(--serif); font-size: 1.45rem; font-weight: 600; letter-spacing: -0.01em; color: var(--ink); }
-  .brand .rt { font-family: var(--mono); font-size: 0.6rem; letter-spacing: 0.22em; text-transform: uppercase; color: var(--muted); }
+  /* Brand lockup — assembled from the outlined-vector logo pieces (guard mark +
+     "Rapier" wordmark + "RUNTIME" tag). Fills are theme tokens so the one markup
+     reads correctly on either ground: mark=accent, "Rapier"=ink, "RUNTIME"=muted. */
+  .brand { display: flex; align-items: center; }
+  .brand .logo { height: 2.7rem; width: auto; display: block; }
+  .brand .lk-mark { color: var(--accent); fill: currentColor; stroke: currentColor; }
+  .brand .lk-word { fill: var(--ink); }
+  .brand .lk-rt   { fill: var(--muted); }
   .nav-links { display: flex; gap: 1.5rem; align-items: center; font-size: 0.92rem; }
   .nav-links a { color: var(--muted); }
   .nav-links a:hover { color: var(--ink); }
@@ -239,7 +245,24 @@
 
 <header>
   <div class="wrap nav">
-    <span class="brand"><span class="blade"></span><span class="name">Rapier</span><span class="rt">Runtime</span></span>
+    <a class="brand" href="/" aria-label="Rapier Runtime — home">
+      <svg class="logo" viewBox="40 40 906 250" aria-hidden="true" focusable="false">
+        <svg class="lk-mark" x="45" y="42" width="222.2" height="250" viewBox="8 4 48 54" preserveAspectRatio="xMidYMid meet">
+          <polygon points="32,6 34.1,37 29.9,37"/>
+          <path d="M20 37 C 9 31, 11 16, 26.5 12.5" fill="none" stroke-width="2.8" stroke-linecap="round"/>
+          <path d="M44 37 C 55 31, 53 16, 37.5 12.5" fill="none" stroke-width="2.8" stroke-linecap="round"/>
+          <rect x="16" y="35.9" width="32" height="2.8" rx="1.2"/>
+          <rect x="30.4" y="39" width="3.2" height="11" rx="1.2"/>
+          <circle cx="32" cy="53" r="3.3"/>
+        </svg>
+        <svg class="lk-word" x="300" y="50.1" width="645.7" height="221.2" viewBox="19 -726 2931 1004" preserveAspectRatio="xMidYMid meet">
+          <g transform="scale(1,-1)"><path d="M39.0 37V-3C123.0 -1 159.0 0 194.0 0C230.0 0 265.0 -1 350.0 -3V37L313.0 40C290.0 42 281.0 44 275.0 50C267.0 58 266.0 72 265.0 135V622C279.0 628 297.0 631 323.0 631C413.0 631 464.0 585 464.0 503C464.0 419 406.0 362 322.0 362H304.0L297.0 344L521.0 -3L611.0 0C662.0 -1 671.0 -1 708.0 -3V37C672.0 44 662.0 50 638.0 82L457.0 356C513.0 379 537.0 394 564.0 424C592.0 456 606.0 492 606.0 534C606.0 632 542.0 681 416.0 681C405.0 681 381.0 681 347.0 680C320.0 679 239.0 678 216.0 678C188.0 678 188.0 678 39.0 681V644L76.0 641C122.0 637 123.0 633 124.0 543V135C123.0 75 122.0 58 115.0 51C109.0 45 100.0 42 76.0 40ZM996.0 67 991.0 5 996.0 -3C1049.0 -1 1072.0 0 1087.0 0C1101.0 0 1123.0 -1 1175.0 -3V34L1145.0 37C1123.0 40 1118.0 51 1117.0 98V119C1116.0 153 1115.0 181 1115.0 204C1115.0 229 1116.0 262 1117.0 300C1118.0 313 1118.0 323 1118.0 330C1118.0 418 1058.0 471 957.0 471C914.0 471 875.0 460 837.0 437L784.0 405V336L814.0 329L836.0 379C839.0 386 867.0 393 894.0 393C961.0 393 993.0 356 996.0 275L908.0 257C782.0 231 737.0 192 737.0 107C737.0 26 778.0 -17 854.0 -17C877.0 -17 893.0 -13 903.0 -5ZM996.0 115C977.0 89 940.0 70 910.0 70C878.0 70 859.0 94 859.0 133C859.0 182 880.0 202 951.0 221L996.0 233ZM1201.0 -221V-258L1330.0 -255H1343.0C1354.0 -255 1354.0 -255 1475.0 -258V-221L1430.0 -219C1398.0 -217 1394.0 -210 1394.0 -155V0C1443.0 -14 1459.0 -17 1483.0 -17C1517.0 -17 1552.0 1 1620.0 55C1627.0 60 1634.0 65 1637.0 68C1703.0 118 1739.0 196 1739.0 286C1739.0 393 1662.0 471 1558.0 471C1518.0 471 1490.0 460 1455.0 432L1394.0 383V465L1384.0 471L1314.0 449C1278.0 439 1261.0 435 1212.0 429L1201.0 428V392L1246.0 389C1269.0 387 1272.0 380 1272.0 319V-155C1272.0 -210 1269.0 -216 1236.0 -219ZM1394.0 331C1415.0 364 1449.0 381 1490.0 381C1567.0 381 1613.0 321 1613.0 221C1613.0 116 1568.0 51 1495.0 51C1453.0 51 1421.0 68 1394.0 106ZM1792.0 34V-3L1921.0 0C1941.0 0 1989.0 -1 2056.0 -3V34L2021.0 36C1988.0 39 1985.0 45 1985.0 100V465L1975.0 471L1905.0 449C1871.0 439 1847.0 435 1807.0 430C1805.0 430 1799.0 429 1792.0 428V392L1837.0 389C1860.0 387 1863.0 380 1863.0 319V100C1863.0 45 1860.0 39 1827.0 36ZM1921.0 706C1878.0 706 1845.0 674 1845.0 632C1845.0 589 1878.0 556 1920.0 556C1961.0 556 1995.0 590 1995.0 631C1995.0 673 1962.0 706 1921.0 706ZM2527.0 295C2527.0 402 2452.0 471 2337.0 471C2303.0 471 2277.0 464 2250.0 448L2203.0 420C2137.0 380 2108.0 322 2108.0 226C2108.0 67 2187.0 -17 2337.0 -17C2395.0 -17 2430.0 -7 2495.0 26L2517.0 74L2505.0 89C2458.0 63 2428.0 54 2388.0 54C2336.0 54 2287.0 82 2262.0 125C2246.0 153 2240.0 176 2238.0 223H2369.0C2427.0 223 2478.0 230 2527.0 243ZM2316.0 273H2312.0C2303.0 273 2286.0 274 2264.0 275C2259.0 275 2250.0 275 2232.0 276C2235.0 375 2259.0 415 2317.0 415C2374.0 415 2398.0 375 2400.0 276ZM2571.0 34V-3L2700.0 0C2713.0 0 2715.0 0 2851.0 -3V34L2812.0 36C2766.0 41 2764.0 44 2764.0 100V298C2764.0 329 2805.0 362 2844.0 362C2869.0 362 2887.0 351 2901.0 326L2925.0 336L2930.0 465C2919.0 469 2907.0 471 2893.0 471C2864.0 471 2846.0 459 2808.0 418L2764.0 370V465L2754.0 471L2684.0 449C2653.0 439 2634.0 436 2571.0 428V392L2616.0 389C2639.0 387 2642.0 380 2642.0 319V100C2642.0 45 2639.0 39 2606.0 36Z"/></g>
+        </svg>
+        <svg class="lk-rt" x="671.1" y="213" width="274.6" height="38.7" viewBox="102.04 -1533.96 11388.04 1603.92" preserveAspectRatio="xMidYMid meet">
+          <g transform="scale(1,-1)"><path d="M760.0 705Q838.0 685 893.0 629.5Q948.0 574 1030.0 408L1233.0 0H1016.0L838.0 377Q761.0 538 699.5 584.5Q638.0 631 539.0 631H346.0V0H143.0V1493H559.0Q805.0 1493 936.0 1382.0Q1067.0 1271 1067.0 1061Q1067.0 913 986.5 819.5Q906.0 726 760.0 705ZM346.0 1327V797H567.0Q712.0 797 783.0 862.0Q854.0 927 854.0 1061Q854.0 1190 778.5 1258.5Q703.0 1327 559.0 1327ZM1871.52 573V1493H2074.52V481Q2074.52 372 2080.52 325.5Q2086.52 279 2101.52 254Q2133.52 195 2194.02 165.0Q2254.52 135 2340.52 135Q2427.52 135 2487.52 165.0Q2547.52 195 2580.52 254Q2595.52 279 2601.52 325.0Q2607.52 371 2607.52 479V1493H2809.52V573Q2809.52 344 2781.02 247.5Q2752.52 151 2682.52 88Q2616.52 29 2531.52 0.0Q2446.52 -29 2340.52 -29Q2235.52 -29 2150.52 0.0Q2065.52 29 1998.52 88Q1929.52 150 1900.52 248.5Q1871.52 347 1871.52 573ZM3588.04 1493H3844.04L4348.04 264V1493H4543.04V0H4287.04L3783.04 1229V0H3588.04ZM5220.5599999999995 1493H6359.5599999999995V1323H5892.5599999999995V0H5689.5599999999995V1323H5220.5599999999995ZM7099.08 1493H7928.08V1323H7615.08V170H7928.08V0H7099.08V170H7412.08V1323H7099.08ZM8708.6 1493H8978.6L9236.6 733L9496.6 1493H9767.6V0H9580.6V1319L9314.6 532H9161.6L8894.6 1319V0H8708.6ZM10544.12 1493H11430.12V1323H10746.12V881H11400.12V711H10746.12V170H11449.12V0H10544.12Z"/></g>
+        </svg>
+      </svg>
+    </a>
     <nav class="nav-links">
       <a href="#how" class="hide-sm">How it works</a>
       <a href="#evidence" class="hide-sm">Evidence</a>
