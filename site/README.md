@@ -1,8 +1,10 @@
 # site/ — rapierruntime.com
 
 The public site for **rapierruntime.com**, the product front door for Rapier Runtime
-(the engine that runs the SPARRING method). Both files are self-contained — no build
-step, no external assets (inline CSS/JS, system fonts, emoji favicon), theme-aware.
+(the engine that runs the SPARRING method). No build step — inline CSS/JS, system
+fonts. `index.html` is **light-only** and serves the logo master
+(`rapier-logo.png`) as a sibling asset in the header and the SPARRING/Rapier band;
+`coming-soon.html` is self-contained with an emoji favicon.
 
 - **`coming-soon.html`** — the interim **"in development"** page. Design-consistent with
   the full landing but safe to serve now: no placeholder pip command, no dead links.
@@ -40,8 +42,11 @@ whichever page is current gets uploaded **as `index.html`**:
 ```bash
 # now (interim):
 scp site/coming-soon.html <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/index.html
-# at launch (once placeholders are resolved):
-scp site/index.html       <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/index.html
+# the live landing (index.html + its logo asset — upload BOTH):
+scp site/index.html      <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/index.html
+scp site/rapier-logo.png <cpuser>@160.153.180.205:~/public_html/rapierruntime.com/rapier-logo.png
 ```
 
-The previous file is kept server-side as `index.html.prev` on each deploy.
+`index.html` references `rapier-logo.png` relatively, so the asset must be present
+in the docroot or both logos 404. The previous page is kept server-side as
+`index.html.prev` on each deploy.
