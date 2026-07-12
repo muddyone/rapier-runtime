@@ -27,6 +27,11 @@ _PROPOSER = [
     {"stage": "cut", "config": {"cap": 2, "integrity_check": True}},
 ]
 
+# The front-door classifier. Judgment-only + short output, and deterministic
+# (temperature 0) so a classification is stable across runs. Vendor is remapped
+# to an available one when the named key is absent (BYO-any-vendor).
+_FRAMER = {"vendor": "anthropic", "model": "claude-opus-4-8", "max_tokens": 1024, "temperature": 0}
+
 VERIFY_MODES = ("off", "gate", "round")
 
 
@@ -67,12 +72,14 @@ def _build(name: str, settle: int = 0, verify: str = "gate") -> dict:
         }
     if name == "proposer":  # settle/verify are resolver-only — no-ops here
         return {"name": "proposer", "pipeline": list(_PROPOSER)}
-    raise KeyError(f"unknown preset '{name}'; known: ['proposer', 'spar', 'sparring']")
+    if name == "frame":  # front-door classifier only — settle/verify are no-ops
+        return {"name": "frame", "pipeline": [{"stage": "frame", "roles": {"framer": _FRAMER}}]}
+    raise KeyError(f"unknown preset '{name}'; known: ['frame', 'proposer', 'spar', 'sparring']")
 
 
 # The canonical default manifests (settle=0, verify=gate) — these mirror
 # `manifests/*.yaml`. Kept as a dict so callers can enumerate the preset names.
-PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", "proposer")}
+PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", "proposer", "frame")}
 
 
 def load_preset(name: str, settle: int = 0, verify: str = "gate"):
