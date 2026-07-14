@@ -4,6 +4,7 @@
     rapier spar     --request "should we do X?"           # Resolver only
     rapier spar     --request-file pack.md                # read the pack from a file
     rapier proposer --request "should we do X?"           # Proposer only
+    rapier frame    --request "should we do X?"           # classify + recommend a route
     rapier run --manifest path.yaml --request-file pack.md  # a custom manifest
     rapier doctor                                     # which vendor keys are set
     rapier init                                       # scaffold a .env.example
@@ -39,6 +40,7 @@ _STAGE_LABELS = {
     "spark": "Widening the options (SPARK)",
     "pattern_lock": "Filtering repetition (Pattern Lock)",
     "cut": "Committing one option (the Cut)",
+    "frame": "Framing the input (classify + Presentation)",
     "echo": "Echo",
 }
 
@@ -135,6 +137,41 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     return 0
 
 
+def _run_frame(request: str, ledger_dir: str | None) -> int:
+    """Run the front-door classifier and print the classification.
+
+    stdout carries machine-readable JSON — the SPARRING skill parses it to pick
+    which preset to dispatch to (``route`` = propose|resolve). stderr carries a
+    one-line human summary.
+    """
+    import json
+
+    from .presets import load_preset
+
+    default_root = ledger_dir is None
+    root = ledger_dir or os.path.join(tempfile.gettempdir(), "rapier-runs")
+    pipe = load_preset("frame").build()
+    progress = _Progress(total=len(pipe.stages))
+    try:
+        env = pipe.run(request, ledger_root=root, log=progress.log)
+    finally:
+        progress.done()
+
+    frame = env.meta.get("frame", {})
+    print(json.dumps(frame, indent=2))
+
+    itype = frame.get("input_type", "?")
+    route = frame.get("route", "?")
+    line = f"· {itype} → route: {route}"
+    if frame.get("presentation", "n/a") != "n/a":
+        line += f"  (presentation: {frame['presentation']}, failed gate: {frame.get('earned_gate_failed')})"
+    print(line, file=sys.stderr)
+    run_id = env.meta.get("run_id")
+    if run_id and default_root:
+        print(f"· transcript saved to {os.path.join(root, run_id)}", file=sys.stderr)
+    return 0
+
+
 def _resolve_request(args) -> str:
     """The decision text — inline via --request, or read from --request-file
     (``-`` for stdin). The mutually-exclusive group guarantees exactly one."""
@@ -188,6 +225,12 @@ def main(argv: list[str] | None = None) -> int:
                 help="also surface the Proposer report (the committed option + its standing objections) above the Resolver report",
             )
 
+    fr = sub.add_parser(
+        "frame",
+        help="classify an input (question | proposition | hybrid) and recommend a route — the front-door Presentation",
+    )
+    add_common(fr)
+
     run = sub.add_parser("run", help="run a custom manifest")
     run.add_argument("--manifest", required=True, help="path to a pipeline manifest (YAML)")
     add_common(run)
@@ -223,6 +266,15 @@ def main(argv: list[str] | None = None) -> int:
     if not (request or "").strip():
         print("rapier: the request is empty", file=sys.stderr)
         return 2
+
+    if args.cmd == "frame":
+        from .onboarding import preflight_error
+
+        err = preflight_error()
+        if err:  # no vendor keys — fail loudly, not silently
+            print(err, file=sys.stderr)
+            return 2
+        return _run_frame(request, args.ledger_dir)
 
     if args.cmd in ("spar", "sparring", "proposer"):
         from .onboarding import preflight_error
