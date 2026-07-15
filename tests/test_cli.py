@@ -60,6 +60,20 @@ def test_empty_request_exits_2(tmp_path, capsys):
     assert "empty" in capsys.readouterr().err
 
 
+def test_seed_rejected_on_spar():
+    # spar is Resolver-only — there is no SPARK to seed, so --seed is not a flag there
+    with pytest.raises(SystemExit):
+        main(["spar", "--request", "x", "--seed", "y"])
+
+
+def test_seed_accepted_on_proposer(monkeypatch):
+    # --seed parses on the Proposer preset; short-circuit at preflight so the
+    # test never touches a vendor/network path.
+    monkeypatch.setattr("rapier.onboarding.preflight_error", lambda: "no keys (test)")
+    rc = main(["proposer", "--request", "x", "--seed", "Use Postgres"])
+    assert rc == 2  # parsed OK, then stopped at the no-keys preflight
+
+
 def test_version_flag_exits_0_and_prints(capsys):
     with pytest.raises(SystemExit) as e:
         main(["--version"])

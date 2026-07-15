@@ -27,6 +27,19 @@ _PROPOSER = [
     {"stage": "cut", "config": {"cap": 2, "integrity_check": True}},
 ]
 
+
+def _proposer(seed: list[str] | None = None) -> list[dict]:
+    """The Proposer stages, freshly copied (never the shared module-level dicts),
+    with an optional ``seed`` injected into SPARK's config. A seed is a candidate
+    option dropped into SPARK's field — a Frame anchor for a hybrid/leaning input
+    (or a demoted G2-fail proposition). It is not privileged; it survives only if
+    it wins Pattern Lock + the Cut on the merits."""
+    stages = [dict(s, config=dict(s["config"])) for s in _PROPOSER]
+    if seed:
+        stages[0]["config"]["seed"] = list(seed)
+    return stages
+
+
 # The front-door classifier. Judgment-only + short output, and deterministic
 # (temperature 0) so a classification is stable across runs. Vendor is remapped
 # to an available one when the named key is absent (BYO-any-vendor).
@@ -61,18 +74,18 @@ def _resolver(settle: int = 0, verify: str = "gate") -> list[dict]:
     return stages
 
 
-def _build(name: str, settle: int = 0, verify: str = "gate") -> dict:
-    if name == "spar":
+def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None) -> dict:
+    if name == "spar":  # Resolver-only — no SPARK, so seed is a no-op
         return {"name": "spar", "pipeline": _resolver(settle, verify)}
     if name == "sparring":
         return {
             "name": "sparring",
             "policy": {"independence": "preferred"},
-            "pipeline": list(_PROPOSER) + _resolver(settle, verify),
+            "pipeline": _proposer(seed) + _resolver(settle, verify),
         }
     if name == "proposer":  # settle/verify are resolver-only — no-ops here
-        return {"name": "proposer", "pipeline": list(_PROPOSER)}
-    if name == "frame":  # front-door classifier only — settle/verify are no-ops
+        return {"name": "proposer", "pipeline": _proposer(seed)}
+    if name == "frame":  # front-door classifier only — settle/verify/seed are no-ops
         return {"name": "frame", "pipeline": [{"stage": "frame", "roles": {"framer": _FRAMER}}]}
     raise KeyError(f"unknown preset '{name}'; known: ['frame', 'proposer', 'spar', 'sparring']")
 
@@ -82,9 +95,9 @@ def _build(name: str, settle: int = 0, verify: str = "gate") -> dict:
 PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", "proposer", "frame")}
 
 
-def load_preset(name: str, settle: int = 0, verify: str = "gate"):
+def load_preset(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None):
     from .manifest import Manifest
 
     if name not in PRESETS:
         raise KeyError(f"unknown preset '{name}'; known: {sorted(PRESETS)}")
-    return Manifest.from_dict(_build(name, settle=settle, verify=verify))
+    return Manifest.from_dict(_build(name, settle=settle, verify=verify, seed=seed))
