@@ -1,9 +1,15 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-16 (HEAD 222e9221, 167 tests)._ A running "where we are /
+_Last updated: 2026-07-16 (HEAD b8b21e89, 167 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **LAUNCHED (2026-07-16) — M4 publish is done.** `rapier-runtime` **0.2.0** is on
+  PyPI (`pip install rapier-runtime` now installs the input-typing front door,
+  seeded generation, the depth knob, and the ledger fields; the pre-front-door
+  `0.1.0` from 2026-07-09 is superseded). The **full MVP landing is live** at
+  **rapierruntime.com** (no longer coming-soon), byte-identical to
+  `site/index.html`, every link verified. Git tag `v0.2.0` pushed.
 - **Engine M0–M3** — full SPARRING ceremony (Proposer → Resolver) end-to-end;
   presets `frame` / `spar` / `sparring` / `proposer`; `--settle` / `--verify`
   (resolver) and `--depth` / `--seed` (proposer) knobs.
@@ -54,29 +60,28 @@ what's next" so a new session can continue without reconstructing from git log.
   `RAPIER_MCP_LEDGER`. Scope + milestones: `docs/mcp-server-scope.md`. This is the
   **public, generic equivalent of the Loom `/spar` `/sparring` slash-commands**
   (which are Loom-only artifacts a generic user does not have).
-- **rapierruntime.com is live.** DNS → VPS `160.153.180.205`, Let's Encrypt via
-  cPanel AutoSSL, HTTP→HTTPS redirect. Currently serves the "in development" page
-  (`site/coming-soon.html` deployed as `index.html`); the full MVP landing
-  (`site/index.html`) is in the repo, ready to swap at M4. See `site/README.md`.
+- **rapierruntime.com — full landing deployed.** DNS → VPS `160.153.180.205`,
+  Let's Encrypt via cPanel AutoSSL, HTTP→HTTPS redirect. The full MVP landing
+  (`site/index.html`) is live at the docroot
+  `~/public_html/rapierruntime.com/index.html` (byte-identical to the repo; all
+  links — pip / PyPI / paper concept-DOI / spec / GitHub — verified 2026-07-16).
+  `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
-1. **M4 publish.** Build + publish to PyPI (`rapier-runtime`), then swap the VPS
-   `index.html` from `coming-soon.html` to the full landing — resolving the
-   landing's placeholders first (real pip name, and the paper / PyPI / SPARRING-
-   spec links; Paper 1 is now public, so the paper link resolves). This is what
-   makes `pip install rapier-runtime` real.
-2. **MCP:** end-to-end live-session test with a real client (Claude Desktop);
-   optionally expose runs as MCP *resources* rather than tools. (The MCP tools
-   still expose `spar` / `sparring` only — surfacing `frame` / `proposer` and the
-   `--depth` / `--seed` knobs is a small follow-on if wanted.)
+1. **MCP live-session test** with a real client (Claude Desktop) — confirm the
+   stdio server end-to-end; optionally expose runs as MCP *resources* rather than
+   tools.
+2. **Surface the new capabilities in the MCP tools.** The MCP server still exposes
+   `spar` / `sparring` only — add `frame` / `proposer` and thread the `--depth` /
+   `--seed` (and `--frame`) knobs so MCP clients reach the front door + the
+   Proposer knobs, matching the CLI.
 3. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
-   the depth knob are the instrument it will exercise.
+   the depth knob are the instrument it will exercise. (Optional polish: a landing
+   line advertising the front door / `--depth` / `--seed`, if worth it.)
 
-_(Done since 2026-07-08: the input-typing front door + seeded generation + depth
-knob + ledger fields — see Done above. The Loom submodule pin is current — it was
-advanced with each increment, last `222e9221` — so the earlier "bump the pin"
-item is cleared.)_
+_(M4 publish is **DONE** — v0.2.0 on PyPI + the full landing live; see Done above.
+The Loom submodule pin is current — last `222e9221`.)_
 
 ## Things a new session should know
 - **Two repos.** This engine (`muddyone/rapier-runtime`, public) vs. the SPARRING
