@@ -355,7 +355,16 @@ def _render_proposer_report(env: Envelope) -> str | None:
 
 def _ceremony_row(env: Envelope) -> dict:
     """Derive the /spar-schema 'did the Challenger matter' row MECHANICALLY from
-    the run (no self-coding) — more honest than a model grading its own work."""
+    the run (no self-coding) — more honest than a model grading its own work.
+
+    Emits the full ceremony-description schema plus the front-door input-type
+    classification (from ``env.meta["frame"]``, seeded by the caller via
+    ``--frame`` since Frame runs as a separate call ahead of the pipeline). When
+    no frame was seeded the classification fields are emitted empty — the schema
+    stays stable, the values are just absent. Loom-project provenance
+    (recorded_at / project / source / cwd / id) is deliberately NOT stamped here:
+    the engine is context-agnostic, so that stamp belongs to the loom-side
+    persistence layer (append-spar-ledger.py), by design."""
     review = env.meta.get("review") or {}
     gate = env.meta.get("definitiveness") or {}
     citation = env.meta.get("citation_gate") or {}
@@ -364,24 +373,51 @@ def _ceremony_row(env: Envelope) -> dict:
     changed = bool(before is not None and before != env.recommendation)
     surfaced = bool(objections)
     load_bearing = changed or surfaced
+
+    # Front-door classification, seeded from the separate `rapier frame` call.
+    frame = env.meta.get("frame") or {}
+    input_type = frame.get("input_type") or ""
+    route = frame.get("route") or ""
+    # offramp_taken — where the run actually stopped, read off the envelope.
+    offramp_taken = ("full_resolve" if env.recommendation
+                     else "proposition" if env.committed else "question")
+    # A mechanically-coherent row (not self-reported), so grounding_coherence is
+    # "ok" when verification ran and "n/a" when it did not — never "coerced".
+    verified = bool(citation.get("gate")) or citation.get("grounding_rate") is not None \
+        or bool(citation.get("theater_flags"))
+
     return {
         "skill": "rapier",
         "sparring_version": "v2",
         "mode": "full-ceremony" if env.committed else "one-pass",
+        "iterations": 1 + int(env.meta.get("settle") or 0),
         "reviewer_vendor": review.get("reviewer_vendor"),
         "cross_vendor": bool(review.get("cross_vendor")),
         "topic": env.request[:120],
         "converged": env.verdict == "PASS",
+        "held_at_cap": env.verdict == "FAIL",
         "challenger_changed_recommendation": changed,
         "what_changed": "recommendation revised under review" if changed else "",
         "challenger_surfaced_error_or_risk": surfaced,
         "what_surfaced": "; ".join(_texts(objections))[:400],
         "load_bearing": load_bearing,
+        "strongest_quote": (_texts(objections)[0] if objections else "")[:400],
         "verdict": "MATTERED" if load_bearing else "DID_NOT_MATTER",
         "answer_verdict": env.verdict or "unchecked",
+        "verify_mode": str(env.meta.get("verify") or ""),
         "gate": citation.get("gate", ""),
         "grounding_rate": citation.get("grounding_rate"),
         "theater_flags": citation.get("theater_flags", 0),
+        "grounding_coherence": "ok" if verified else "n/a",
+        "artifact_path": "",  # set to <run_dir>/report.md by ComposeStage (has run_dir)
+        # --- front-door input-type classification (§7) ---
+        "input_type": input_type,
+        "readiness": frame.get("readiness") or "",
+        "earned_gate_failed": frame.get("earned_gate_failed") or "",
+        "anchor": frame.get("anchor") or "",
+        "routed_to": route,
+        "offramp_taken": offramp_taken,
+        "demoted": bool(input_type == "proposition" and route == "propose"),
     }
 
 
@@ -415,6 +451,8 @@ class ComposeStage(TransformStage):
 
         # /spar-parity named files + the ceremony-ledger row.
         row = _ceremony_row(env)
+        if ctx.run_dir:
+            row["artifact_path"] = os.path.join(ctx.run_dir, "report.md")
         env.meta["ceremony_row"] = row
         if ctx.ledger is not None:
             ctx.ledger.write_text("report.md", report_md)

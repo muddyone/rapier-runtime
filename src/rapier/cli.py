@@ -108,7 +108,8 @@ class _Progress:
         self._finish()
 
 
-def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False) -> int:
+def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False,
+         seed_meta: dict | None = None) -> int:
     # Always capture a run: without an explicit --ledger-dir, write the full
     # transcript + per-stage records under a temp dir and tell the user where.
     default_root = ledger_dir is None
@@ -116,7 +117,7 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     pipe = manifest.build()
     progress = _Progress(total=len(pipe.stages))
     try:
-        env = pipe.run(request, ledger_root=root, log=progress.log)
+        env = pipe.run(request, ledger_root=root, log=progress.log, seed_meta=seed_meta)
     finally:
         progress.done()
     # Prefer the composed report if the pipeline produced one.
@@ -226,6 +227,14 @@ def main(argv: list[str] | None = None) -> int:
                      "anchor for a hybrid/leaning input. Not privileged: it survives only if it "
                      "wins Pattern Lock + the Cut on the merits",
             )
+        if preset in ("spar", "sparring"):  # a compose stage → a ceremony-ledger row
+            p.add_argument(
+                "--frame", metavar="PATH", default=None,
+                help="path to the JSON emitted by `rapier frame` for this input; its "
+                     "classification (input_type, readiness, route, anchor, …) is recorded on "
+                     "the ceremony-ledger row. Frame runs as a separate call, so the run cannot "
+                     "observe it otherwise",
+            )
         if preset == "sparring":  # the Proposer half only exists in the full ceremony
             p.add_argument(
                 "--report-all", action="store_true",
@@ -294,7 +303,25 @@ def main(argv: list[str] | None = None) -> int:
             args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate"),
             seed=getattr(args, "seed", None),
         )
-        return _run(preset, request, args.ledger_dir, report_all=getattr(args, "report_all", False))
+        # Carry context the pipeline can't observe onto the envelope for the
+        # ceremony-ledger row: the resolver knobs, and the front-door Frame
+        # classification (from a separate call) via --frame.
+        seed_meta: dict = {
+            "settle": getattr(args, "settle", 0),
+            "verify": getattr(args, "verify", "gate"),
+        }
+        frame_path = getattr(args, "frame", None)
+        if frame_path:
+            try:
+                import json as _json
+                with open(frame_path, encoding="utf-8") as fh:
+                    fj = _json.load(fh)
+                if isinstance(fj, dict) and fj.get("input_type"):
+                    seed_meta["frame"] = fj
+            except (OSError, ValueError):
+                pass  # fail-soft: a missing/garbled frame file just omits the classification
+        return _run(preset, request, args.ledger_dir,
+                    report_all=getattr(args, "report_all", False), seed_meta=seed_meta)
     if args.cmd == "run":
         return _run(Manifest.load(args.manifest), request, args.ledger_dir)
     return 1  # pragma: no cover
