@@ -7,7 +7,7 @@ is ready for the Resolver or must go back to Propose.
 
 Design split, per the runtime's ethos (control flow in code; only genuine
 judgment delegated to a model): the model judges the *input type* and the three
-Earnedness gates; this stage *derives* the presentation verdict, the failed
+Earnedness gates; this stage *derives* the readiness verdict, the failed
 gate, and the route deterministically from those judgments (``_derive``). So the
 routing is auditable and never a model's free-form choice — and the dangerous
 misclassification (a question evaluated as a committed decision) is structurally
@@ -83,10 +83,10 @@ def _derive(
         return bool(gates.get(k)) if isinstance(gates, dict) else False
 
     if input_type == "question":
-        presentation, earned_gate_failed, route, anchor = "n/a", "none", "propose", None
+        readiness, earned_gate_failed, route, anchor = "n/a", "none", "propose", None
     elif input_type == "hybrid":
         # A leaning: the candidate is seeded into Propose's field, not evaluated.
-        presentation, earned_gate_failed, route = "n/a", "none", "propose"
+        readiness, earned_gate_failed, route = "n/a", "none", "propose"
     elif input_type == "proposition":
         # The Presentation: G1→G2→G3, first failure names the tripped gate.
         failed = "none"
@@ -95,7 +95,7 @@ def _derive(
                 failed = g
                 break
         earned = failed == "none"
-        presentation = "pass" if earned else "fail"
+        readiness = "pass" if earned else "fail"
         earned_gate_failed = failed
         if earned:
             route, anchor = "resolve", None  # control mark — cleared for the piste
@@ -107,14 +107,19 @@ def _derive(
             if failed != "G2":
                 anchor = None
     else:  # pragma: no cover — guarded by the caller
-        presentation, earned_gate_failed, route, anchor = "n/a", "none", "propose", None
+        readiness, earned_gate_failed, route, anchor = "n/a", "none", "propose", None
 
     if isinstance(anchor, str) and not anchor.strip():
         anchor = None
 
     return {
         "input_type": input_type,
-        "presentation": presentation,
+        # ``readiness`` is the Presentation's verdict (pass | fail | n/a) — the
+        # input-readiness gate at Frame. Named ``readiness`` (not
+        # ``presentation``) so it does not collide with the definitiveness
+        # gate's "presentation" concept (how a hard specific is *presented* —
+        # stated-as-fact vs flagged). Different gate, different question.
+        "readiness": readiness,
         "earned_gate_failed": earned_gate_failed,
         "route": route,
         "anchor": anchor,
@@ -166,7 +171,7 @@ class FrameStage(TransformStage):
         frame = _derive(input_type, gates, anchor, basis=basis, confidence=confidence)
         env.meta["frame"] = frame
         detail = ""
-        if frame["presentation"] != "n/a":
-            detail = f" (presentation={frame['presentation']}, failed={frame['earned_gate_failed']})"
+        if frame["readiness"] != "n/a":
+            detail = f" (readiness={frame['readiness']}, failed={frame['earned_gate_failed']})"
         env.add_trace("frame", self.kind, f"{frame['input_type']} → {frame['route']}{detail}", **frame)
         return env
