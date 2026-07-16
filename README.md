@@ -30,15 +30,24 @@ today:
   anchored correction → a correctness *definitiveness* gate → an external-canon
   citation gate → a two-part report). Run the Resolver alone (`spar`) or the
   whole loop (`sparring`).
+- **A front door that types the input** (`rapier frame`). It classifies the input
+  as a *question*, a *proposition*, or a *hybrid/leaning* and routes accordingly —
+  the model judges the type, but the **route is decided in code**, so a question
+  is never silently graded as though it were a committed decision. A stated
+  decision passes *the Presentation* (an earnedness check) before it reaches the
+  Resolver; a leaning is **seeded** into the Proposer's field, where it competes
+  without privilege (`--seed`). Tune how far the Proposer diverges with
+  `--depth shallow|standard|deep` — `shallow` is a quick answer, several times
+  faster than the full spread.
 - **Cross-vendor by construction.** Author and reviewer are always distinct
   vendors when two keys are present, and it degrades *honestly* to single-vendor
   (and says so) when only one is. Any role can be Anthropic, OpenAI, Gemini,
   Grok, or any OpenAI-compatible endpoint — vendor and model names live only in
   a manifest.
 - **A manifest *is* the method.** Reorder stages, swap a model, or point two
-  roles at two vendors — with no engine-code change. Built-in presets (`spar`,
-  `sparring`, `proposer`) cover the common cases; `--settle` and `--verify` tune
-  the resolver.
+  roles at two vendors — with no engine-code change. Built-in presets (`frame`,
+  `spar`, `sparring`, `proposer`) cover the common cases; `--settle` / `--verify`
+  tune the resolver, and `--depth` / `--seed` tune the proposer.
 - **Grounding + a correctness gate.** The definitiveness gate checks that every
   hard specific in the answer is traceable to the given facts or explicitly
   flagged as an estimate; the citation gate resolves cited external canon
@@ -49,7 +58,7 @@ today:
   `yaml.safe_load`; a [threat model](docs/threat-model.md) and a
   [security policy](SECURITY.md).
 
-116 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
+167 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
 
 **Honest boundary.** The definitiveness gate, anchored correction, and the
 two-part trust rider are *exploratory* governance instruments — useful, but not
@@ -71,8 +80,19 @@ rapier sparring --request "Monorepo or separate repos for our three services?"
 
 `spar` runs the Resolver on a chosen option; `sparring` runs the full four-phase
 ceremony. Add `--settle N` for extra decision-stability rounds, or
-`--verify off|gate|round` to tune the citation gate. Point `--ledger-dir` at a
-directory to persist the run's transcript, report, and records.
+`--verify off|gate|round` to tune the citation gate; add `--depth
+shallow|standard|deep` (a quick answer vs. the full option spread) or `--seed
+"<option>"` (drop a candidate into the field) to tune the Proposer half. Point
+`--ledger-dir` at a directory to persist the run's transcript, report, and records.
+
+Not sure an input is even a decision yet? `rapier frame --request "…"` classifies
+it (question / proposition / hybrid) and recommends a route, without spending a
+whole ceremony:
+
+```bash
+rapier frame --request "Should we adopt Kubernetes for one flat-traffic web app?"
+# -> {"input_type": "question", "route": "propose", ...}  (a question — generate first)
+```
 
 No keys? The `mock` vendor needs none:
 

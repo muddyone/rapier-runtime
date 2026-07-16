@@ -6,6 +6,12 @@
 #
 # Produces env.committed — the option the Cut commits to. In the full ceremony
 # (M3) this feeds the Resolver.
+#
+# The caps below are the `standard` depth. The CLI's `--depth shallow|standard|
+# deep` selects a whole cap set (shallow = 2/1/1, no integrity reopen — a quick
+# answer; deep = 8/3/3), and `--seed "<option>"` drops a candidate into SPARK's
+# opening field (it competes without privilege). Depth and seed are CLI knobs,
+# not manifest keys — this file mirrors one depth (standard).
 name: proposer
 pipeline:
   - stage: spark
