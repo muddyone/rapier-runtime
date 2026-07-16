@@ -25,7 +25,7 @@ import time
 
 from . import __version__, stages  # noqa: F401  (ensure built-in stages are registered)
 from .manifest import Manifest
-from .presets import VERIFY_MODES, load_preset
+from .presets import PROPOSER_DEPTHS, VERIFY_MODES, load_preset
 
 # A ceremony is a sequence of model calls that each take tens of seconds — long
 # enough that a novice fears it hung. Give each stage a plain-language label and,
@@ -227,6 +227,11 @@ def main(argv: list[str] | None = None) -> int:
                      "anchor for a hybrid/leaning input. Not privileged: it survives only if it "
                      "wins Pattern Lock + the Cut on the merits",
             )
+            p.add_argument(
+                "--depth", choices=list(PROPOSER_DEPTHS), default="standard",
+                help="Proposer divergence/rigor: shallow (a quick answer, less SPARK "
+                     "divergence) | standard (default) | deep (widest option coverage)",
+            )
         if preset in ("spar", "sparring"):  # a compose stage → a ceremony-ledger row
             p.add_argument(
                 "--frame", metavar="PATH", default=None,
@@ -301,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         preset = load_preset(
             args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate"),
-            seed=getattr(args, "seed", None),
+            seed=getattr(args, "seed", None), depth=getattr(args, "depth", "standard"),
         )
         # Carry context the pipeline can't observe onto the envelope for the
         # ceremony-ledger row: the resolver knobs, and the front-door Frame
