@@ -40,21 +40,21 @@ def _framer(payload: dict) -> dict:
 
 def test_derive_question_routes_to_propose():
     f = _derive("question", {}, "ignored")
-    assert (f["route"], f["presentation"], f["earned_gate_failed"]) == ("propose", "n/a", "none")
+    assert (f["route"], f["readiness"], f["earned_gate_failed"]) == ("propose", "n/a", "none")
     assert f["anchor"] is None  # a question carries no anchor
 
 
 def test_derive_hybrid_routes_to_propose_keeping_the_anchor():
     f = _derive("hybrid", {}, "use Postgres")
     assert f["route"] == "propose"
-    assert f["presentation"] == "n/a"
+    assert f["readiness"] == "n/a"
     assert f["anchor"] == "use Postgres"  # the leaning is seeded into the field
 
 
 def test_derive_earned_proposition_routes_to_resolve_and_drops_anchor():
     f = _derive("proposition", {"G1": True, "G2": True, "G3": True}, "use Postgres")
     assert f["route"] == "resolve"
-    assert f["presentation"] == "pass"
+    assert f["readiness"] == "pass"
     assert f["earned_gate_failed"] == "none"
     assert f["anchor"] is None  # cleared for the piste — nothing to seed
 
@@ -63,7 +63,7 @@ def test_derive_g2_failure_demotes_to_propose_keeping_the_anchor():
     # A commitment with no load-bearing why is a leaning in disguise.
     f = _derive("proposition", {"G1": True, "G2": False, "G3": True}, "use Postgres")
     assert f["route"] == "propose"
-    assert f["presentation"] == "fail"
+    assert f["readiness"] == "fail"
     assert f["earned_gate_failed"] == "G2"
     assert f["anchor"] == "use Postgres"  # seeded back into the armory
 
@@ -105,7 +105,7 @@ def test_routing_invariant_only_earned_proposition_resolves():
             if f["route"] == "resolve":
                 assert itype == "proposition"
                 assert (g1, g2, g3) == (True, True, True)
-                assert f["presentation"] == "pass"
+                assert f["readiness"] == "pass"
 
 
 def test_derive_blank_anchor_normalizes_to_none():
@@ -123,7 +123,7 @@ def test_stage_earned_proposition_via_fake_client():
     fr = env.meta["frame"]
     assert fr["input_type"] == "proposition"
     assert fr["route"] == "resolve"
-    assert fr["presentation"] == "pass"
+    assert fr["readiness"] == "pass"
     assert fr["confidence"] == 0.9
     assert env.trace[-1].summary.startswith("proposition → resolve")
 
@@ -135,7 +135,7 @@ def test_stage_question_via_fake_client():
     fr = env.meta["frame"]
     assert fr["input_type"] == "question"
     assert fr["route"] == "propose"
-    assert fr["presentation"] == "n/a"
+    assert fr["readiness"] == "n/a"
 
 
 def test_stage_no_client_fails_safe_to_question():

@@ -163,8 +163,8 @@ def _run_frame(request: str, ledger_dir: str | None) -> int:
     itype = frame.get("input_type", "?")
     route = frame.get("route", "?")
     line = f"· {itype} → route: {route}"
-    if frame.get("presentation", "n/a") != "n/a":
-        line += f"  (presentation: {frame['presentation']}, failed gate: {frame.get('earned_gate_failed')})"
+    if frame.get("readiness", "n/a") != "n/a":
+        line += f"  (readiness: {frame['readiness']}, failed gate: {frame.get('earned_gate_failed')})"
     print(line, file=sys.stderr)
     run_id = env.meta.get("run_id")
     if run_id and default_root:
