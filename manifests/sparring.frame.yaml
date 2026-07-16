@@ -1,0 +1,22 @@
+# The front-door classifier as a Rapier pipeline — the mirror of `rapier frame`.
+#
+# Types the input (question | proposition | hybrid) and, for a proposition, runs
+# the Presentation (the Earnedness Rubric — G1 singular commitment / G2
+# load-bearing reason / G3 decidable specificity). The model judges the type +
+# the gates; the ROUTE is derived in CODE (stages/frame.py::_derive), never
+# chosen by the model — so only an EARNED proposition is ever routed to
+# `resolve`, and a question can never be silently graded as a committed decision.
+#
+# Judgment-only + short output, run at temperature 0 so a classification is
+# stable across runs. The `framer` role is remapped to an available vendor when
+# the named key is absent (BYO-any-vendor).
+#
+# Emits env.meta["frame"] = {input_type, readiness, earned_gate_failed, route,
+# anchor, alternative_awareness, basis, confidence}. `readiness` (pass|fail|n/a)
+# is the Presentation's verdict — named `readiness`, not `presentation`, to avoid
+# colliding with the definitiveness gate's separate "presentation" concept.
+name: frame
+pipeline:
+  - stage: frame
+    roles:
+      framer: { vendor: anthropic, model: claude-opus-4-8, max_tokens: 1024, temperature: 0 }

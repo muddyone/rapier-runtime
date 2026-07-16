@@ -1,11 +1,38 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-08 (HEAD 508298b, 116 tests)._ A running "where we are /
+_Last updated: 2026-07-16 (HEAD 222e9221, 167 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
 - **Engine M0–M3** — full SPARRING ceremony (Proposer → Resolver) end-to-end;
-  presets `spar` / `sparring` / `proposer`; `--settle` / `--verify` knobs.
+  presets `frame` / `spar` / `sparring` / `proposer`; `--settle` / `--verify`
+  (resolver) and `--depth` / `--seed` (proposer) knobs.
+- **The front door: input typing (Frame → Propose → Resolve).** A `frame` stage +
+  `rapier frame` subcommand classifies an input as `question | proposition |
+  hybrid` and, for a proposition, runs the Presentation (the Earnedness Rubric —
+  G1 singular commitment / G2 load-bearing reason [counterfactual] / G3 decidable
+  specificity). The model judges the type + gates; the **route is derived in
+  code** (`stages/frame.py::_derive`), so only an *earned* proposition reaches
+  `resolve` — a question can never be silently graded as a decision. Emits
+  `{input_type, readiness, earned_gate_failed, route, anchor, …}`. (The verdict
+  field is `readiness`, not `presentation`, to avoid colliding with the
+  definitiveness gate's separate "presentation" concept.)
+- **Seeded generation.** SPARK ingests a seeded candidate (a hybrid's leaning or
+  a demoted G2-fail proposition — the Frame `anchor`) via `--seed`, injected into
+  the opening round's field. It competes **without privilege**: carried through
+  Pattern Lock + the Cut, it survives only on the merits (verified: a strong seed
+  wins the Cut, a weak one loses). Composes with `--depth`.
+- **A Proposer depth knob** (`--depth shallow|standard|deep`). `standard` is the
+  unchanged default; `shallow` is a quick answer without full SPARK divergence
+  (caps 2/1/1, no integrity reopen — ~3–4× faster); `deep` widens the field
+  (8/3/3). Expressed as the per-phase convergence caps (`presets.py`).
+- **Ceremony-ledger input-type fields + drift closed.** `compose.py::_ceremony_row`
+  now records the front-door classification (`input_type, readiness,
+  earned_gate_failed, anchor, routed_to, offramp_taken, demoted`) — seeded from
+  the separate `rapier frame` call via `--frame <path>` (→ `Pipeline.run(seed_meta=…)`)
+  — plus the ceremony-description fields it previously omitted relative to the
+  in-session fallback (`iterations, held_at_cap, strongest_quote, verify_mode,
+  grounding_coherence, artifact_path`). Both write sites now share one schema.
 - **External-canon grounding actually fires in a normal run.** The citation gate
   now extracts CWE / DOI / RFC / URL / `path:line` from the recommendation and
   verifies them against MITRE / Crossref / IETF / URL-liveness — no model in the
@@ -36,12 +63,20 @@ what's next" so a new session can continue without reconstructing from git log.
 1. **M4 publish.** Build + publish to PyPI (`rapier-runtime`), then swap the VPS
    `index.html` from `coming-soon.html` to the full landing — resolving the
    landing's placeholders first (real pip name, and the paper / PyPI / SPARRING-
-   spec links). This is what makes `pip install rapier-runtime` real.
-2. **Bump the Loom submodule pin** to the current rapier HEAD. None of the
-   2026-07-08 work reaches the Loom cohort until the pin advances.
-3. **MCP:** end-to-end live-session test with a real client (Claude Desktop);
-   optionally expose runs as MCP *resources* rather than tools.
-4. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
+   spec links; Paper 1 is now public, so the paper link resolves). This is what
+   makes `pip install rapier-runtime` real.
+2. **MCP:** end-to-end live-session test with a real client (Claude Desktop);
+   optionally expose runs as MCP *resources* rather than tools. (The MCP tools
+   still expose `spar` / `sparring` only — surfacing `frame` / `proposer` and the
+   `--depth` / `--seed` knobs is a small follow-on if wanted.)
+3. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
+   Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
+   the depth knob are the instrument it will exercise.
+
+_(Done since 2026-07-08: the input-typing front door + seeded generation + depth
+knob + ledger fields — see Done above. The Loom submodule pin is current — it was
+advanced with each increment, last `222e9221` — so the earlier "bump the pin"
+item is cleared.)_
 
 ## Things a new session should know
 - **Two repos.** This engine (`muddyone/rapier-runtime`, public) vs. the SPARRING
