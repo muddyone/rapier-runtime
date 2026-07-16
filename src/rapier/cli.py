@@ -219,6 +219,13 @@ def main(argv: list[str] | None = None) -> int:
                 "--verify", choices=list(VERIFY_MODES), default="gate",
                 help="external-canon citation gate: off | gate (default) | round",
             )
+        if preset in ("proposer", "sparring"):  # the Proposer half seeds SPARK's field
+            p.add_argument(
+                "--seed", action="append", metavar="TEXT", default=None,
+                help="seed a candidate option into SPARK's field (repeatable) — e.g. a Frame "
+                     "anchor for a hybrid/leaning input. Not privileged: it survives only if it "
+                     "wins Pattern Lock + the Cut on the merits",
+            )
         if preset == "sparring":  # the Proposer half only exists in the full ceremony
             p.add_argument(
                 "--report-all", action="store_true",
@@ -284,7 +291,8 @@ def main(argv: list[str] | None = None) -> int:
             print(err, file=sys.stderr)
             return 2
         preset = load_preset(
-            args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate")
+            args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate"),
+            seed=getattr(args, "seed", None),
         )
         return _run(preset, request, args.ledger_dir, report_all=getattr(args, "report_all", False))
     if args.cmd == "run":
