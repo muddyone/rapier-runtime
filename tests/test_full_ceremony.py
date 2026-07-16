@@ -3,11 +3,21 @@ from __future__ import annotations
 
 import pathlib
 
+import pytest
+
 from rapier.envelope import Envelope
 from rapier.manifest import Manifest
 from rapier.models import ModelSpec, build_client
 from rapier.presets import PRESETS, load_preset
 from rapier.stage import StageContext, get_stage
+
+
+@pytest.fixture(autouse=True)
+def _no_corpus_pollution(monkeypatch):
+    # ComposeStage appends the ceremony row to the shared corpus
+    # (~/.claude/spar-ledger.jsonl) by default; disable it during tests so runs
+    # never pollute the real ledger. (Empty path = the append is a no-op.)
+    monkeypatch.setenv("RAPIER_CEREMONY_LEDGER", "")
 
 
 def test_full_manifest_loads_and_registers():
@@ -152,3 +162,69 @@ def test_ceremony_row_not_load_bearing_when_nothing_changed():
     get_stage("compose")().run(env, StageContext())
     assert env.meta["ceremony_row"]["load_bearing"] is False
     assert env.meta["ceremony_row"]["verdict"] == "DID_NOT_MATTER"
+
+
+# --- Increment 5: input-type classification fields + drift-fix on the row ------
+def test_ceremony_row_carries_frame_classification_and_drift_fields():
+    env = Envelope(request="Use Postgres because ACID.", recommendation="Use Postgres.", verdict="PASS")
+    env.meta["review"] = {"reviewer_vendor": "gpt", "cross_vendor": True,
+                          "objections": [{"handle": "o1", "text": "check ops load"}]}
+    env.meta["citation_gate"] = {"gate": "clean", "grounding_rate": 1.0, "theater_flags": 0}
+    # seeded from the separate `rapier frame` call (via --frame)
+    env.meta["frame"] = {"input_type": "proposition", "readiness": "pass",
+                         "earned_gate_failed": "none", "anchor": None, "route": "resolve"}
+    env.meta["settle"] = 2
+    env.meta["verify"] = "gate"
+    get_stage("compose")().run(env, StageContext(run_dir="/tmp/run-x"))
+    row = env.meta["ceremony_row"]
+    # the 7 classification fields
+    assert row["input_type"] == "proposition"
+    assert row["readiness"] == "pass"
+    assert row["earned_gate_failed"] == "none"
+    assert row["anchor"] == ""                      # None -> ""
+    assert row["routed_to"] == "resolve"
+    assert row["offramp_taken"] == "full_resolve"   # a recommendation was produced
+    assert row["demoted"] is False                  # earned, routed to resolve
+    # the drift fields the engine previously omitted, now present
+    assert row["iterations"] == 3                    # 1 + settle(2)
+    assert row["held_at_cap"] is False               # verdict PASS
+    assert row["strongest_quote"] == "check ops load"
+    assert row["verify_mode"] == "gate"
+    assert row["grounding_coherence"] == "ok"        # verification ran
+    assert row["artifact_path"] == "/tmp/run-x/report.md"
+
+
+def test_ceremony_row_demoted_and_anchor_for_unearned_proposition():
+    env = Envelope(request="Use X.", recommendation="Use Y.", committed="Use Y.", verdict="REVIEW")
+    env.meta["review"] = {"objections": []}
+    env.meta["frame"] = {"input_type": "proposition", "readiness": "fail",
+                         "earned_gate_failed": "G2", "anchor": "Use X", "route": "propose"}
+    get_stage("compose")().run(env, StageContext())
+    row = env.meta["ceremony_row"]
+    assert row["demoted"] is True                    # a stated proposition sent back to Propose
+    assert row["routed_to"] == "propose"
+    assert row["anchor"] == "Use X"
+    assert row["offramp_taken"] == "full_resolve"
+
+
+def test_ceremony_row_classification_empty_without_frame():
+    # No --frame seeded: the schema stays stable, the classification values are empty.
+    env = Envelope(request="q", recommendation="a", verdict="PASS")
+    env.meta["review"] = {"objections": []}
+    get_stage("compose")().run(env, StageContext())
+    row = env.meta["ceremony_row"]
+    for k in ("input_type", "readiness", "earned_gate_failed", "anchor", "routed_to"):
+        assert row[k] == ""
+    assert row["offramp_taken"] == "full_resolve"
+    assert row["demoted"] is False
+    assert row["iterations"] == 1                     # settle absent -> 1
+    assert row["grounding_coherence"] == "n/a"        # no verification ran
+
+
+def test_pipeline_run_merges_seed_meta():
+    # seed_meta lands on env.meta before any stage runs (the --frame/settle path).
+    from rapier.pipeline import Pipeline, StageSpec
+    pipe = Pipeline([StageSpec(stage="echo", config={})], name="t")
+    env = pipe.run("hello", seed_meta={"frame": {"input_type": "question"}, "settle": 1})
+    assert env.meta["frame"]["input_type"] == "question"
+    assert env.meta["settle"] == 1

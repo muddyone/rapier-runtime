@@ -78,8 +78,16 @@ class Pipeline:
         ledger_root: str | None = None,
         log: Callable[[str], None] = lambda _m: None,
         cancel: Callable[[], bool] | None = None,
+        seed_meta: dict[str, Any] | None = None,
     ) -> Envelope:
         env = Envelope(request=request)
+        # Caller-supplied envelope metadata, merged before any stage runs. Used to
+        # carry context the pipeline itself can't observe — e.g. the front-door
+        # Frame classification (from a separate `rapier frame` call) and the
+        # resolver knobs (settle/verify) — so the compose stage can record them
+        # on the ceremony-ledger row.
+        if seed_meta:
+            env.meta.update(seed_meta)
         ledger = Ledger(ledger_root, run_slug=self.name) if ledger_root else None
         # Capture every model call (all vendors, one path) to the transcript.
         if ledger:
