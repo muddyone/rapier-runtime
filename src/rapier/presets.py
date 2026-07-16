@@ -21,20 +21,49 @@ from __future__ import annotations
 _RESOLVER_MAX_TOKENS = 8000
 _AUTHOR = {"vendor": "anthropic", "model": "claude-opus-4-8", "max_tokens": _RESOLVER_MAX_TOKENS}
 
-_PROPOSER = [
-    {"stage": "spark", "config": {"cap": 5}},
-    {"stage": "pattern_lock", "config": {"cap": 3}},
-    {"stage": "cut", "config": {"cap": 2, "integrity_check": True}},
-]
+# Proposer depth — how much divergence and rigor the SPARK → Pattern Lock → the
+# Cut loop runs, expressed as the per-phase convergence caps (+ the Cut's
+# cross-vendor prematurity audit). ``standard`` is the shipped default and is
+# unchanged. ``shallow`` is a quick answer *without full SPARK divergence*
+# (§10 of the input-typing design): one divergent shot plus a single
+# expand-fold, a single filter pass, and a direct commit — no integrity reopen.
+# ``deep`` widens the field and pressure-tests the commitment harder for
+# high-stakes coverage. Depth only shapes the Proposer; the Resolver is
+# unaffected.
+PROPOSER_DEPTHS = ("shallow", "standard", "deep")
+
+_PROPOSER_BY_DEPTH: dict[str, list[dict]] = {
+    "shallow": [
+        {"stage": "spark", "config": {"cap": 2}},
+        {"stage": "pattern_lock", "config": {"cap": 1}},
+        {"stage": "cut", "config": {"cap": 1}},  # no integrity_check — the quick path
+    ],
+    "standard": [
+        {"stage": "spark", "config": {"cap": 5}},
+        {"stage": "pattern_lock", "config": {"cap": 3}},
+        {"stage": "cut", "config": {"cap": 2, "integrity_check": True}},
+    ],
+    "deep": [
+        {"stage": "spark", "config": {"cap": 8}},
+        {"stage": "pattern_lock", "config": {"cap": 3}},
+        {"stage": "cut", "config": {"cap": 3, "integrity_check": True}},
+    ],
+}
+
+# Back-compat alias: the canonical default Proposer stage set.
+_PROPOSER = _PROPOSER_BY_DEPTH["standard"]
 
 
-def _proposer(seed: list[str] | None = None) -> list[dict]:
-    """The Proposer stages, freshly copied (never the shared module-level dicts),
-    with an optional ``seed`` injected into SPARK's config. A seed is a candidate
-    option dropped into SPARK's field — a Frame anchor for a hybrid/leaning input
-    (or a demoted G2-fail proposition). It is not privileged; it survives only if
-    it wins Pattern Lock + the Cut on the merits."""
-    stages = [dict(s, config=dict(s["config"])) for s in _PROPOSER]
+def _proposer(seed: list[str] | None = None, depth: str = "standard") -> list[dict]:
+    """The Proposer stages at the requested ``depth`` (shallow | standard | deep),
+    freshly copied (never the shared module-level dicts), with an optional
+    ``seed`` injected into SPARK's config. A seed is a candidate option dropped
+    into SPARK's field — a Frame anchor for a hybrid/leaning input (or a demoted
+    G2-fail proposition). It is not privileged; it survives only if it wins
+    Pattern Lock + the Cut on the merits. Depth and seed compose freely."""
+    if depth not in _PROPOSER_BY_DEPTH:
+        raise ValueError(f"unknown proposer depth '{depth}'; known: {list(PROPOSER_DEPTHS)}")
+    stages = [dict(s, config=dict(s["config"])) for s in _PROPOSER_BY_DEPTH[depth]]
     if seed:
         stages[0]["config"]["seed"] = list(seed)
     return stages
@@ -74,18 +103,19 @@ def _resolver(settle: int = 0, verify: str = "gate") -> list[dict]:
     return stages
 
 
-def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None) -> dict:
-    if name == "spar":  # Resolver-only — no SPARK, so seed is a no-op
+def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None,
+           depth: str = "standard") -> dict:
+    if name == "spar":  # Resolver-only — no SPARK, so seed/depth are no-ops
         return {"name": "spar", "pipeline": _resolver(settle, verify)}
     if name == "sparring":
         return {
             "name": "sparring",
             "policy": {"independence": "preferred"},
-            "pipeline": _proposer(seed) + _resolver(settle, verify),
+            "pipeline": _proposer(seed, depth) + _resolver(settle, verify),
         }
     if name == "proposer":  # settle/verify are resolver-only — no-ops here
-        return {"name": "proposer", "pipeline": _proposer(seed)}
-    if name == "frame":  # front-door classifier only — settle/verify/seed are no-ops
+        return {"name": "proposer", "pipeline": _proposer(seed, depth)}
+    if name == "frame":  # front-door classifier only — settle/verify/seed/depth are no-ops
         return {"name": "frame", "pipeline": [{"stage": "frame", "roles": {"framer": _FRAMER}}]}
     raise KeyError(f"unknown preset '{name}'; known: ['frame', 'proposer', 'spar', 'sparring']")
 
@@ -95,9 +125,10 @@ def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | N
 PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", "proposer", "frame")}
 
 
-def load_preset(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None):
+def load_preset(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None,
+                depth: str = "standard"):
     from .manifest import Manifest
 
     if name not in PRESETS:
         raise KeyError(f"unknown preset '{name}'; known: {sorted(PRESETS)}")
-    return Manifest.from_dict(_build(name, settle=settle, verify=verify, seed=seed))
+    return Manifest.from_dict(_build(name, settle=settle, verify=verify, seed=seed, depth=depth))

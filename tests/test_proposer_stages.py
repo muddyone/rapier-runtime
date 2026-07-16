@@ -86,6 +86,59 @@ def test_unseeded_preset_has_no_seed_key():
     assert "seed" not in _spark_config(load_preset("sparring"))
 
 
+# --- Proposer depth knob (shallow | standard | deep) --------------------------
+def _caps(manifest):
+    by = {s.stage: s.config for s in manifest.stages}
+    return (by["spark"]["cap"], by["pattern_lock"]["cap"], by["cut"]["cap"],
+            by["cut"].get("integrity_check", False))
+
+
+def test_depth_default_is_standard_and_unchanged():
+    """The default depth must reproduce the historical caps exactly — no
+    behavior change for existing callers."""
+    from rapier.presets import load_preset
+    assert _caps(load_preset("proposer")) == (5, 3, 2, True)
+    assert _caps(load_preset("proposer", depth="standard")) == (5, 3, 2, True)
+
+
+def test_depth_shallow_is_the_quick_path():
+    from rapier.presets import load_preset
+    # lower caps, and the Cut's integrity reopen is dropped
+    assert _caps(load_preset("proposer", depth="shallow")) == (2, 1, 1, False)
+
+
+def test_depth_deep_widens_the_field():
+    from rapier.presets import load_preset
+    assert _caps(load_preset("proposer", depth="deep")) == (8, 3, 3, True)
+
+
+def test_depth_applies_to_sparring_preset_too():
+    from rapier.presets import load_preset
+    assert _caps(load_preset("sparring", depth="shallow"))[:3] == (2, 1, 1)
+
+
+def test_depth_and_seed_compose():
+    from rapier.presets import load_preset
+    m = load_preset("proposer", seed=["Use Postgres"], depth="shallow")
+    assert _spark_config(m).get("seed") == ["Use Postgres"]
+    assert _spark_config(m)["cap"] == 2  # shallow SPARK cap
+
+
+def test_unknown_depth_raises():
+    import pytest
+    from rapier.presets import load_preset
+    with pytest.raises(ValueError, match="unknown proposer depth"):
+        load_preset("proposer", depth="turbo")
+
+
+def test_depth_does_not_mutate_shared_templates():
+    """Building a seeded shallow preset must not leak into the next default load."""
+    from rapier.presets import load_preset
+    load_preset("proposer", seed=["sticky"], depth="shallow")
+    assert _caps(load_preset("proposer")) == (5, 3, 2, True)  # standard, clean
+    assert "seed" not in _spark_config(load_preset("proposer", depth="shallow"))
+
+
 def test_proposer_manifest_loads_and_registers():
     path = pathlib.Path(__file__).parent.parent / "manifests" / "sparring.proposer.yaml"
     m = Manifest.load(str(path))

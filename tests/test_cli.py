@@ -74,6 +74,23 @@ def test_seed_accepted_on_proposer(monkeypatch):
     assert rc == 2  # parsed OK, then stopped at the no-keys preflight
 
 
+def test_depth_accepted_on_proposer(monkeypatch):
+    monkeypatch.setattr("rapier.onboarding.preflight_error", lambda: "no keys (test)")
+    rc = main(["proposer", "--request", "x", "--depth", "shallow"])
+    assert rc == 2  # parsed OK, then stopped at preflight
+
+
+def test_depth_rejects_unknown_choice():
+    with pytest.raises(SystemExit):
+        main(["proposer", "--request", "x", "--depth", "turbo"])
+
+
+def test_depth_not_a_flag_on_spar():
+    # spar is Resolver-only — no Proposer to shape, so --depth is not valid there
+    with pytest.raises(SystemExit):
+        main(["spar", "--request", "x", "--depth", "shallow"])
+
+
 def test_version_flag_exits_0_and_prints(capsys):
     with pytest.raises(SystemExit) as e:
         main(["--version"])
