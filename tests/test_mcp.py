@@ -101,7 +101,19 @@ def test_build_server_registers_all_tools():
     pytest.importorskip("mcp")
     srv = server.build_server()
     names = {t.name for t in anyio.run(srv.list_tools)}
-    assert {"spar", "sparring", "rapier_doctor", "list_runs", "get_run"} <= names
+    assert {"frame", "proposer", "spar", "sparring",
+            "rapier_doctor", "list_runs", "get_run"} <= names
+
+
+def test_build_server_advertises_rapier_version_not_sdk():
+    import pytest
+
+    pytest.importorskip("mcp")
+    from rapier import __version__
+
+    srv = server.build_server()
+    # The initialize handshake must report rapier's version, not the mcp SDK's.
+    assert srv._mcp_server.version == __version__
 
 
 # --- MCP-2: timeout + ledger-run access ---

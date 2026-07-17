@@ -19,11 +19,16 @@ the result back. No methodology logic lives here.
 ## Tools exposed
 | Tool | Maps to | Params | Returns |
 |------|---------|--------|---------|
-| `spar` | resolver-only preset | `request` (str, req), `settle` (int=0), `verify` (off\|gate\|round =gate) | two-part report (recommendation + trust rider) + structured block |
-| `sparring` | full ceremony | `request`, `settle`, `verify`, `report_all` (bool=false) | Proposer + Resolver reports + structured block |
+| `frame` | frame preset | `request` (str, req) | the Presentation: `input_type`, `route` (propose\|resolve), `readiness` — classify before running a ceremony |
+| `proposer` | proposer-only preset | `request`, `seed` (list=None), `depth` (shallow\|standard\|deep =standard) | committed proposition + standing objections + structured block |
+| `spar` | resolver-only preset | `request`, `settle` (int=0), `verify` (off\|gate\|round =gate), `frame` (dict=None) | two-part report (recommendation + trust rider) + structured block |
+| `sparring` | full ceremony | `request`, `settle`, `verify`, `report_all` (bool=false), `seed`, `depth`, `frame` | Proposer + Resolver reports + structured block |
 | `rapier_doctor` | vendor detection | — | which vendors are configured (names only, never values), whether cross-vendor is possible, what's missing |
 
-`proposer`-only is omitted from v1 (low standalone demand); add later if asked.
+All four ceremony tools take `timeout_s` (float=0; >0 caps the run). `seed`/`depth`
+mirror the CLI's `--seed`/`--depth`; `frame` accepts the dict from the `frame` tool
+(the CLI's `--frame`, recorded on the ceremony-ledger row). `proposer`-only was
+deferred in v1 (low standalone demand) and added here once the front door landed.
 
 ### Tool output shape
 Return **both** a human-readable markdown report *and* a structured payload, so a
