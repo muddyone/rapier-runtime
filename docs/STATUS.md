@@ -76,19 +76,16 @@ what's next" so a new session can continue without reconstructing from git log.
   `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
-1. **MCP live-session test** — confirmed end-to-end via Claude Code (real client:
-   handshake + tool calls, 2026-07-17). Still open: confirm on Claude Desktop (the
-   flagship consumer client); optionally expose runs as MCP *resources* rather than
-   tools.
-2. ~~**Surface the new capabilities in the MCP tools.**~~ **Done + shipped in
-   0.3.0 (merged + released 2026-07-18):** `frame` / `proposer` added and `seed` /
-   `depth` / `frame` threaded through — the MCP server now matches the CLI. (Same
-   change fixed the initialize handshake advertising the SDK version instead of
-   rapier's.)
-3. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
+1. **Confirm the MCP server on Claude Desktop** (the flagship consumer client) —
+   the last open item on the MCP live-session test. Claude Code is already verified
+   end-to-end (handshake + tool calls, 2026-07-17); the released 0.3.0 server now
+   advertises `frame` / `proposer` + `seed` / `depth` / `frame`, so Desktop should
+   see the full 7-tool surface. (The 0.3.0 release itself is **done** — see Done.)
+2. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
-   the depth knob are the instrument it will exercise. (Optional polish: a landing
-   line advertising the front door / `--depth` / `--seed`, if worth it.)
+   the depth knob are the instrument it will exercise.
+3. **Optional polish, if worth it:** expose runs as MCP *resources* rather than
+   tools; a landing line advertising the front door / `--depth` / `--seed`.
 
 _(M4 publish is **DONE** — v0.3.0 on PyPI + the full landing live; see Done above.
 Loom submodule pin bumped to the v0.3.0 release commit `75570c7` so `/spar`·`/sparring`
