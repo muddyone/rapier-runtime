@@ -54,10 +54,12 @@ what's next" so a new session can continue without reconstructing from git log.
   key IS present; `mock` is always kept). BYO-any-vendor genuinely works.
   (`pipeline._resolve_role_spec`.)
 - **MCP server (MCP-0/1/2).** `rapier mcp` stdio subcommand, optional `[mcp]`
-  extra (core stays `requests`+`pyyaml`). Tools: `spar`, `sparring`,
-  `rapier_doctor`, `list_runs`, `get_run`. Structured output; per-stage progress;
-  cooperative cancellation; per-tool `timeout_s`; opt-in run persistence via
-  `RAPIER_MCP_LEDGER`. Scope + milestones: `docs/mcp-server-scope.md`. This is the
+  extra (core stays `requests`+`pyyaml`). Tools: `frame`, `proposer`, `spar`,
+  `sparring`, `rapier_doctor`, `list_runs`, `get_run` — full CLI parity (the front
+  door + the `seed` / `depth` / `frame` knobs threaded through). Structured output;
+  per-stage progress; cooperative cancellation; per-tool `timeout_s`; opt-in run
+  persistence via `RAPIER_MCP_LEDGER`. The initialize handshake reports rapier's own
+  version (not the SDK's). Scope + milestones: `docs/mcp-server-scope.md`. This is the
   **public, generic equivalent of the Loom `/spar` `/sparring` slash-commands**
   (which are Loom-only artifacts a generic user does not have).
 - **rapierruntime.com — full landing deployed.** DNS → VPS `160.153.180.205`,
@@ -68,13 +70,14 @@ what's next" so a new session can continue without reconstructing from git log.
   `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
-1. **MCP live-session test** with a real client (Claude Desktop) — confirm the
-   stdio server end-to-end; optionally expose runs as MCP *resources* rather than
+1. **MCP live-session test** — confirmed end-to-end via Claude Code (real client:
+   handshake + tool calls, 2026-07-17). Still open: confirm on Claude Desktop (the
+   flagship consumer client); optionally expose runs as MCP *resources* rather than
    tools.
-2. **Surface the new capabilities in the MCP tools.** The MCP server still exposes
-   `spar` / `sparring` only — add `frame` / `proposer` and thread the `--depth` /
-   `--seed` (and `--frame`) knobs so MCP clients reach the front door + the
-   Proposer knobs, matching the CLI.
+2. ~~**Surface the new capabilities in the MCP tools.**~~ **Done (2026-07-17):**
+   `frame` / `proposer` added and `seed` / `depth` / `frame` threaded through — the
+   MCP server now matches the CLI. (Same change fixed the initialize handshake
+   advertising the SDK version instead of rapier's.)
 3. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
    the depth knob are the instrument it will exercise. (Optional polish: a landing

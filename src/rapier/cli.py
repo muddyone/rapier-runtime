@@ -259,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("doctor", help="check which AI vendor keys are configured")
     ip = sub.add_parser("init", help="scaffold a .env.example for vendor keys")
     ip.add_argument("--dir", default=".", help="directory to write .env.example into (default: cwd)")
-    sub.add_parser("mcp", help="run the MCP server (stdio) exposing spar/sparring as tools")
+    sub.add_parser("mcp", help="run the MCP server (stdio) exposing frame/proposer/spar/sparring as tools")
 
     args = parser.parse_args(argv)
 

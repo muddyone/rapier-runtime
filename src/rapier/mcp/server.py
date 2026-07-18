@@ -1,4 +1,4 @@
-"""The ``rapier mcp`` stdio server — spar / sparring / doctor as MCP tools.
+"""The ``rapier mcp`` stdio server — frame / proposer / spar / sparring / doctor as MCP tools.
 
 Optional: requires the ``mcp`` extra (``pip install "rapier-runtime[mcp]"``). The
 SDK is imported lazily inside :func:`build_server`, so importing this module (and
@@ -106,48 +106,93 @@ def build_server():
     """
     from mcp.server.fastmcp import Context, FastMCP  # optional dependency
 
+    from .. import __version__
     from ..presets import load_preset
     from . import tools
 
     server = FastMCP("rapier")
+    # FastMCP doesn't forward a version to the low-level server, which then reports
+    # the mcp SDK's own version in the initialize handshake. Set ours so a client
+    # sees rapier's version, not the SDK's.
+    server._mcp_server.version = __version__
     # Opt-in run persistence: when set, ceremonies are written here and become
     # retrievable via list_runs / get_run. Off by default (no surprise disk writes).
     ledger_root = os.environ.get("RAPIER_MCP_LEDGER") or None
 
-    def _stage_total(name: str, settle: int, verify: str) -> int:
+    def _stage_total(name: str, settle: int = 0, verify: str = "gate",
+                     seed: list | None = None, depth: str = "standard") -> int:
         try:
-            return len(load_preset(name, settle=settle, verify=verify).stages)
+            return len(load_preset(name, settle=settle, verify=verify,
+                                   seed=seed, depth=depth).stages)
         except Exception:
             return 0
 
     @server.tool()
     async def spar(
         request: str, settle: int = 0, verify: str = "gate",
-        timeout_s: float = 0, ctx: Context = None,
+        frame: dict | None = None, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the SPARRING Resolver on a decision: one grounded, cross-vendor
         challenge plus a definitiveness gate. Returns a recommendation, a trust
         rider, and the grounding verdict. ``settle`` adds review-and-revise rounds
         (default 0); ``verify`` is off|gate|round for the external-canon gate;
-        ``timeout_s`` > 0 caps the run (partial run abandoned on timeout)."""
+        ``frame`` is a Frame classification (from the ``frame`` tool) recorded on
+        the ledger row; ``timeout_s`` > 0 caps the run (partial run abandoned)."""
         return await _run_with_progress(
             tools.run_spar, ctx, _stage_total("spar", settle, verify),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
-            request=request, settle=settle, verify=verify,
+            request=request, settle=settle, verify=verify, frame=frame,
         )
 
     @server.tool()
     async def sparring(
         request: str, settle: int = 0, verify: str = "gate",
-        report_all: bool = False, timeout_s: float = 0, ctx: Context = None,
+        report_all: bool = False, seed: list | None = None, depth: str = "standard",
+        frame: dict | None = None, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the full SPARRING ceremony (Proposer, then Resolver) on a decision.
         ``report_all`` also returns the Proposer handoff (the committed option and
-        its standing objections); ``timeout_s`` > 0 caps the run."""
+        its standing objections). ``seed`` injects candidate options into SPARK's
+        field (repeatable; not privileged — each must win on merit); ``depth`` is
+        shallow|standard|deep Proposer divergence; ``frame`` is a Frame
+        classification recorded on the ledger row; ``timeout_s`` > 0 caps the run."""
         return await _run_with_progress(
-            tools.run_sparring, ctx, _stage_total("sparring", settle, verify),
+            tools.run_sparring, ctx,
+            _stage_total("sparring", settle, verify, seed=seed, depth=depth),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
             request=request, settle=settle, verify=verify, report_all=report_all,
+            seed=seed, depth=depth, frame=frame,
+        )
+
+    @server.tool()
+    async def proposer(
+        request: str, seed: list | None = None, depth: str = "standard",
+        timeout_s: float = 0, ctx: Context = None,
+    ) -> dict:
+        """Run the SPARRING Proposer only (SPARK → Pattern Lock → the Cut): generate
+        and converge on a committed proposition with standing objections — no
+        Resolver pass. ``seed`` injects candidate options into SPARK's field
+        (repeatable; not privileged — each survives only if it wins on merit);
+        ``depth`` is shallow|standard|deep divergence; ``timeout_s`` > 0 caps the run."""
+        return await _run_with_progress(
+            tools.run_proposer, ctx, _stage_total("proposer", depth=depth),
+            timeout_s=timeout_s or None, ledger_root=ledger_root,
+            request=request, seed=seed, depth=depth,
+        )
+
+    @server.tool()
+    async def frame(
+        request: str, timeout_s: float = 0, ctx: Context = None,
+    ) -> dict:
+        """Classify an input at the front door (the Presentation) and recommend a
+        route. Returns the Frame — input_type (question | proposition | hybrid |
+        earned/unearned decision), route (propose | resolve), and readiness — so a
+        client can branch before running a ceremony. Does not run SPARK or the
+        Resolver. ``timeout_s`` > 0 caps the run."""
+        return await _run_with_progress(
+            tools.run_frame, ctx, _stage_total("frame"),
+            timeout_s=timeout_s or None, ledger_root=ledger_root,
+            request=request,
         )
 
     @server.tool()
