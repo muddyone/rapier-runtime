@@ -1,9 +1,15 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-16 (HEAD b8b21e89, 167 tests)._ A running "where we are /
+_Last updated: 2026-07-18 (tag v0.3.0, 172 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-07-18) — `rapier-runtime` 0.3.0 on PyPI.** The MCP front-door
+  tools (`frame` / `proposer`) + the `seed` / `depth` / `frame` knobs (PR #9,
+  squash-merged as `432b74d`) now reach installed clients: `pip install -U
+  rapier-runtime`. 0.2.0 was immutable, so this is a minor bump. Git tag `v0.3.0`
+  pushed; https://pypi.org/project/rapier-runtime/0.3.0/. 172 tests green on the
+  merged main.
 - **LAUNCHED (2026-07-16) — M4 publish is done.** `rapier-runtime` **0.2.0** is on
   PyPI (`pip install rapier-runtime` now installs the input-typing front door,
   seeded generation, the depth knob, and the ledger fields; the pre-front-door
@@ -74,17 +80,19 @@ what's next" so a new session can continue without reconstructing from git log.
    handshake + tool calls, 2026-07-17). Still open: confirm on Claude Desktop (the
    flagship consumer client); optionally expose runs as MCP *resources* rather than
    tools.
-2. ~~**Surface the new capabilities in the MCP tools.**~~ **Done (2026-07-17):**
-   `frame` / `proposer` added and `seed` / `depth` / `frame` threaded through — the
-   MCP server now matches the CLI. (Same change fixed the initialize handshake
-   advertising the SDK version instead of rapier's.)
+2. ~~**Surface the new capabilities in the MCP tools.**~~ **Done + shipped in
+   0.3.0 (merged + released 2026-07-18):** `frame` / `proposer` added and `seed` /
+   `depth` / `frame` threaded through — the MCP server now matches the CLI. (Same
+   change fixed the initialize handshake advertising the SDK version instead of
+   rapier's.)
 3. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
    the depth knob are the instrument it will exercise. (Optional polish: a landing
    line advertising the front door / `--depth` / `--seed`, if worth it.)
 
-_(M4 publish is **DONE** — v0.2.0 on PyPI + the full landing live; see Done above.
-The Loom submodule pin is current — last `222e9221`.)_
+_(M4 publish is **DONE** — v0.3.0 on PyPI + the full landing live; see Done above.
+Loom submodule pin bumped to the 0.3.0 merge sha `432b74d` so `/spar`·`/sparring`
+ride the new front-door tools.)_
 
 ## Things a new session should know
 - **Two repos.** This engine (`muddyone/rapier-runtime`, public) vs. the SPARRING
