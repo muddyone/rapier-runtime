@@ -27,6 +27,27 @@ from . import __version__, stages  # noqa: F401  (ensure built-in stages are reg
 from .manifest import Manifest
 from .presets import PROPOSER_DEPTHS, VERIFY_MODES, load_preset
 
+
+def _ensure_utf8_streams() -> None:
+    """Make CLI output non-crashing on a legacy console.
+
+    Rapier's reports use Unicode glyphs (``✓ · ✗ ⚠ —``). On a console whose
+    default codec can't encode them — notably Windows ``cp1252`` — ``print``
+    raises ``UnicodeEncodeError`` mid-report (``rapier doctor`` / ``--help``).
+    Reconfigure stdout/stderr to UTF-8 with a replacement fallback so output
+    degrades gracefully instead of crashing. Best-effort: streams that don't
+    support ``reconfigure`` (redirected or captured) are left untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):
+            pass
+
+
 # A ceremony is a sequence of model calls that each take tens of seconds — long
 # enough that a novice fears it hung. Give each stage a plain-language label and,
 # on a TTY, a live spinner + elapsed clock + "N/M" so it plainly reads as working.
@@ -186,6 +207,7 @@ def _resolve_request(args) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    _ensure_utf8_streams()
     parser = argparse.ArgumentParser(
         prog="rapier",
         description="Rapier Runtime — run a SPARRING method from a manifest or preset.",

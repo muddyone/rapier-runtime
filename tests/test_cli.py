@@ -10,7 +10,33 @@ import io
 
 import pytest
 
-from rapier.cli import _resolve_request, main
+from rapier.cli import _ensure_utf8_streams, _resolve_request, main
+
+
+def test_doctor_survives_a_cp1252_console(monkeypatch):
+    """The doctor report uses Unicode glyphs (✓ · ✗ —); a legacy cp1252 console
+    (Windows default) must not crash with UnicodeEncodeError. `main` reconfigures
+    stdout to UTF-8 so the report is emitted rather than raising."""
+    raw = io.BytesIO()
+    stream = io.TextIOWrapper(raw, encoding="cp1252", newline="")
+    # Without the fix, doctor's `print` of a ✓ glyph to this cp1252 stream would
+    # raise UnicodeEncodeError up through main(); the reconfigure prevents it.
+    monkeypatch.setattr("sys.stdout", stream)
+    rc = main(["doctor"])
+    stream.flush()
+
+    assert rc == 0
+    out = raw.getvalue().decode("utf-8")
+    assert "Vendor keys" in out
+    assert ("✓" in out) or ("·" in out)  # a glyph survived, not stripped
+
+
+def test_ensure_utf8_streams_is_a_safe_noop_on_plain_streams(monkeypatch):
+    """Streams without `reconfigure` (redirected/captured) are left untouched,
+    and the call never raises."""
+    monkeypatch.setattr("sys.stdout", io.StringIO())
+    monkeypatch.setattr("sys.stderr", io.StringIO())
+    _ensure_utf8_streams()  # must not raise
 
 
 def _ns(**kw):
