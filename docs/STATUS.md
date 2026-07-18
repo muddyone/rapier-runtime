@@ -91,7 +91,7 @@ what's next" so a new session can continue without reconstructing from git log.
    line advertising the front door / `--depth` / `--seed`, if worth it.)
 
 _(M4 publish is **DONE** — v0.3.0 on PyPI + the full landing live; see Done above.
-Loom submodule pin bumped to the 0.3.0 merge sha `432b74d` so `/spar`·`/sparring`
+Loom submodule pin bumped to the v0.3.0 release commit `75570c7` so `/spar`·`/sparring`
 ride the new front-door tools.)_
 
 ## Things a new session should know
