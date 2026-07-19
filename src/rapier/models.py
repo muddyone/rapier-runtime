@@ -10,6 +10,7 @@ Secrets are read exclusively through :mod:`rapier.secrets` (env-only, redacted).
 """
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -205,9 +206,10 @@ def build_client(spec: ModelSpec) -> ModelClient:
     if vendor == "openai":
         return OpenAIModelClient(spec)
     if vendor in _OPENAI_COMPATIBLE:
-        base_url, key_env, default_model = _OPENAI_COMPATIBLE[vendor]
+        base_url, key_env, _fallback = _OPENAI_COMPATIBLE[vendor]
         if not spec.model:
-            spec.model = default_model
+            # via default_model() so RAPIER_MODEL_<VENDOR> applies here too
+            spec.model = default_model(vendor) or _fallback
         return OpenAICompatibleModelClient(spec, base_url, key_env)
     known = ["mock", "anthropic", "openai", *sorted(_OPENAI_COMPATIBLE)]
     raise ValueError(f"unknown vendor '{vendor}'; known vendors: {known}")
@@ -240,6 +242,16 @@ _FRONTIER_ORDER = ["anthropic", "openai", "gemini", "xai"]
 
 
 def default_model(vendor: str) -> str:
+    """The default model for a vendor, env-overridable machine-wide.
+
+    ``RAPIER_MODEL_<VENDOR>`` (e.g. ``RAPIER_MODEL_OPENAI=gpt-5.5``) overrides
+    the built-in default for every project on the box, so retuning a vendor's
+    model does not require a code edit or a release. A model named explicitly
+    in a manifest still wins — this only supplies the default.
+    """
+    override = os.environ.get(f"RAPIER_MODEL_{vendor.upper()}")
+    if override:
+        return override.strip()
     return _DEFAULT_MODEL.get(vendor, "")
 
 
