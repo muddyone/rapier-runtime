@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rapier-runtime"
-version = "0.3.0"
+version = "0.3.1"
 description = "A code-orchestrated engine that runs the SPARRING method: grounded, cross-vendor adversarial review for AI-in-the-loop decisions."
 readme = "README.md"
 requires-python = ">=3.10"
