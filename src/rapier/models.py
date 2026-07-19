@@ -231,7 +231,7 @@ def available_vendors() -> list[str]:
 # vendor -> a sensible default model (used when a role has no explicit model).
 _DEFAULT_MODEL: dict[str, str] = {
     "anthropic": "claude-opus-4-8",
-    "openai": "gpt-5.2",
+    "openai": "gpt-5.5",
     **{v: cfg[2] for v, cfg in _OPENAI_COMPATIBLE.items()},
 }
 
