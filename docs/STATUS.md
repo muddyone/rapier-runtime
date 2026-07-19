@@ -81,14 +81,13 @@ what's next" so a new session can continue without reconstructing from git log.
   `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
-1. **Confirm the MCP server on Claude Desktop** (the flagship consumer client) —
-   the last open item on the MCP live-session test. **Prepped 2026-07-18**: rapier
-   installed on Windows Python, `%APPDATA%\Claude\claude_desktop_config.json`
-   written (server `py -m rapier.cli mcp`, `PYTHONUTF8=1`, Anthropic+OpenAI keys),
-   and the exact Desktop launch validated headlessly — `serverInfo.version=0.3.0`,
-   7 tools resolve, `rapier_doctor` reports 2 vendors configured. **Remaining: the
-   GUI confirmation** (restart Desktop, verify the server connects + run a tool).
-   Claude Code was already verified end-to-end (2026-07-17).
+1. ~~**Confirm the MCP server on Claude Desktop.**~~ **DONE (2026-07-18).** Desktop
+   (Windows, MSIX-packaged build) shows the `rapier` server **running** — `py -m
+   rapier.cli mcp`, 7 tools, Anthropic+OpenAI keys. Both flagship clients are now
+   verified (Claude Code 2026-07-17, Desktop 2026-07-18). **Gotcha for next time:**
+   the packaged app reads its config from the package sandbox, NOT
+   `%APPDATA%\Claude\` — see the Things-to-know note below. (Optional follow-on:
+   run a real ceremony from Desktop; expose runs as MCP *resources*.)
 2. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
    the depth knob are the instrument it will exercise.
@@ -107,6 +106,14 @@ Loom submodule pin bumped to the v0.3.1 release commit `1088f11`.)_
   from here.
 - **Secrets are env-only by design** (`secrets.py`) — do not add file-reading of
   keys; populate the environment upstream instead.
+- **Claude Desktop MCP config (Windows, MSIX/Store build).** The packaged app's
+  `%APPDATA%` is redirected into the package sandbox, so it does NOT read the
+  classic `%APPDATA%\Claude\claude_desktop_config.json`. The live file is
+  `…\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\LocalCache\Roaming\Claude\claude_desktop_config.json`
+  (the app manages it — merge `mcpServers` in, preserve the other keys; use the
+  in-app **Settings → Developer → Edit Config** button to open the exact file).
+  Server entry: `command: py`, `args: [-m, rapier.cli, mcp]`, `env` with
+  `PYTHONUTF8=1` + vendor keys. Confirmed running 2026-07-18.
 - **Tests.** `pytest -q`. On machines using the vendored `.tools/` pytest, run
   with a native-filesystem `TMPDIR` (the ledger owner-perms test needs real Unix
   perms, which `/mnt/c` DrvFs can't hold).
