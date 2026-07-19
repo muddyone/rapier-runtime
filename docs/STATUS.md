@@ -1,11 +1,12 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-18 (186 tests; governance-default persistence landed, unreleased)._
-A running "where we are / what's next" so a new session can continue without
-reconstructing from git log.
+_Last updated: 2026-07-18 (tag v0.4.0, 186 tests)._ A running "where we are /
+what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
-- **Governance: runs persist by default + THE RECORD provenance (unreleased).**
+- **RELEASED (2026-07-18) — `rapier-runtime` 0.4.0 on PyPI. Governance: runs
+  persist by default + THE RECORD provenance.** Git tag `v0.4.0`;
+  https://pypi.org/project/rapier-runtime/0.4.0/.
   Every ceremony now writes its durable record (verbatim transcript + per-stage
   records + verdict + report) to `~/.rapier/runs` with no flag — CLI *and* MCP
   (was: CLI wrote to a reaped temp dir; MCP wrote nothing unless
@@ -109,8 +110,8 @@ reconstructing from git log.
 3. **Optional polish, if worth it:** expose runs as MCP *resources* rather than
    tools; a landing line advertising the front door / `--depth` / `--seed`.
 
-_(M4 publish is **DONE** — v0.3.1 on PyPI + the full landing live; see Done above.
-Loom submodule pin bumped to the v0.3.1 release commit `1088f11`.)_
+_(M4 publish is **DONE** — v0.4.0 on PyPI + the full landing live; see Done above.
+Loom submodule pin bumped to the v0.4.0 release commit `514df56`.)_
 
 ## Things a new session should know
 - **Two repos.** This engine (`muddyone/rapier-runtime`, public) vs. the SPARRING
