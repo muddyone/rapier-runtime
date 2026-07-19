@@ -1,9 +1,14 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-18 (tag v0.3.0, 172 tests)._ A running "where we are /
+_Last updated: 2026-07-18 (tag v0.3.1, 174 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-07-18) — `rapier-runtime` 0.3.1 on PyPI.** Patch: `rapier
+  doctor` / `--help` no longer crash on a legacy console (Windows cp1252) —
+  `main()` forces UTF-8 stdout/stderr with a replacement fallback (`c82da6c`).
+  Surfaced while wiring the MCP server into Claude Desktop (Windows). Git tag
+  `v0.3.1`; https://pypi.org/project/rapier-runtime/0.3.1/.
 - **RELEASED (2026-07-18) — `rapier-runtime` 0.3.0 on PyPI.** The MCP front-door
   tools (`frame` / `proposer`) + the `seed` / `depth` / `frame` knobs (PR #9,
   squash-merged as `432b74d`) now reach installed clients: `pip install -U
@@ -77,19 +82,21 @@ what's next" so a new session can continue without reconstructing from git log.
 
 ## Next (priority order)
 1. **Confirm the MCP server on Claude Desktop** (the flagship consumer client) —
-   the last open item on the MCP live-session test. Claude Code is already verified
-   end-to-end (handshake + tool calls, 2026-07-17); the released 0.3.0 server now
-   advertises `frame` / `proposer` + `seed` / `depth` / `frame`, so Desktop should
-   see the full 7-tool surface. (The 0.3.0 release itself is **done** — see Done.)
+   the last open item on the MCP live-session test. **Prepped 2026-07-18**: rapier
+   installed on Windows Python, `%APPDATA%\Claude\claude_desktop_config.json`
+   written (server `py -m rapier.cli mcp`, `PYTHONUTF8=1`, Anthropic+OpenAI keys),
+   and the exact Desktop launch validated headlessly — `serverInfo.version=0.3.0`,
+   7 tools resolve, `rapier_doctor` reports 2 vendors configured. **Remaining: the
+   GUI confirmation** (restart Desktop, verify the server connects + run a tool).
+   Claude Code was already verified end-to-end (2026-07-17).
 2. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
    the depth knob are the instrument it will exercise.
 3. **Optional polish, if worth it:** expose runs as MCP *resources* rather than
    tools; a landing line advertising the front door / `--depth` / `--seed`.
 
-_(M4 publish is **DONE** — v0.3.0 on PyPI + the full landing live; see Done above.
-Loom submodule pin bumped to the v0.3.0 release commit `75570c7` so `/spar`·`/sparring`
-ride the new front-door tools.)_
+_(M4 publish is **DONE** — v0.3.1 on PyPI + the full landing live; see Done above.
+Loom submodule pin bumped to the v0.3.1 release commit `1088f11`.)_
 
 ## Things a new session should know
 - **Two repos.** This engine (`muddyone/rapier-runtime`, public) vs. the SPARRING
