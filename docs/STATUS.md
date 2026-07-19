@@ -81,13 +81,17 @@ what's next" so a new session can continue without reconstructing from git log.
   `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
-1. ~~**Confirm the MCP server on Claude Desktop.**~~ **DONE (2026-07-18).** Desktop
-   (Windows, MSIX-packaged build) shows the `rapier` server **running** — `py -m
-   rapier.cli mcp`, 7 tools, Anthropic+OpenAI keys. Both flagship clients are now
-   verified (Claude Code 2026-07-17, Desktop 2026-07-18). **Gotcha for next time:**
-   the packaged app reads its config from the package sandbox, NOT
-   `%APPDATA%\Claude\` — see the Things-to-know note below. (Optional follow-on:
-   run a real ceremony from Desktop; expose runs as MCP *resources*.)
+1. ~~**Confirm the MCP server on Claude Desktop.**~~ **DONE (2026-07-18) — end to
+   end.** Desktop (Windows, MSIX-packaged build) launches the `rapier` server (`py
+   -m rapier.cli mcp`, `serverInfo 0.3.1`, 7 tools) AND a **live `spar` tool call
+   ran** in a regular chat — returned a Resolver verdict with a grounding-gate FAIL
+   (the definitiveness gate correctly flagging ungrounded specifics on a data-free
+   prompt). Both flagship clients verified (Claude Code 2026-07-17, Desktop
+   2026-07-18). **Two gotchas for next time:** (a) the packaged app reads its config
+   from the package sandbox, NOT `%APPDATA%\Claude\` (see Things-to-know); (b) the
+   local MCP server surfaces in a **regular chat**, NOT in **Cowork** mode (Cowork
+   uses Skills/Plugins and will *role-play* the tool instead of calling it).
+   (Optional follow-on: expose runs as MCP *resources*.)
 2. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
    the depth knob are the instrument it will exercise.
