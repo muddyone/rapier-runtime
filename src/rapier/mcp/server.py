@@ -115,9 +115,16 @@ def build_server():
     # the mcp SDK's own version in the initialize handshake. Set ours so a client
     # sees rapier's version, not the SDK's.
     server._mcp_server.version = __version__
-    # Opt-in run persistence: when set, ceremonies are written here and become
-    # retrievable via list_runs / get_run. Off by default (no surprise disk writes).
-    ledger_root = os.environ.get("RAPIER_MCP_LEDGER") or None
+    # Run persistence (governance default: ON). Ceremonies are written to a
+    # durable run dir and become retrievable via list_runs / get_run. Precedence:
+    # RAPIER_NO_PERSIST opts out entirely; else RAPIER_MCP_LEDGER pins the location
+    # for this server; else the shared default (~/.rapier/runs, RAPIER_RUNS_DIR
+    # overrides). Every tool's report carries a THE RECORD line with the path.
+    from ..ledger import default_runs_root, persistence_disabled
+    if persistence_disabled():
+        ledger_root = None
+    else:
+        ledger_root = os.environ.get("RAPIER_MCP_LEDGER") or default_runs_root()
 
     def _stage_total(name: str, settle: int = 0, verify: str = "gate",
                      seed: list | None = None, depth: str = "standard") -> int:

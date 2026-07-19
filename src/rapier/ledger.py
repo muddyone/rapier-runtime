@@ -22,6 +22,31 @@ def _slug(text: str) -> str:
     return text[:40] or "run"
 
 
+def default_runs_root() -> str:
+    """Where runs persist when no explicit directory is given.
+
+    Governance default: every ceremony leaves a durable, re-readable record.
+    ``~/.rapier/runs`` is a single predictable, owner-private location (the
+    ledger creates each run dir 0700). Override with ``RAPIER_RUNS_DIR`` to route
+    records to a governed/audited path (e.g. a mounted, backed-up volume).
+    """
+    override = os.environ.get("RAPIER_RUNS_DIR")
+    if override:
+        return os.path.expanduser(override)
+    return os.path.join(os.path.expanduser("~"), ".rapier", "runs")
+
+
+def persistence_disabled() -> bool:
+    """True when the caller has explicitly opted out of the durable record.
+
+    Set ``RAPIER_NO_PERSIST`` to a truthy value (``1``/``true``/``yes``) to run
+    without leaving an audit trail — for a genuinely sensitive one-off. The CLI
+    also exposes this as ``--no-save``. Persistence is ON by default; this is the
+    only way it turns off, and the report says so plainly when it does.
+    """
+    return os.environ.get("RAPIER_NO_PERSIST", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Ledger:
     def __init__(self, root: str, run_slug: str = "run"):
         stamp = time.strftime("%Y%m%d%H%M%S")

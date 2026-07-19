@@ -19,11 +19,11 @@ import itertools
 import os
 import re
 import sys
-import tempfile
 import threading
 import time
 
 from . import __version__, stages  # noqa: F401  (ensure built-in stages are registered)
+from .ledger import default_runs_root, persistence_disabled
 from .manifest import Manifest
 from .presets import PROPOSER_DEPTHS, VERIFY_MODES, load_preset
 
@@ -130,11 +130,13 @@ class _Progress:
 
 
 def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False,
-         seed_meta: dict | None = None) -> int:
-    # Always capture a run: without an explicit --ledger-dir, write the full
-    # transcript + per-stage records under a temp dir and tell the user where.
-    default_root = ledger_dir is None
-    root = ledger_dir or os.path.join(tempfile.gettempdir(), "rapier-runs")
+         seed_meta: dict | None = None, no_save: bool = False) -> int:
+    # Governance default: every run leaves a durable, re-readable record. Without
+    # an explicit --ledger-dir it lands under ~/.rapier/runs (RAPIER_RUNS_DIR
+    # overrides). --no-save / RAPIER_NO_PERSIST is the only way off, and the
+    # report's THE RECORD section states which happened.
+    disabled = no_save or persistence_disabled()
+    root = None if disabled else (ledger_dir or default_runs_root())
     pipe = manifest.build()
     progress = _Progress(total=len(pipe.stages))
     try:
@@ -149,17 +151,17 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     if report_all and proposer_md:
         out = f"{proposer_md}\n\n{out}"
     print(out)
-    run_id = env.meta.get("run_id")
-    if run_id:
-        run_dir = os.path.join(root, run_id)
-        hint = "Full transcript, per-stage records, and this report saved to:"
-        if default_root:
-            hint = "No --ledger-dir given, so the full transcript + records were saved to:"
-        print(f"\n· {hint}\n  {run_dir}", file=sys.stderr)
+    # The authoritative provenance statement rides in the report (THE RECORD);
+    # this is just a short stderr pointer for the terminal.
+    run_dir = env.meta.get("run_dir")
+    if run_dir:
+        print(f"\n· record saved to {run_dir}", file=sys.stderr)
+    elif disabled:
+        print("\n· --no-save: no durable record was written for this run.", file=sys.stderr)
     return 0
 
 
-def _run_frame(request: str, ledger_dir: str | None) -> int:
+def _run_frame(request: str, ledger_dir: str | None, no_save: bool = False) -> int:
     """Run the front-door classifier and print the classification.
 
     stdout carries machine-readable JSON — the SPARRING skill parses it to pick
@@ -170,8 +172,8 @@ def _run_frame(request: str, ledger_dir: str | None) -> int:
 
     from .presets import load_preset
 
-    default_root = ledger_dir is None
-    root = ledger_dir or os.path.join(tempfile.gettempdir(), "rapier-runs")
+    disabled = no_save or persistence_disabled()
+    root = None if disabled else (ledger_dir or default_runs_root())
     pipe = load_preset("frame").build()
     progress = _Progress(total=len(pipe.stages))
     try:
@@ -188,9 +190,11 @@ def _run_frame(request: str, ledger_dir: str | None) -> int:
     if frame.get("readiness", "n/a") != "n/a":
         line += f"  (readiness: {frame['readiness']}, failed gate: {frame.get('earned_gate_failed')})"
     print(line, file=sys.stderr)
-    run_id = env.meta.get("run_id")
-    if run_id and default_root:
-        print(f"· transcript saved to {os.path.join(root, run_id)}", file=sys.stderr)
+    run_dir = env.meta.get("run_dir")
+    if run_dir:
+        print(f"· record saved to {run_dir}", file=sys.stderr)
+    elif disabled:
+        print("· --no-save: no durable record was written for this run.", file=sys.stderr)
     return 0
 
 
@@ -228,7 +232,13 @@ def main(argv: list[str] | None = None) -> int:
             help="read the decision/request text from a file (use '-' for stdin) — "
                  "friendlier than --request for a multi-line context pack",
         )
-        p.add_argument("--ledger-dir", default=None, help="write run artifacts (transcript, report, records) here")
+        p.add_argument("--ledger-dir", default=None,
+                       help="write the run's records here (default: ~/.rapier/runs, override with "
+                            "RAPIER_RUNS_DIR); every run is recorded unless --no-save")
+        p.add_argument("--no-save", action="store_true",
+                       help="do NOT write a durable record for this run — for a sensitive one-off. "
+                            "Persistence is on by default (governance); this is the only way off "
+                            "(also RAPIER_NO_PERSIST). The report states which happened.")
 
     for preset in ("spar", "sparring", "proposer"):
         p = sub.add_parser(preset, help=f"run the '{preset}' ceremony preset")
@@ -317,7 +327,7 @@ def main(argv: list[str] | None = None) -> int:
         if err:  # no vendor keys — fail loudly, not silently
             print(err, file=sys.stderr)
             return 2
-        return _run_frame(request, args.ledger_dir)
+        return _run_frame(request, args.ledger_dir, no_save=getattr(args, "no_save", False))
 
     if args.cmd in ("spar", "sparring", "proposer"):
         from .onboarding import preflight_error
@@ -348,9 +358,11 @@ def main(argv: list[str] | None = None) -> int:
             except (OSError, ValueError):
                 pass  # fail-soft: a missing/garbled frame file just omits the classification
         return _run(preset, request, args.ledger_dir,
-                    report_all=getattr(args, "report_all", False), seed_meta=seed_meta)
+                    report_all=getattr(args, "report_all", False), seed_meta=seed_meta,
+                    no_save=getattr(args, "no_save", False))
     if args.cmd == "run":
-        return _run(Manifest.load(args.manifest), request, args.ledger_dir)
+        return _run(Manifest.load(args.manifest), request, args.ledger_dir,
+                    no_save=getattr(args, "no_save", False))
     return 1  # pragma: no cover
 
 

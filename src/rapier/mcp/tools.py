@@ -152,18 +152,22 @@ def _safe_run_id(run_id: str) -> bool:
 
 def list_runs(ledger_root: str | None) -> dict[str, Any]:
     """List persisted run ids under the server's ledger dir (newest last)."""
-    if not ledger_root or not os.path.isdir(ledger_root):
-        return {"ok": False, "error": "run persistence is not enabled (set RAPIER_MCP_LEDGER)"}
+    if not ledger_root:
+        return {"ok": False, "error": "run persistence is disabled (RAPIER_NO_PERSIST is set)"}
+    if not os.path.isdir(ledger_root):
+        return {"ok": True, "runs": [], "ledger_root": ledger_root}  # nothing recorded yet
     runs = sorted(
         d for d in os.listdir(ledger_root) if os.path.isdir(os.path.join(ledger_root, d))
     )
-    return {"ok": True, "runs": runs}
+    return {"ok": True, "runs": runs, "ledger_root": ledger_root}
 
 
 def get_run(ledger_root: str | None, run_id: str) -> dict[str, Any]:
     """Return a persisted run's report + verdict by id (from its envelope.json)."""
-    if not ledger_root or not os.path.isdir(ledger_root):
-        return {"ok": False, "error": "run persistence is not enabled (set RAPIER_MCP_LEDGER)"}
+    if not ledger_root:
+        return {"ok": False, "error": "run persistence is disabled (RAPIER_NO_PERSIST is set)"}
+    if not os.path.isdir(ledger_root):
+        return {"ok": False, "error": f"run '{run_id}' not found"}
     if not _safe_run_id(run_id):
         return {"ok": False, "error": "invalid run id"}
     path = os.path.join(ledger_root, run_id, "envelope.json")

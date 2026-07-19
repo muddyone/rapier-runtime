@@ -212,6 +212,29 @@ def _grounding_body(env: Envelope) -> str:
     return "\n".join(lines)
 
 
+def _record_body(env: Envelope) -> str:
+    """Provenance statement: that a durable record exists (or was declined) and where.
+
+    Governance is only real when the reader can see the record. When the run
+    persisted, name the full path; when it was opted out, say so plainly so a
+    missing trail is never mistaken for a lost one.
+    """
+    run_dir = env.meta.get("run_dir")
+    if run_dir:
+        return (
+            "Every model call in this run was captured verbatim. The full "
+            "transcript, per-stage records, the verdict, and this report are "
+            "saved for audit to:\n\n"
+            f"  {run_dir}\n\n"
+            "Keep or relocate that directory to retain the run's provenance."
+        )
+    return (
+        "No durable record was written — persistence was disabled for this run "
+        "(--no-save / RAPIER_NO_PERSIST). This ceremony leaves no audit trail; "
+        "nothing about it can be reconstructed after this output."
+    )
+
+
 def _render_report(env: Envelope) -> str:
     review = env.meta.get("review") or {}
     gate = env.meta.get("definitiveness") or {}
@@ -273,6 +296,10 @@ def _render_report(env: Envelope) -> str:
               _para(_reviewer_sentence(review)
                     + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
                     "the load-bearing call stays yours."))
+
+    L += _sec("THE RECORD",
+              "Where this run is on disk — its audit trail.",
+              _para(_record_body(env)))
 
     L += ["", "", _RULE,
           "Produced by Rapier Runtime — a ResourceForge project · rapierruntime.com"]

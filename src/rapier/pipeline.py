@@ -105,6 +105,13 @@ class Pipeline:
             run_dir = getattr(ledger, "run_dir", None)
             if run_dir:
                 env.meta["run_id"] = os.path.basename(run_dir)
+                # Full path + status so the report can state its own record
+                # provenance (THE RECORD section) — governance is only real when
+                # the reader can see that the record exists and where.
+                env.meta["run_dir"] = os.path.abspath(run_dir)
+                env.meta["persisted"] = True
+        else:
+            env.meta["persisted"] = False
         available = available_vendors()
         for spec in self.stages:
             # Cooperative cancellation: stop at a stage boundary (never mid-call)

@@ -90,10 +90,14 @@ existing redaction on every tool result. No new secret surface — keys stay in 
 - **MCP-1 ✅ (done, 6752181):** structured output (verdict + grounding +
   cross_vendor + standing_objections), per-stage progress notifications.
 - **MCP-2 ✅ (done, 508298b):** cooperative cancellation, per-tool `timeout_s`,
-  opt-in ledger-run access (`RAPIER_MCP_LEDGER` + `list_runs`/`get_run`).
+  ledger-run access (`list_runs`/`get_run`).
+- **MCP-3 ✅ (persist by default):** runs persist to `~/.rapier/runs` by default
+  (was opt-in via `RAPIER_MCP_LEDGER`; that var now just *relocates* the store
+  for this server). `RAPIER_NO_PERSIST` opts out. Every tool's report carries a
+  **THE RECORD** section naming the run directory, so a Desktop user can see the
+  audit trail exists and where — governance is only real if the record is visible.
 
-Follow-ups: end-to-end live-session test with a real client (Claude Desktop);
-consider exposing runs as MCP *resources* (currently tools).
+Follow-ups: consider exposing runs as MCP *resources* (currently tools).
 
 ## Open decisions
 1. `rapier mcp` subcommand (recommended) vs a separate `rapier-mcp` entry point.

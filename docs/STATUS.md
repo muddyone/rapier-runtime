@@ -1,9 +1,20 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-18 (tag v0.3.1, 174 tests)._ A running "where we are /
-what's next" so a new session can continue without reconstructing from git log.
+_Last updated: 2026-07-18 (186 tests; governance-default persistence landed, unreleased)._
+A running "where we are / what's next" so a new session can continue without
+reconstructing from git log.
 
 ## Done
+- **Governance: runs persist by default + THE RECORD provenance (unreleased).**
+  Every ceremony now writes its durable record (verbatim transcript + per-stage
+  records + verdict + report) to `~/.rapier/runs` with no flag — CLI *and* MCP
+  (was: CLI wrote to a reaped temp dir; MCP wrote nothing unless
+  `RAPIER_MCP_LEDGER` was set). Location overridable via `RAPIER_RUNS_DIR`; opt
+  out per-run with `--no-save` / `RAPIER_NO_PERSIST`. The report gained a **THE
+  RECORD** section stating the record exists and its full path (or, when opted
+  out, that no trail was written) — so a Desktop/MCP user can *see* the audit
+  trail, not just trust a stderr hint they never receive. `ledger.py`
+  `default_runs_root()` / `persistence_disabled()`; +12 tests (186 total).
 - **RELEASED (2026-07-18) — `rapier-runtime` 0.3.1 on PyPI.** Patch: `rapier
   doctor` / `--help` no longer crash on a legacy console (Windows cp1252) —
   `main()` forces UTF-8 stdout/stderr with a replacement fallback (`c82da6c`).

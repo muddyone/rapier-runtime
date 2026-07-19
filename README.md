@@ -53,10 +53,12 @@ today:
   flagged as an estimate; the citation gate resolves cited external canon
   (CWE / RFC / DOI / …). Both wrap one shared, battle-tested verification
   service — no duplicate copies.
-- **Auditable and safe by design.** Opt-in, redacted, owner-only run
-  persistence; a verbatim model-call transcript; env-only secrets + redaction;
-  `yaml.safe_load`; a [threat model](docs/threat-model.md) and a
-  [security policy](SECURITY.md).
+- **Auditable by default.** Every run persists a redacted, owner-only record
+  (verbatim model-call transcript + per-stage records + verdict + report) to
+  `~/.rapier/runs` — no flag required — and the report's **THE RECORD** section
+  names the path. Opt out per-run with `--no-save` / `RAPIER_NO_PERSIST`. Plus
+  env-only secrets + redaction; `yaml.safe_load`; a
+  [threat model](docs/threat-model.md) and a [security policy](SECURITY.md).
 
 167 tests pass. Cross-vendor runs are live-proven (Anthropic×OpenAI, Gemini×Grok).
 
@@ -82,8 +84,10 @@ rapier sparring --request "Monorepo or separate repos for our three services?"
 ceremony. Add `--settle N` for extra decision-stability rounds, or
 `--verify off|gate|round` to tune the citation gate; add `--depth
 shallow|standard|deep` (a quick answer vs. the full option spread) or `--seed
-"<option>"` (drop a candidate into the field) to tune the Proposer half. Point
-`--ledger-dir` at a directory to persist the run's transcript, report, and records.
+"<option>"` (drop a candidate into the field) to tune the Proposer half. Every
+run is recorded to `~/.rapier/runs` (override with `--ledger-dir` or the
+`RAPIER_RUNS_DIR` env var; opt out with `--no-save`), and the report ends with a
+**THE RECORD** section naming exactly where the transcript and records landed.
 
 Not sure an input is even a decision yet? `rapier frame --request "…"` classifies
 it (question / proposition / hybrid) and recommends a route, without spending a
