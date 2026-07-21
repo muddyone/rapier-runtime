@@ -130,3 +130,53 @@ def test_tolerance_is_configurable():
     r = rel("x", "sum", 100.0, [95.0])
     assert reconcile_relations([r], tolerance=DEFAULT_TOLERANCE)[0].status == "mismatch"
     assert reconcile_relations([r], tolerance=0.10)[0].status == "agrees"
+
+
+# ── report surface ────────────────────────────────────────────────────────────
+# A gate nobody can see is not a gate. These pin what the trust rider says, and in
+# particular that "checked and clean" never renders the same as "could not check".
+
+from rapier.envelope import Envelope
+from rapier.stages.resolver.compose import _reconcile_body
+
+
+def _flat(text):
+    """Report bodies are hard-wrapped to the measure, so a phrase can straddle a newline.
+    Assert against normalised whitespace or the test breaks on the wrap, not the wording."""
+    return " ".join(text.split())
+
+
+def _env(meta):
+    e = Envelope(request="x")
+    e.meta["reconcile"] = meta
+    return e
+
+
+def test_report_distinguishes_clean_from_unchecked():
+    clean = _reconcile_body(_env({"verdict": "PASS", "checked": 3,
+                                  "counts": {"agrees": 3, "mismatch": 0, "unverifiable": 0},
+                                  "relations": []}))
+    unchecked = _reconcile_body(_env({"verdict": "UNCHECKED", "checked": 0,
+                                      "counts": {"agrees": 0, "mismatch": 0, "unverifiable": 2},
+                                      "relations": []}))
+    assert "agreed" in _flat(clean)
+    assert "not a pass" in _flat(unchecked)
+    assert clean != unchecked
+
+
+def test_report_quotes_both_sides_of_a_mismatch():
+    body = _reconcile_body(_env({
+        "verdict": "MISMATCH", "checked": 1,
+        "counts": {"agrees": 0, "mismatch": 1, "unverifiable": 0},
+        "relations": [{"label": "annual cost", "status": "mismatch", "operation": "sum",
+                       "stated": 100.0, "computed": 90.0,
+                       "aggregate_quote": "total annual cost is $100k",
+                       "aggregate_location": "§3"}]}))
+    flat = _flat(body)
+    assert "annual cost" in flat
+    assert "100" in flat and "90" in flat
+    assert "§3" in flat
+
+
+def test_report_handles_a_run_with_no_gate_at_all():
+    assert "No stated totals" in _flat(_reconcile_body(Envelope(request="x")))

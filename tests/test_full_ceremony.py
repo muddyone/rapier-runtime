@@ -41,11 +41,36 @@ def _stages(name, **kw):
     return [s.stage for s in load_preset(name, **kw).stages]
 
 
-def test_default_spar_is_unchanged():
-    # settle=0, verify=gate must reproduce the historical resolver exactly.
+def test_default_spar_includes_the_arithmetic_gate():
+    """2026-07-21: the shipped default gained `reconcile`, between the internal-traceability
+    gate and the external-canon one. This changed the published ceremony for every user, so
+    it was made deliberately rather than by editing this guard around a surprise: the stage
+    only reads (it sets meta and a trace entry, never env.verdict), so a run cannot fail or
+    change its answer because of it. `--reconcile off` restores the historical pipeline,
+    which test_reconcile_off_restores_the_historical_resolver pins."""
     assert _stages("spar") == [
+        "author", "cross_review", "anchored_fix", "definitiveness_gate",
+        "reconcile", "citation_gate", "compose",
+    ]
+
+
+def test_reconcile_off_restores_the_historical_resolver():
+    assert _stages("spar", reconcile="off") == [
         "author", "cross_review", "anchored_fix", "definitiveness_gate", "citation_gate", "compose",
     ]
+
+
+def test_reconcile_reaches_sparring_too():
+    """/sparring is the Proposer stages plus the whole Resolver, so it inherits the gate
+    rather than needing its own wiring."""
+    assert "reconcile" in _stages("sparring")
+    assert "reconcile" not in _stages("sparring", reconcile="off")
+
+
+def test_unknown_reconcile_mode_is_rejected():
+    import pytest
+    with pytest.raises(ValueError):
+        _stages("spar", reconcile="sometimes")
 
 
 def test_settle_adds_review_rounds():

@@ -25,7 +25,7 @@ import time
 from . import __version__, stages  # noqa: F401  (ensure built-in stages are registered)
 from .ledger import default_runs_root, persistence_disabled
 from .manifest import Manifest
-from .presets import PROPOSER_DEPTHS, VERIFY_MODES, load_preset
+from .presets import PROPOSER_DEPTHS, RECONCILE_MODES, VERIFY_MODES, load_preset
 
 
 def _ensure_utf8_streams() -> None:
@@ -252,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
                 "--verify", choices=list(VERIFY_MODES), default="gate",
                 help="external-canon citation gate: off | gate (default) | round",
             )
+            p.add_argument(
+                "--reconcile", choices=list(RECONCILE_MODES), default="gate",
+                help="arithmetic gate — check stated totals against their parts, in code: "
+                     "off | gate (default)",
+            )
         if preset in ("proposer", "sparring"):  # the Proposer half seeds SPARK's field
             p.add_argument(
                 "--seed", action="append", metavar="TEXT", default=None,
@@ -339,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
         preset = load_preset(
             args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate"),
             seed=getattr(args, "seed", None), depth=getattr(args, "depth", "standard"),
+            reconcile=getattr(args, "reconcile", "gate"),
         )
         # Carry context the pipeline can't observe onto the envelope for the
         # ceremony-ledger row: the resolver knobs, and the front-door Frame
@@ -346,6 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         seed_meta: dict = {
             "settle": getattr(args, "settle", 0),
             "verify": getattr(args, "verify", "gate"),
+            "reconcile": getattr(args, "reconcile", "gate"),
         }
         frame_path = getattr(args, "frame", None)
         if frame_path:

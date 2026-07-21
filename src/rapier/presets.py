@@ -76,6 +76,13 @@ _FRAMER = {"vendor": "anthropic", "model": "claude-opus-4-8", "max_tokens": 1024
 
 VERIFY_MODES = ("off", "gate", "round")
 
+# The reconcile stage's client. It EXTRACTS numbers and never judges them, so it is
+# deterministic (temperature 0) and needs only enough headroom for a list of values with
+# their quotes. Vendor is remapped to an available one when the named key is absent.
+_RECONCILER = {"vendor": "anthropic", "model": "claude-opus-4-8", "max_tokens": 4000, "temperature": 0}
+
+RECONCILE_MODES = ("off", "gate")
+
 
 def _review_round() -> list[dict]:
     return [
@@ -89,14 +96,18 @@ def _citation_gate() -> dict:
     return {"stage": "citation_gate", "config": {"judge": False}}
 
 
-def _resolver(settle: int = 0, verify: str = "gate") -> list[dict]:
+def _resolver(settle: int = 0, verify: str = "gate", reconcile: str = "gate") -> list[dict]:
     if verify not in VERIFY_MODES:
         raise ValueError(f"unknown verify mode '{verify}'; known: {list(VERIFY_MODES)}")
+    if reconcile not in RECONCILE_MODES:
+        raise ValueError(f"unknown reconcile mode '{reconcile}'; known: {list(RECONCILE_MODES)}")
     stages: list[dict] = [{"stage": "author", "roles": {"author": _AUTHOR}}]
     for _ in range(1 + max(0, int(settle))):
         stages += _review_round()
         if verify == "round":
             stages.append(_citation_gate())
+    if reconcile == "gate":
+        stages.append({"stage": "reconcile", "roles": {"author": _RECONCILER}})
     if verify == "gate":
         stages.append(_citation_gate())
     stages.append({"stage": "compose", "config": {}})
@@ -104,14 +115,14 @@ def _resolver(settle: int = 0, verify: str = "gate") -> list[dict]:
 
 
 def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None,
-           depth: str = "standard") -> dict:
+           depth: str = "standard", reconcile: str = "gate") -> dict:
     if name == "spar":  # Resolver-only — no SPARK, so seed/depth are no-ops
-        return {"name": "spar", "pipeline": _resolver(settle, verify)}
+        return {"name": "spar", "pipeline": _resolver(settle, verify, reconcile)}
     if name == "sparring":
         return {
             "name": "sparring",
             "policy": {"independence": "preferred"},
-            "pipeline": _proposer(seed, depth) + _resolver(settle, verify),
+            "pipeline": _proposer(seed, depth) + _resolver(settle, verify, reconcile),
         }
     if name == "proposer":  # settle/verify are resolver-only — no-ops here
         return {"name": "proposer", "pipeline": _proposer(seed, depth)}
@@ -126,9 +137,10 @@ PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", 
 
 
 def load_preset(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None,
-                depth: str = "standard"):
+                depth: str = "standard", reconcile: str = "gate"):
     from .manifest import Manifest
 
     if name not in PRESETS:
         raise KeyError(f"unknown preset '{name}'; known: {sorted(PRESETS)}")
-    return Manifest.from_dict(_build(name, settle=settle, verify=verify, seed=seed, depth=depth))
+    return Manifest.from_dict(_build(name, settle=settle, verify=verify, seed=seed, depth=depth,
+                                     reconcile=reconcile))

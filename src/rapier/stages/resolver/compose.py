@@ -235,6 +235,38 @@ def _record_body(env: Envelope) -> str:
     )
 
 
+
+def _reconcile_body(env) -> str:
+    """The arithmetic gate in plain words. Reports what was checked, not just what failed —
+    an empty finding list and a check that never ran must not read the same."""
+    rec = env.meta.get("reconcile") or {}
+    counts = rec.get("counts") or {}
+    checked = rec.get("checked", 0)
+    mismatches = [r for r in (rec.get("relations") or []) if r.get("status") == "mismatch"]
+
+    if not rec or rec.get("verdict") == "UNCHECKED":
+        if counts.get("unverifiable"):
+            return _para(
+                f"Nothing could be checked. {counts['unverifiable']} figure(s) were stated "
+                "without the parts they are built from appearing anywhere in the text, so "
+                "the arithmetic could not be confirmed either way. This is not a pass.")
+        return _para("No stated totals were found to check.")
+
+    if not mismatches:
+        return _para(
+            f"{checked} stated figure(s) were recomputed from their parts and agreed. "
+            "The arithmetic was done in code, not judged by a model.")
+
+    lines = []
+    for m in mismatches:
+        stated, computed = m.get("stated"), m.get("computed")
+        lines.append(
+            f"{m.get('label')}: the text states {stated}, but its parts come to {computed}"
+            f" ({m.get('operation')}). Stated at {m.get('aggregate_location') or 'unknown location'}: "
+            f"\u201c{(m.get('aggregate_quote') or '').strip()}\u201d")
+    return _bullets(lines)
+
+
 def _render_report(env: Envelope) -> str:
     review = env.meta.get("review") or {}
     gate = env.meta.get("definitiveness") or {}
@@ -268,6 +300,12 @@ def _render_report(env: Envelope) -> str:
               "before you rely on them.",
               _bullets(assumptions) if assumptions
               else "Nothing flagged — the load-bearing specifics trace to the facts you provided.")
+
+    if env.meta.get("reconcile"):
+        L += _sec("WHETHER THE NUMBERS ADD UP",
+                  "Every total the answer states, recomputed from the parts it states "
+                  "elsewhere — arithmetic done in code, with no model deciding the result.",
+                  _reconcile_body(env))
 
     L += _sec("WHAT WAS VERIFIED AGAINST PUBLIC REGISTRIES",
               "Checkable references the recommendation cites, each resolved against "
