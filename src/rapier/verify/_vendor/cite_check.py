@@ -262,7 +262,7 @@ Return a JSON object: {"citations": [ <record>, ... ]}. Each record:
   "deliberately_uncited": false,     // true if the doc explicitly says a claim is left uncited
   "raw_text": "...",                 // the citation text as written
   "reference": {
-    "type": "journal|book|web|arxiv|hbr_article|unknown",
+    "type": "journal|book|web|arxiv|hbr_article|law|patent|unknown",
     "authors": ["Surname, I."],
     "year": <int|null>,
     "title": "...",                  // article/book/page title
@@ -615,6 +615,70 @@ def fetch_url(url):
     return status, final_url, title, snippet
 
 
+# --- source classes no scholarly register indexes -------------------------------------
+# A Crossref miss for one of these is an INDEX GAP, never evidence of non-existence.
+# Reporting a real court opinion, patent or consulting report as "no-match" reads to a judge
+# as fabrication, which is the most damaging error this tool can make -- it discredits the
+# findings that are right.
+_UNINDEXED_CLASS_RE = re.compile(
+    r"\bv\.\s|\bvs\.\s|\b\d+\s+U\.?\s?S\.?\s+\d+|\bF\.\s?\d?d\b|\bS\.\s?Ct\.|"   # case law
+    r"\bpatent\b|\bUSPTO\b|"                                                          # patents
+    r"\bISO\b|\bIEC\b|\bANSI\b|\bASTM\b|\bNIST\s+SP\b|"                          # standards
+    r"\bwhite\s?paper\b|\bInstitute\b|\bConsulting\b|\bMcKinsey\b|\bBCG\b|"       # practitioner
+    r"\bDeloitte\b|\bGartner\b|\bForrester\b|\bHarvard Business Review\b|\bHBR\b|"
+    r"\bGAO\b|\bCRS\b|\bCongressional\b|\bDept\.?\s+of\b|\bDepartment\s+of\b",   # government
+    re.I)
+
+_REPORTER_RE = re.compile(
+    r"\b(\d+)\s+(U\.?\s?S\.?|S\.\s?Ct\.|L\.\s?Ed\.(?:\s?2d)?|F\.\s?\d?d|"
+    r"F\.\s?Supp\.(?:\s?\d?d)?|P\.\s?\d?d|A\.\s?\d?d)\s+(\d+)\b")
+_CASE_V_RE = re.compile(r"([^,;(\n]{2,80}?\sv\.?s?\.\s[^,;(\n]{2,80})")
+_PATENT_NUM_RE = re.compile(r"\b(?:U\.?S\.?\s*)?[Pp]atent\s*(?:No\.?)?\s*(\d[\d,]*\d|\d)\b")
+
+CL_API = "https://www.courtlistener.com/api/rest/v4/search/"
+GPAT_URL = "https://patents.google.com/patent/US{num}/en"
+
+
+def is_unindexed_class(text):
+    """True when the citation carries markers of a class no scholarly register covers."""
+    return bool(_UNINDEXED_CLASS_RE.search(text or ""))
+
+
+def lookup_courtlistener(query):
+    """Anonymous CourtListener v4 opinion search. Returns (status, first_result_or_None)."""
+    url = CL_API + "?" + urllib.parse.urlencode({"type": "o", "q": query})
+    delay = 2.0
+    for attempt in range(3):
+        try:
+            status, _, data = http_json(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:
+                try:
+                    wait = float(e.headers.get("Retry-After"))
+                except (TypeError, ValueError):
+                    wait = delay
+                time.sleep(min(max(wait, 1.0), 15.0))
+                delay *= 2
+                continue
+            raise
+        items = data.get("results") or []
+        return status, (items[0] if items else None)
+    raise RuntimeError("courtlistener rate-limited after retries")
+
+
+def lookup_google_patent(number):
+    """Resolve a US patent as a published DOCUMENT (not a registry record).
+
+    Queried WITHOUT a kind code -- kind codes are not guessable (US4405829B1 and US9876543A
+    both 404 while the same patents resolve bare), and guessing one manufactures a false 404.
+    """
+    num = (number or "").replace(",", "")
+    if not num.isdigit() or not (1 <= len(num) <= 8):
+        return None, None  # not a well-formed US patent number
+    url = GPAT_URL.format(num=num)
+    status, _, _ = http(url)
+    return status, {"number": num, "url": url}
+
 def retrieve_one(c):
     """Run live lookups for one citation; isolate failures into the record."""
     ref = c.get("reference", {})
@@ -697,6 +761,68 @@ def retrieve_one(c):
                                                  else "evidence_supplement_unavailable",
                                   "error": err or "no entry"})
 
+    # 2b. Law and patents — classes Crossref does not index at all. Detected by declared type
+    #     or by the citation's own form, so an "unknown" that is plainly a case still resolves.
+    _raw = c.get("raw_text") or ""
+    if ev["existence_status"] != "exists" and (ref.get("type") == "law"
+                                               or _REPORTER_RE.search(_raw) or _CASE_V_RE.search(_raw)):
+        m = _REPORTER_RE.search(_raw)
+        probe = (f'citation:"{re.sub(chr(32) + "+", chr(32), " ".join(m.groups()))}"' if m
+                 else None)
+        nm = _CASE_V_RE.search(_raw)
+        if probe is None and nm:
+            probe = 'caseName:"%s"' % re.sub(r"\s+", " ", nm.group(1)).strip(" ,.;")
+        if probe:
+            res, err = record("courtlistener", "search", lambda: lookup_courtlistener(probe))
+            if res and res[1]:
+                _, top = res
+                ev["lookups"].append({"source": "courtlistener", "endpoint": "search?type=o",
+                                      "matched": True, "match_confidence": 1.0,
+                                      "match_basis": "reporter_citation" if m else "case_name",
+                                      "retrieved_metadata": top, "error": None})
+                ev["existence_status"] = "exists"
+                # The opinion record IS retrieved evidence, so application can be judged from
+                # it rather than from memory. Thin next to an abstract, but honest: it is what
+                # the register actually returned.
+                if not ev["application_evidence_available"]:
+                    _cites = ", ".join(top.get("citation") or [])
+                    _snip = (top.get("snippet") or "").strip()
+                    ev.update(application_evidence_available=True,
+                              application_evidence_basis="retrieved_abstract",
+                              application_evidence_text=(
+                                  f"{top.get('caseName')} ({top.get('dateFiled')}), "
+                                  f"{top.get('court')}. Citations: {_cites}."
+                                  + (f" {_snip}" if _snip else "")))
+            else:
+                # Only a reporter-citation probe is precise enough to be meaningful. A bare
+                # case-name miss is not conclusive: CourtListener's name coverage is good but
+                # not total, and party parsing is imperfect.
+                ev["lookups"].append({"source": "courtlistener", "endpoint": "search?type=o",
+                                      "matched": False,
+                                      "match_basis": "no_opinion_for_citation" if m
+                                                     else "name_lookup_inconclusive",
+                                      "error": err})
+                if ev["existence_status"] != "exists":
+                    ev["existence_status"] = "no-match" if m else "not-checkable"
+
+    if ev["existence_status"] not in ("exists",) and (ref.get("type") == "patent"
+                                                      or _PATENT_NUM_RE.search(_raw)):
+        pm = _PATENT_NUM_RE.search(_raw)
+        if pm:
+            res, err = record("google-patents", "doc", lambda: lookup_google_patent(pm.group(1)))
+            if res and res[1]:
+                _, meta = res
+                ev["lookups"].append({"source": "google-patents", "endpoint": meta["url"],
+                                      "matched": True, "match_confidence": 1.0,
+                                      "match_basis": "document_resolution",
+                                      "retrieved_metadata": meta, "error": None})
+                ev["existence_status"] = "exists"
+            else:
+                ev["lookups"].append({"source": "google-patents", "endpoint": "patents.google.com",
+                                      "matched": False, "match_basis": "no_such_patent_document",
+                                      "error": err or "malformed patent number"})
+                ev["existence_status"] = "no-match"
+
     # 3. Crossref bibliographic search (journals/articles without a DOI hit)
     if ev["existence_status"] not in ("exists",) and ref.get("type") in ("journal", "hbr_article", "unknown"):
         res, err = record("crossref", "search", lambda: lookup_crossref_search(c.get("raw_text") or cited_title or ""))
@@ -708,9 +834,12 @@ def retrieve_one(c):
                 if s > best_sim:
                     best, best_sim = m, s
             status, basis = classify_match(best, best_sim, cited_year, cited_author)
-            # HBR (and similar) articles are not reliably indexed in Crossref; a no-match
-            # there is an index gap, not evidence of non-existence -> not-checkable.
-            if status == "no-match" and ref.get("type") == "hbr_article":
+            # Crossref indexes scholarly publishing. A no-match for a source class it does
+            # not cover -- HBR and other practitioner research, case law, patents, standards,
+            # government reports -- is an INDEX GAP, not evidence of non-existence, and must
+            # not be allowed to read as fabrication.
+            if status == "no-match" and (ref.get("type") in ("hbr_article", "law", "patent")
+                                         or is_unindexed_class(c.get("raw_text") or "")):
                 status, basis = "not-checkable", "not_indexed_in_crossref"
             ev["lookups"].append({"source": "crossref", "endpoint": "works?query.bibliographic",
                                   "matched": status == "exists", "match_confidence": round(best_sim, 3),
