@@ -661,22 +661,41 @@ def retrieve_one(c):
             ev["lookups"].append({"source": "crossref", "endpoint": f"works/{ref['doi']}",
                                   "matched": False, "match_basis": "none", "error": err})
 
-    # 2. arXiv
-    if ev["existence_status"] != "exists" and ref.get("arxiv_id"):
+    # 2. arXiv — runs when existence is still open OR when the record resolved but carried
+    #    no abstract.
+    #
+    #    A reference that supplies BOTH a DOI and an arXiv id gives two independent
+    #    resolvers, and stopping at the first throws the second's evidence away. ACL
+    #    Anthology DOIs are the case that exposed this: Crossref resolves them with exact
+    #    venue, page and author metadata but serves NO abstract, so a DOI-first stop left
+    #    APPLICATION judged from model memory on a paper whose abstract was one call away.
+    #    Existence and application evidence are unioned across every identifier the citation
+    #    supplies, not raced — each identifier is used for what it is actually good at.
+    _arxiv_is_existence_probe = ev["existence_status"] != "exists"
+    if ref.get("arxiv_id") and (_arxiv_is_existence_probe or not ev["application_evidence_available"]):
         res, err = record("arxiv", "api", lambda: lookup_arxiv(ref["arxiv_id"]))
         if res and res[1]:
             _, meta = res
             ev["lookups"].append({"source": "arxiv", "endpoint": f"abs/{ref['arxiv_id']}",
                                   "matched": True, "match_confidence": 1.0,
-                                  "match_basis": "arxiv_id", "retrieved_metadata": meta, "error": None})
-            ev["existence_status"] = "exists"
-            if meta.get("abstract"):
+                                  "match_basis": "arxiv_id" if _arxiv_is_existence_probe
+                                                 else "arxiv_id_evidence_supplement",
+                                  "retrieved_metadata": meta, "error": None})
+            if _arxiv_is_existence_probe:
+                ev["existence_status"] = "exists"
+            if meta.get("abstract") and not ev["application_evidence_available"]:
                 ev.update(application_evidence_available=True,
                           application_evidence_basis="retrieved_abstract",
                           application_evidence_text=meta["abstract"])
         else:
+            # A miss is only evidence about the citation when arXiv was the existence probe.
+            # When it ran purely to fetch an abstract for an already-resolved record, a miss
+            # says nothing about whether the work exists — do not let it read as a doubt.
             ev["lookups"].append({"source": "arxiv", "endpoint": f"abs/{ref.get('arxiv_id')}",
-                                  "matched": False, "match_basis": "none", "error": err or "no entry"})
+                                  "matched": False,
+                                  "match_basis": "none" if _arxiv_is_existence_probe
+                                                 else "evidence_supplement_unavailable",
+                                  "error": err or "no entry"})
 
     # 3. Crossref bibliographic search (journals/articles without a DOI hit)
     if ev["existence_status"] not in ("exists",) and ref.get("type") in ("journal", "hbr_article", "unknown"):
