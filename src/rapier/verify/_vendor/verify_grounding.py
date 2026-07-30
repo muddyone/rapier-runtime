@@ -47,7 +47,7 @@ Usage:
   verify_grounding.py --url-selftest         # url backend decisions (offline; injected fetch)
   verify_grounding.py --in concerns.json [--judge] [--map-claims] [--out verdicts.json]
 """
-import argparse, importlib.util, ipaddress, json, os, re, socket, sys
+import argparse, importlib.util, ipaddress, json, os, re, socket, sys, time
 import urllib.parse, urllib.request, urllib.error
 
 CITE_CHECK_PY = os.environ.get(
@@ -56,6 +56,24 @@ CITE_CHECK_PY = os.environ.get(
                  "..", "..", "cite-check", "scripts", "cite_check.py"))
 CWE_API = "https://cwe-api.mitre.org/api/v1/cwe/weakness/{id}"
 CVE_API = "https://cveawg.mitre.org/api/cve/CVE-{id}"
+CL_API = "https://www.courtlistener.com/api/rest/v4/search/"
+GPAT_URL = "https://patents.google.com/patent/US{num}/en"
+
+# Reporter citation, e.g. "347 U.S. 483", "404 F.3d 821", "84 F. Supp. 3d 784".
+_REPORTER_RE = re.compile(
+    r"\b(\d+)\s+("
+    r"U\.?\s?S\.?|S\.\s?Ct\.|L\.\s?Ed\.(?:\s?2d)?|F\.\s?\d?d|F\.\s?Supp\.(?:\s?\d?d)?|"
+    r"N\.E\.\s?\d?d|N\.W\.\s?\d?d|S\.E\.\s?\d?d|S\.W\.\s?\d?d|P\.\s?\d?d|A\.\s?\d?d"
+    r")\s+(\d+)\b")
+# Adversarial case name: "Brown v. Board of Education".
+_CASE_V_RE = re.compile(r"([^,;(\n]{2,80}?\sv\.?s?\.\s[^,;(\n]{2,80})")
+# US patent number: "Patent 4,405,829", "U.S. Patent No. 9,876,543", "US 4405829".
+# Capture the FULL number (never a length-capped prefix -- a capped capture silently
+# truncates "2,999,999,999" to a real patent "2999999" and verifies a fabrication).
+# Range is validated in backend_patent, not here.
+_PATENT_RE = re.compile(r"\b(?:U\.?S\.?\s*)?[Pp]atent\s*(?:No\.?)?\s*(\d[\d,]*\d|\d)\b|"
+                        r"\bUS\s?(\d{6,8})\s?[AB]\d?\b")
+
 RFC_API = "https://datatracker.ietf.org/api/v1/doc/document/rfc{id}/?format=json"
 HTTP_TIMEOUT = 30
 _STOP = set("the a an of for and or to in on at by with from is are was were be as that this "
@@ -95,6 +113,10 @@ def classify(ref):
         return "cwe"
     if re.search(r"\bRFC[\s-]?\d+\b", s, re.I):
         return "rfc"
+    if _PATENT_RE.search(s):
+        return "patent"
+    if _REPORTER_RE.search(s) or _CASE_V_RE.search(s):
+        return "law"
     if re.search(r"10\.\d{4,9}/\S+", s) or re.search(r"arxiv[:/ ]?\d{4}\.\d{4,5}", s, re.I):
         return "literature"
     if re.search(r"https?://", s):
@@ -108,26 +130,103 @@ def classify(ref):
     return "none"
 
 
-# ---------------- literature backend (Crossref via cite_check) ----------------
-def _cited_surnames(ref):
-    head = re.split(r"\b(?:19|20)\d{2}\b", ref)[0]
-    out = []
-    for part in re.split(r"[,&]| and ", head):
-        toks = re.findall(r"[A-Z][a-zA-Z\-]{2,}", part)
-        if toks:
-            out.append(toks[0].lower())
-    return out
+# ---------------- literature backend (Crossref + arXiv via cite_check) ----------------
+# Source classes Crossref does not index. A search miss for one of these is an index gap,
+# never refutation -- reporting a real court opinion or patent as "fabricated" is the most
+# damaging error this verifier can make, because it discredits the verdicts that are right.
+_NON_SCHOLARLY_RE = re.compile(
+    r"\bv\.\s|\bvs\.\s|\b\d+\s+U\.?\s?S\.?\s+\d+|\bF\.\s?\d?d\b|\bS\.\s?Ct\.|"   # case law
+    r"\bpatent\b|\bUSPTO\b|\bEP\d{6,}|"                                            # patents
+    r"\bISO\b|\bIEC\b|\bANSI\b|\bASTM\b|\bNIST\s+SP\b|"                          # standards
+    r"\bwhite\s?paper\b|\bInstitute\b|\bConsulting\b|\bMcKinsey\b|\bBCG\b|"       # practitioner
+    r"\bDeloitte\b|\bGartner\b|\bForrester\b|\bHarvard Business Review\b|\bHBR\b|"
+    r"\bGAO\b|\bCRS\b|\bCongressional\b|\bDept\.?\s+of\b|\bDepartment\s+of\b",   # government
+    re.I)
+
+# Forms Crossref covers with high recall. A citation that claims this shape and still has no
+# Crossref record is meaningful evidence of fabrication -- this is the case the seeded-defect
+# pilot was built to catch, and it is preserved.
+_SCHOLARLY_RE = re.compile(
+    r"\bJournal\b|\bProceedings\b|\bTransactions\b|\bConference\b|\bet\s+al\.|"
+    r"\bvol\.?\s?\d|\d+\(\d+\)|\bpp\.\s?\d+", re.I)
+def _strip_ident(s):
+    """Trim trailing sentence punctuation off an identifier scraped from prose."""
+    return (s or "").rstrip(".,;:)]}'\"\u2019")
 
 
-def _topic_terms(*texts):
-    blob = " ".join(t or "" for t in texts).lower()
-    return {w for w in re.findall(r"[a-z][a-z\-]{3,}", blob) if w not in _STOP}
+def _lit_evidence(meta, how):
+    who = ", ".join((meta.get("authors") or [])[:2]) or "(authors not indexed)"
+    yr = meta.get("year")
+    key = meta.get("doi") or meta.get("arxiv_id") or ""
+    tail = f" [{key}]" if key else ""
+    return f"resolved [{how}]: {who}{f' ({yr})' if yr else ''} \u2014 {meta.get('title')!r}{tail}"
+
+
+def _lit_judge_ev(meta):
+    return f"{meta.get('title')}. {meta.get('abstract') or '(no abstract indexed)'}"
 
 
 def backend_literature(ref, concern_text):
-    """Returns (grounding, evidence_str, judge_evidence)."""
+    """Returns (grounding, evidence_str, judge_evidence).
+
+    Resolution follows the strength of the identifier the citation actually supplies:
+
+      1. DOI      -> Crossref by key. A DOI is a registry key, so the answer is decisive
+                     both ways: a record -> VERIFIED; a 404 -> REFUTED, because a DOI no
+                     registrant ever minted is a fabricated one.
+      2. arXiv id -> arXiv API, same logic.
+      3. prose    -> Crossref bibliographic search on author surname + topic terms.
+
+    A MISS at step 3 is NOT refutation. Crossref indexes scholarly publishing; it does not
+    index case law, patents, ISO/ANSI standards, government reports, consulting research or
+    journalism. A prose citation Crossref cannot find is therefore ambiguous between
+    "fabricated" and "real, in a registry we never queried" -- and a false "fabricated" is
+    the most damaging error this verifier can make, because it discredits the verdicts that
+    are right. It degrades to UNVERIFIED_NOT_CHECKED, which moves the burden onto the citer
+    to supply a resolvable identifier: SPARRING's own artifact-or-dismissed discipline,
+    applied to the verifier itself.
+
+    History: before 2026-07-30 this backend called only lookup_crossref_search() and gated
+    every candidate on a cited-surname match, so a BARE DOI or arXiv id -- which contains no
+    surname -- could never match and was reported GROUNDED_REFUTED / "fabricated". The two
+    most authoritative citation forms were the two that always failed.
+    """
     if CC is None or not hasattr(CC, "lookup_crossref_search"):
         return "UNVERIFIED_NOT_CHECKED", "cite_check engine unavailable", None
+
+    # --- 1. DOI: decisive both ways -----------------------------------------
+    dm = re.search(r"10\.\d{4,9}/\S+", ref or "")
+    if dm and hasattr(CC, "lookup_crossref_doi"):
+        doi = _strip_ident(dm.group(0))
+        try:
+            _, meta = CC.lookup_crossref_doi(doi)
+            if meta and meta.get("title"):
+                return "GROUNDED_VERIFIED", _lit_evidence(meta, f"doi {doi}"), _lit_judge_ev(meta)
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return ("GROUNDED_REFUTED",
+                        f"DOI {doi} is not registered (Crossref 404) \u2014 fabricated identifier",
+                        None)
+            return "UNVERIFIED_NOT_CHECKED", f"crossref doi http {e.code}", None
+        except Exception as e:
+            return "UNVERIFIED_NOT_CHECKED", f"crossref doi error: {e}", None
+
+    # --- 2. arXiv id: decisive both ways ------------------------------------
+    am = re.search(r"arxiv[:/ ]?(?:abs/)?(\d{4}\.\d{4,5})", ref or "", re.I)
+    if am and hasattr(CC, "lookup_arxiv"):
+        aid = am.group(1)
+        try:
+            _, meta = CC.lookup_arxiv(aid)
+            if meta and meta.get("title"):
+                meta = dict(meta)
+                meta.setdefault("arxiv_id", f"arXiv:{aid}")
+                return "GROUNDED_VERIFIED", _lit_evidence(meta, f"arxiv {aid}"), _lit_judge_ev(meta)
+            return ("GROUNDED_REFUTED",
+                    f"arXiv:{aid} returns no record \u2014 fabricated identifier", None)
+        except Exception as e:
+            return "UNVERIFIED_NOT_CHECKED", f"arxiv error: {e}", None
+
+    # --- 3. prose: Crossref bibliographic search ----------------------------
     cited_surnames = _cited_surnames(ref)
     ym = re.search(r"\b(19|20)\d{2}\b", ref)
     cited_year = int(ym.group(0)) if ym else None
@@ -145,10 +244,186 @@ def backend_literature(ref, concern_text):
             cy = it.get("year")
             yflag = "exact-ish" if (cited_year and cy and abs(int(cy) - cited_year) <= 1) \
                 else f"area match (cited {cited_year}, found {cy})"
-            ev = f"resolved [{yflag}]: {', '.join((it.get('authors') or [])[:2])} ({cy}) — {it.get('title')!r} [{it.get('doi')}]"
-            judge_ev = f"{it.get('title')}. {it.get('abstract') or '(no abstract indexed)'}"
-            return "GROUNDED_VERIFIED", ev, judge_ev
-    return "GROUNDED_REFUTED", f"no Crossref record corroborates author+topic for {ref!r} (fabricated/unverifiable)", None
+            return "GROUNDED_VERIFIED", _lit_evidence(it, yflag), _lit_judge_ev(it)
+
+    # --- 4. miss: refute only where Crossref coverage makes a miss meaningful
+    if _NON_SCHOLARLY_RE.search(ref or ""):
+        return ("UNVERIFIED_NOT_CHECKED",
+                f"no Crossref record for {ref!r}, but the citation carries markers of a source "
+                "class Crossref does not index (case law, patents, standards, government or "
+                "practitioner research). This is an index gap, not evidence of nonexistence. "
+                "Supply a DOI, an arXiv id, or a URL to make it checkable.",
+                None)
+    if _SCHOLARLY_RE.search(ref or ""):
+        return ("GROUNDED_REFUTED",
+                f"no Crossref record corroborates author+topic for {ref!r}. The citation claims "
+                "journal/proceedings form, which Crossref indexes with high recall, so a miss is "
+                "evidence of fabrication (a pre-digital or non-indexed venue remains possible).",
+                None)
+    return ("UNVERIFIED_NOT_CHECKED",
+            f"no Crossref record corroborates author+topic for {ref!r}, and the citation gives no "
+            "venue or identifier that would say whether Crossref should cover it. Ambiguous "
+            "between fabricated and non-indexed. Supply a DOI, an arXiv id, or a URL.",
+            None)
+
+
+def _cited_surnames(ref):
+    head = re.split(r"\b(?:19|20)\d{2}\b", ref)[0]
+    out = []
+    for part in re.split(r"[,&]| and ", head):
+        toks = re.findall(r"[A-Z][a-zA-Z\-]{2,}", part)
+        if toks:
+            out.append(toks[0].lower())
+    return out
+
+
+def _topic_terms(*texts):
+    blob = " ".join(t or "" for t in texts).lower()
+    return {w for w in re.findall(r"[a-z][a-z\-]{3,}", blob) if w not in _STOP}
+
+
+# ---------------- law backend (CourtListener) ----------------
+def _cl_search(q):
+    """Anonymous CourtListener v4 opinion search. Returns (count, first_result_or_None).
+
+    CourtListener rate-limits anonymous callers with 429 + Retry-After. Without a bounded
+    retry the backend fail-softs to not-checked under any real load, so a spar citing
+    several opinions would silently verify none of them.
+    """
+    url = CL_API + "?" + urllib.parse.urlencode({"type": "o", "q": q})
+    delay = 2.0
+    for attempt in range(3):
+        try:
+            _, data = _http_json(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:
+                wait = e.headers.get("Retry-After")
+                try:
+                    wait = float(wait)
+                except (TypeError, ValueError):
+                    wait = delay
+                time.sleep(min(max(wait, 1.0), 15.0))
+                delay *= 2
+                continue
+            raise
+        results = data.get("results") or []
+        return data.get("count") or 0, (results[0] if results else None)
+    raise RuntimeError("courtlistener rate-limited after retries")
+
+
+def backend_law(ref, concern_text):
+    """Court opinions resolve against CourtListener (Free Law Project), which Crossref
+    does not index at all. Two probes, most precise first:
+
+      1. citation:"<vol> <reporter> <page>" -- an exact reporter lookup.
+      2. caseName:"<X v. Y>"                -- when no reporter cite was given, or the
+                                               reporter cite did not match.
+
+    Both probes empty -> REFUTED (nothing by that citation OR that name exists).
+    A name hit with no citation hit -> VERIFIED, with the discrepancy stated: the case is
+    real but the reporter cite may be wrong, which is a misapplication question for the
+    judge rather than a fabrication question for the resolver.
+    """
+    ref = ref or ""
+    cite_q = None
+    m = _REPORTER_RE.search(ref)
+    if m:
+        cite_q = re.sub(r"\s+", " ", f"{m.group(1)} {m.group(2)} {m.group(3)}").strip()
+        try:
+            n, top = _cl_search(f'citation:"{cite_q}"')
+        except Exception as e:
+            return "UNVERIFIED_NOT_CHECKED", f"courtlistener error: {e}", None
+        if n and top:
+            cites = ", ".join(top.get("citation") or []) or cite_q
+            ev = f"resolved [citation {cite_q}]: {top.get('caseName')} ({top.get('dateFiled')}) — {cites}"
+            return "GROUNDED_VERIFIED", ev, f"{top.get('caseName')}. {top.get('court')}. Citations: {cites}"
+
+    nm = _CASE_V_RE.search(ref)
+    if nm:
+        name = re.sub(r"\s+", " ", nm.group(1)).strip(" ,.;")
+        try:
+            n, top = _cl_search(f'caseName:"{name}"')
+        except Exception as e:
+            return "UNVERIFIED_NOT_CHECKED", f"courtlistener error: {e}", None
+        # An extractor span can pick up a stray capitalised word ahead of the first party
+        # ("Per Brown v. Board of Education"). Retry once from the word immediately before
+        # " v. " rather than refuting a real case on a parsing artifact.
+        if not n:
+            head, sep, tail = re.split(r"(\sv\.?s?\.\s)", name, maxsplit=1)[:3] or ("", "", "")
+            if sep and head.split():
+                trimmed = f"{head.split()[-1]}{sep}{tail}".strip()
+                if trimmed != name:
+                    try:
+                        n, top = _cl_search(f'caseName:"{trimmed}"')
+                    except Exception:
+                        n, top = 0, None
+                    if n:
+                        name = trimmed
+        if n and top:
+            cites = ", ".join(top.get("citation") or [])
+            note = ""
+            if cite_q:
+                note = (f" NOTE: no CourtListener record carries the cited reporter reference "
+                        f"{cite_q!r} — the case is real but the citation may be wrong.")
+            ev = f"resolved [caseName {name!r}]: {top.get('caseName')} ({top.get('dateFiled')}) — {cites}{note}"
+            return "GROUNDED_VERIFIED", ev, f"{top.get('caseName')}. {top.get('court')}. Citations: {cites}"
+        if cite_q:
+            return ("GROUNDED_REFUTED",
+                    f"CourtListener has no opinion named {name!r} and none carrying citation "
+                    f"{cite_q!r} — fabricated case", None)
+        # No reporter citation was supplied, so the only probe was the case name. CourtListener's
+        # name coverage is good but not total (state trial courts, unreported and foreign matters),
+        # and the extractor's party parsing is imperfect -- not enough to call a case fabricated.
+        return ("UNVERIFIED_NOT_CHECKED",
+                f"CourtListener has no opinion named {name!r}, but no reporter citation was given "
+                "and name-only lookup is not conclusive. Supply the reporter cite (e.g. "
+                "'347 U.S. 483') to make this checkable.", None)
+
+    if cite_q:
+        return ("GROUNDED_REFUTED",
+                f"CourtListener has no opinion carrying citation {cite_q!r} — fabricated citation", None)
+    return "UNVERIFIED_NOT_CHECKED", "no reporter citation or case name parsed", None
+
+
+# ---------------- patent backend (Google Patents document resolution) ----------------
+def backend_patent(ref, concern_text):
+    """US patents resolve by fetching the Google Patents document. This is DOCUMENT
+    RESOLUTION, not a registry record: a 200 means a patent document with that number is
+    published, and the evidence string says so rather than implying registry authority.
+
+    The number is always queried WITHOUT a kind code. Kind codes are not guessable --
+    US4405829B1 and US9876543A both 404 while the same patents resolve as US4405829 and
+    US9876543 -- so guessing one would manufacture exactly the false-404 this verifier was
+    just fixed to stop producing.
+    """
+    m = _PATENT_RE.search(ref or "")
+    if not m:
+        return "UNVERIFIED_NOT_CHECKED", "no US patent number parsed", None
+    num = (m.group(1) or m.group(2) or "").replace(",", "")
+    # US utility patents are at most 8 digits (~12.5M issued). A longer number cannot be a
+    # real patent, and must be rejected BEFORE any fetch -- otherwise a truncated prefix of
+    # a fabricated number can resolve to a real document.
+    if not num.isdigit() or not (1 <= len(num) <= 8):
+        return ("GROUNDED_REFUTED",
+                f"{num!r} is not a well-formed US patent number (1-8 digits) — fabricated", None)
+    url = GPAT_URL.format(num=num)
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "sparring-grounding-verifier/0.1"})
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            code = r.status
+    except urllib.error.HTTPError as e:
+        if e.code in (404, 410):
+            return ("GROUNDED_REFUTED",
+                    f"no published US patent {num} (Google Patents {e.code}) — fabricated number", None)
+        return "UNVERIFIED_NOT_CHECKED", f"google patents http {e.code}", None
+    except Exception as e:
+        return "UNVERIFIED_NOT_CHECKED", f"google patents error: {e}", None
+    if 200 <= code < 400:
+        return ("GROUNDED_VERIFIED",
+                f"US patent {num} resolves as a published document at {url} "
+                "(document resolution, not a registry record)",
+                f"US Patent {num} ({url})")
+    return "UNVERIFIED_NOT_CHECKED", f"google patents status {code}", None
 
 
 # ---------------- CWE backend (MITRE) ----------------
@@ -545,6 +820,10 @@ def verify_concern(c, judge=False, map_claims=False):
         grounding, backend, ev = "UNGROUNDED", "none", "no checkable artifact cited"
     elif atype == "literature":
         grounding, ev, judge_ev = backend_literature(ref, text); backend = "crossref"
+    elif atype == "law":
+        grounding, ev, judge_ev = backend_law(ref, text); backend = "courtlistener"
+    elif atype == "patent":
+        grounding, ev, judge_ev = backend_patent(ref, text); backend = "google-patents"
     elif atype == "cve":
         grounding, ev, judge_ev = backend_cve(ref); backend = "mitre-cve"
     elif atype == "cwe":
@@ -584,6 +863,50 @@ def verify_concern(c, judge=False, map_claims=False):
 
 # ---------------- self-tests ----------------
 SELF_TESTS = [
+    # --- law backend (CourtListener; Crossref indexes none of this) -----------
+    ("real case by reporter citation -> VERIFIED",
+     {"id": "l1", "artifact_ref": "Brown v. Board of Education, 347 U.S. 483 (1954)",
+      "concern_text": "segregated public schools held unconstitutional"}, "GROUNDED_VERIFIED"),
+    ("real case by name only -> VERIFIED",
+     {"id": "l2", "artifact_ref": "Marbury v. Madison",
+      "concern_text": "established judicial review"}, "GROUNDED_VERIFIED"),
+    ("fabricated case -> REFUTED",
+     {"id": "l3", "artifact_ref": "Zorblat v. Fnordicus, 999 U.S. 12345 (2019)",
+      "concern_text": "x"}, "GROUNDED_REFUTED"),
+    # --- patent backend (Google Patents document resolution) ------------------
+    ("real US patent -> VERIFIED",
+     {"id": "p1", "artifact_ref": "U.S. Patent No. 4,405,829 (1983)",
+      "concern_text": "RSA was patented in 1983"}, "GROUNDED_VERIFIED"),
+    # Guards a real defect: a length-capped capture truncated "2,999,999,999" to the REAL
+    # patent 2999999 and verified a fabrication. The number is range-checked before fetch.
+    ("over-long patent number -> REFUTED",
+     {"id": "p2", "artifact_ref": "U.S. Patent No. 2,999,999,999", "concern_text": "x"},
+     "GROUNDED_REFUTED"),
+    # --- identifier-resolution regressions (2026-07-30) -----------------------
+    # Before the fix, backend_literature only ran a Crossref *bibliographic search* and
+    # required a cited-surname match. A bare identifier carries no surname, so the two
+    # most authoritative citation forms were reported "fabricated". These four lock the
+    # corrected behaviour: identifiers are decisive BOTH ways.
+    ("bare DOI resolves -> VERIFIED",
+     {"id": "d1", "artifact_ref": "10.1145/3571730",
+      "concern_text": "NLG systems hallucinate unintended text"}, "GROUNDED_VERIFIED"),
+    ("unregistered DOI -> REFUTED",
+     {"id": "d2", "artifact_ref": "10.1145/9999999999", "concern_text": "x"}, "GROUNDED_REFUTED"),
+    ("bare arXiv id resolves -> VERIFIED",
+     {"id": "a1", "artifact_ref": "arXiv:2310.13548",
+      "concern_text": "AI assistants exhibit sycophancy"}, "GROUNDED_VERIFIED"),
+    ("nonexistent arXiv id -> REFUTED",
+     {"id": "a2", "artifact_ref": "arXiv:2999.99999", "concern_text": "x"}, "GROUNDED_REFUTED"),
+    # --- non-indexed source classes must never be REFUTED ---------------------
+    # Crossref indexes scholarly publishing only. A real court opinion or patent that it
+    # cannot find is an index gap; calling it fabricated discredits the whole instrument.
+    # (Case law and patents were listed here until the law/patent backends landed; they now
+    #  resolve for real and are asserted in the law/patent groups above. They were removed
+    #  rather than re-expected because a rate-limited CourtListener call also returns
+    #  not-checked -- the old assertion could pass for the wrong reason.)
+    ("practitioner research (real, not in Crossref) -> not-checked",
+     {"id": "n3", "artifact_ref": "McKinsey Global Institute, The economic potential of generative AI, 2023",
+      "concern_text": "generative AI could add trillions annually"}, "UNVERIFIED_NOT_CHECKED"),
     ("fabricated citation -> REFUTED",
      {"id": "t1", "artifact_ref": "Henderson & Liu, 2021, Journal of Visual Ergonomics 14(3)",
       "concern_text": "dark mode reduces eye strain by 40% during extended reading"}, "GROUNDED_REFUTED"),

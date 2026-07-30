@@ -54,7 +54,8 @@ _PROPOSER_BY_DEPTH: dict[str, list[dict]] = {
 _PROPOSER = _PROPOSER_BY_DEPTH["standard"]
 
 
-def _proposer(seed: list[str] | None = None, depth: str = "standard") -> list[dict]:
+def _proposer(seed: list[str] | None = None, depth: str = "standard",
+              verify: str = "gate") -> list[dict]:
     """The Proposer stages at the requested ``depth`` (shallow | standard | deep),
     freshly copied (never the shared module-level dicts), with an optional
     ``seed`` injected into SPARK's config. A seed is a candidate option dropped
@@ -66,6 +67,11 @@ def _proposer(seed: list[str] | None = None, depth: str = "standard") -> list[di
     stages = [dict(s, config=dict(s["config"])) for s in _PROPOSER_BY_DEPTH[depth]]
     if seed:
         stages[0]["config"]["seed"] = list(seed)
+    # The Proposer's own citations are grounded before the proposition leaves the stage.
+    # RM 13.1 puts a traceability obligation on the framing step; until this gate existed
+    # nothing checked it, and every downstream gate inherits whatever the frame asserted.
+    if verify != "off":
+        stages.append({"stage": "traceability_gate", "config": {}})
     return stages
 
 
@@ -122,10 +128,10 @@ def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | N
         return {
             "name": "sparring",
             "policy": {"independence": "preferred"},
-            "pipeline": _proposer(seed, depth) + _resolver(settle, verify, reconcile),
+            "pipeline": _proposer(seed, depth, verify="off") + _resolver(settle, verify, reconcile),
         }
-    if name == "proposer":  # settle/verify are resolver-only — no-ops here
-        return {"name": "proposer", "pipeline": _proposer(seed, depth)}
+    if name == "proposer":  # settle is resolver-only; verify now gates the Proposer too
+        return {"name": "proposer", "pipeline": _proposer(seed, depth, verify)}
     if name == "frame":  # front-door classifier only — settle/verify/seed/depth are no-ops
         return {"name": "frame", "pipeline": [{"stage": "frame", "roles": {"framer": _FRAMER}}]}
     raise KeyError(f"unknown preset '{name}'; known: ['frame', 'proposer', 'spar', 'sparring']")

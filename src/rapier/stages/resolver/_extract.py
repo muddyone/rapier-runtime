@@ -26,6 +26,25 @@ _PATTERNS = (
     re.compile(r"\bCWE-\d+\b", re.I),                                          # cwe
     re.compile(r"\bRFC[\s-]?\d+\b", re.I),                                     # rfc
     re.compile(r"\b[\w/][\w/.\-]*\.(?:php|py|js|ts|go|java|rb|cpp|sql):\d+\b"),  # code path:line
+    # Reporter citation, e.g. "347 U.S. 483" / "404 F.3d 821". Highly distinctive, so it
+    # is safe to match inside prose; backend_law resolves it exactly via CourtListener.
+    re.compile(r"\b\d+\s+(?:U\.?\s?S\.?|S\.\s?Ct\.|L\.\s?Ed\.(?:\s?2d)?|F\.\s?\d?d|"
+               r"F\.\s?Supp\.(?:\s?\d?d)?|N\.E\.\s?\d?d|N\.W\.\s?\d?d|S\.E\.\s?\d?d|"
+               r"S\.W\.\s?\d?d|P\.\s?\d?d|A\.\s?\d?d)\s+\d+\b"),                      # law: reporter
+    # Adversarial case name with capitalised parties, swallowing its own reporter cite when
+    # present so "Brown v. Board of Education, 347 U.S. 483" is ONE artifact rather than two
+    # (the nested reporter span is dropped by the overlap rule below). Each party run
+    # alternates capitalised words with lowercase connectors but always ENDS capitalised, so
+    # it cannot bleed into the following clause. " v. " between two capitalised runs is
+    # essentially always a case, so prose false positives are rare.
+    re.compile(r"\b[A-Z][\w.'&-]*(?:\s+(?:of|the|and|for|in|de|van|ex|rel\.)\s+[A-Z][\w.'&-]*"
+               r"|\s+[A-Z][\w.'&-]*)*"
+               r"\s+v\.?\s+"
+               r"[A-Z][\w.'&-]*(?:\s+(?:of|the|and|for|in|de|van)\s+[A-Z][\w.'&-]*"
+               r"|\s+[A-Z][\w.'&-]*)*"
+               r"(?:,\s*\d+\s+(?:U\.?\s?S\.?|S\.\s?Ct\.|L\.\s?Ed\.(?:\s?2d)?|F\.\s?\d?d|"
+               r"F\.\s?Supp\.(?:\s?\d?d)?|P\.\s?\d?d|A\.\s?\d?d)\s+\d+)?"),           # law: case name
+    re.compile(r"\b(?:U\.?S\.?\s*)?[Pp]atent\s*(?:No\.?)?\s*\d[\d,]*\b"),              # patent
 )
 
 _TRIM = " \t\r\n.,;:!?)]}>\"'`"

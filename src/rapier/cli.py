@@ -257,6 +257,12 @@ def main(argv: list[str] | None = None) -> int:
                 help="arithmetic gate — check stated totals against their parts, in code: "
                      "off | gate (default)",
             )
+        if preset == "proposer":  # the Proposer's own grounding gate (RM 13.1)
+            p.add_argument(
+                "--verify", choices=["off", "gate"], default="gate",
+                help="ground the proposition's own citations against external canon: "
+                     "gate (default) | off",
+            )
         if preset in ("proposer", "sparring"):  # the Proposer half seeds SPARK's field
             p.add_argument(
                 "--seed", action="append", metavar="TEXT", default=None,
