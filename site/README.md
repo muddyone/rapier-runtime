@@ -8,17 +8,18 @@ fonts. `index.html` is **light-only** and serves the logo master
 
 - **`coming-soon.html`** — the interim **"in development"** page. Design-consistent with
   the full landing but safe to serve now: no placeholder pip command, no dead links.
-  **This is what is currently deployed** (as `index.html`) at rapierruntime.com.
-- **`index.html`** — the full MVP landing page. Swaps in at M4/launch once the
-  placeholders below are resolved.
+  Kept as a rollback target; **not** what is deployed.
+- **`index.html`** — the full MVP landing page. **This is what is live** at
+  rapierruntime.com (swapped in at launch, 2026-07-16; verified byte-identical
+  2026-08-28).
 
-## Status: launch-ready (M4 pass 2026-07-08) — swap after PyPI is live
+## Status: LAUNCHED 2026-07-16 — the full landing is live
 
 Resolved for launch:
 
 1. ✅ **`pip install rapier-runtime`** — package name confirmed (available on PyPI).
 2. ✅ **Links wired** to real URLs: `#paper` → Zenodo concept DOI
-   `10.5281/zenodo.21210265`, `#pypi` → the PyPI project page, `#spec` → the **public**
+   `10.5281/zenodo.21210264` (resolves to latest), `#pypi` → the PyPI project page, `#spec` → the **public**
    `muddyone/sparring-publicaccess` spec (`framework/sparring-specification.md`).
    (arXiv link deferred — endorsement pending; wire it in as a fast-follow.)
 3. ✅ **Accessibility pass** (Zoe review, 2026-07-08): AA-compliant small-text accent
@@ -29,8 +30,10 @@ Resolved for launch:
 Standing note: **Evidence copy is intentionally number-free.** If you add figures
 (catch-rate, grounding %), pull them **verbatim** from the final paper — do not paraphrase.
 
-**Gate:** swap only **after** the PyPI package is live — the `pip install` line and the
-`#pypi` link must resolve.
+**Gate (satisfied):** the swap waited on the PyPI package being live, so the
+`pip install` line and the `#pypi` link both resolve. The landing carries no version
+string, so a new release needs no site change — re-deploy only when the copy itself
+changes.
 
 ## Deploy
 
