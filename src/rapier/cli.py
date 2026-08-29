@@ -304,7 +304,33 @@ def main(argv: list[str] | None = None) -> int:
     ip.add_argument("--dir", default=".", help="directory to write .env.example into (default: cwd)")
     sub.add_parser("mcp", help="run the MCP server (stdio) exposing frame/proposer/spar/sparring as tools")
 
+    vr = sub.add_parser(
+        "verify-rider",
+        help="check a run's trust rider against its own transcript (model-free)",
+    )
+    vr.add_argument("run", help="path to a persisted run directory, or a run id under the runs root")
+    vr.add_argument("--json", action="store_true", help="emit the report as JSON")
+
     args = parser.parse_args(argv)
+
+    if args.cmd == "verify-rider":
+        import json as _json
+        import os as _os
+
+        from .ledger import default_runs_root
+        from .verify.rider_record import check_run, render
+
+        run_dir = args.run
+        if not _os.path.isdir(run_dir):
+            run_dir = _os.path.join(default_runs_root(), args.run)
+        if not _os.path.isdir(run_dir):
+            print(f"no such run: {args.run}", file=sys.stderr)
+            return 2
+        report = check_run(run_dir)
+        print(_json.dumps(report, indent=2) if args.json else render(report))
+        # failed -> 1 so CI can gate on it; unchecked -> 3, distinct from both
+        # a pass and a failure, because an unverifiable claim is neither.
+        return {"failed": 1, "unchecked": 3}.get(report["status"], 0)
 
     if args.cmd == "doctor":
         from .onboarding import doctor_report
