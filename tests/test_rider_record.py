@@ -106,3 +106,35 @@ def test_no_model_is_ever_called(tmp_path, monkeypatch):
     rider = {"contested_and_resolved": ["The failover plan has no tested rollback."]}
     run = _run(tmp_path, ["The failover plan has no tested rollback."], rider)
     assert check_run(run)["status"] == "ok"
+
+
+# --- the rider field says what it measures, and nothing broader ---------------
+
+def test_traceability_field_is_named_for_what_it_measures():
+    """`overall_confidence` promised a global judgment; the value is one narrow
+    evidence check. The name now matches the measurement, with the old key kept
+    as an alias so existing consumers do not break silently."""
+    from rapier.envelope import Envelope
+    from rapier.stages.resolver.compose import ComposeStage
+    from rapier.stage import StageContext
+
+    env = Envelope(request="r")
+    env.recommendation = "Do the thing."
+    env.verdict = "PASS"
+    env.meta["review"] = {"objections": [], "cross_vendor": True}
+    env.meta["definitiveness"] = {"failures": []}
+    out = ComposeStage().run(env, StageContext())
+
+    assert out.trust_rider["specifics_traceability"] == "PASS"
+    assert out.trust_rider["overall_confidence"] == "PASS"  # alias, same value
+
+
+def test_human_facing_text_does_not_claim_overall_confidence():
+    """The rendered report was already honest; this pins it so a future edit
+    cannot quietly widen a narrow evidence check into a global one."""
+    from rapier.stages.resolver.compose import _verdict_sentence
+
+    for verdict in ("PASS", "FAIL", "REVIEW", None):
+        sentence = _verdict_sentence(verdict, {"failures": []})
+        assert "overall confidence" not in sentence.lower()
+        assert "correctness check" in sentence.lower()

@@ -34,7 +34,8 @@ class DefinitivenessGateStage(TransformStage):
 
         rider = dict(env.trust_rider or {})
         rider["assumptions_to_verify"] = result.get("rider_lines") or []
-        rider["overall_confidence"] = env.verdict
+        rider["specifics_traceability"] = env.verdict
+        rider["overall_confidence"] = env.verdict  # deprecated alias; remove after 0.6.x
         review = env.meta.get("review") or {}
         if review.get("objections"):
             rider["contested_and_resolved"] = [

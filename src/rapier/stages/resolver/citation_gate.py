@@ -79,7 +79,8 @@ def _reconcile_definitiveness_with_grounding(env: Envelope, verdicts: list) -> N
     env.verdict = verdict
     rider = dict(env.trust_rider or {})
     rider["assumptions_to_verify"] = defin["rider_lines"]
-    rider["overall_confidence"] = verdict
+    rider["specifics_traceability"] = verdict
+    rider["overall_confidence"] = verdict  # deprecated alias; remove after 0.6.x
     rider["verified_externally"] = grounded_specs
     env.trust_rider = rider
     env.add_trace(

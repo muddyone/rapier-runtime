@@ -5,6 +5,14 @@ Assembles the final report (recommendation + trust rider), where the rider's
 Proposer's forwarded standing objections (so the deliberation's dissent is
 visible to the user). Writes the /spar-parity named files and the derived
 ceremony-ledger row.
+
+
+Trust-rider field note: ``specifics_traceability`` carries the definitiveness
+gate's verdict -- whether every hard specific in the answer traces to a given
+fact or is flagged as an estimate. It is deliberately NOT named
+"overall confidence": it is one narrow evidence check, and says nothing about
+coverage, soundness, or the decision. ``overall_confidence`` remains as a
+deprecated alias with the same value.
 """
 from __future__ import annotations
 
@@ -497,7 +505,8 @@ class ComposeStage(TransformStage):
         rider.setdefault("contested_and_resolved", _texts(review.get("objections")))
         if standing:
             rider["proposer_dissent_forwarded"] = _texts(standing)
-        rider["overall_confidence"] = env.verdict
+        rider["specifics_traceability"] = env.verdict
+        rider["overall_confidence"] = env.verdict  # deprecated alias; remove after 0.6.x
         env.trust_rider = rider
 
         env.meta["report"] = {

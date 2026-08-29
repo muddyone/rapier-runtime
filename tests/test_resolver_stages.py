@@ -81,7 +81,8 @@ def test_definitiveness_gate_sets_verdict_and_rider(monkeypatch):
     get_stage("definitiveness_gate")().run(env, StageContext())
     assert env.verdict == "PASS"
     assert env.trust_rider["assumptions_to_verify"] == ["assume ~$X/mo — verify vs your actuals"]
-    assert env.trust_rider["overall_confidence"] == "PASS"
+    assert env.trust_rider["specifics_traceability"] == "PASS"
+    assert env.trust_rider["overall_confidence"] == "PASS"  # deprecated alias
     assert env.trust_rider["contested_and_resolved"] == ["held objection"]
 
 
