@@ -1,5 +1,10 @@
 [build-system]
-requires = ["hatchling"]
+# Pinned <1.30 deliberately: 1.30 emits Metadata-Version 2.5 (PEP 794), which
+# the current publishing toolchain rejects -- `twine check` fails with
+# "'2.5' is not a valid metadata version" and the release is blocked. 2.4 is what
+# every published rapier-runtime release has used. Lift the pin only after
+# `twine check` passes on a 2.5 wheel.
+requires = ["hatchling<1.30"]
 build-backend = "hatchling.build"
 
 [project]
