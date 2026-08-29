@@ -1,9 +1,36 @@
 # Rapier — dev status
 
-_Last updated: 2026-07-18 (tag v0.4.0, 186 tests)._ A running "where we are /
+_Last updated: 2026-08-28 (tag v0.5.0, 223 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-08-28) — `rapier-runtime` 0.5.0 on PyPI. The verifier stops
+  calling real citations fabricated.** Git tag `v0.5.0`;
+  https://pypi.org/project/rapier-runtime/0.5.0/. Eleven commits, and the
+  headline is a correctness fix in the grounding verifier:
+  `backend_literature` ran only a Crossref *bibliographic search* and gated every
+  candidate on a cited-surname match — but a bare identifier carries no surname,
+  so it could never match and fell through to `GROUNDED_REFUTED / "fabricated"`.
+  A bare DOI and a bare arXiv id, the two most authoritative citation forms
+  there are, were the two that always failed. `cite_check` had exposed
+  `lookup_crossref_doi` and `lookup_arxiv` the whole time; the backend called
+  neither. A verifier that flags real citations as fake is worse than none — it
+  trains the reader to distrust the gate.
+  Also in: identifier-strength resolution (DOI → arXiv → search, decisive both
+  ways); new `law` (CourtListener) and `patent` (Google Patents) backends;
+  evidence unioned across every identifier a reference supplies; a Proposer-side
+  `traceability_gate` (RM §10.1/§13.1) so the framing step's own citations are
+  grounded — verification was Resolver-only, so a Proposer could cite a
+  nonexistent source and the run reported clean; the reconcile gate now runs as
+  a standing check in `/spar`; and `RAPIER_MODEL_<VENDOR>` overrides the default
+  model per vendor. 223 tests green.
+  **Build note:** `pyproject.toml` pins `hatchling<1.30`. 1.30 emits
+  Metadata-Version 2.5 (PEP 794), which the current publishing toolchain rejects
+  (`twine check`: "'2.5' is not a valid metadata version") — that blocked this
+  release at the gate until pinned. Lift only when `twine check` passes a 2.5 wheel.
+  **Site:** no deploy needed. The full landing has been live since 2026-07-16 and
+  carries no version string; verified byte-identical to `site/index.html` on
+  2026-08-28.
 - **RELEASED (2026-07-18) — `rapier-runtime` 0.4.0 on PyPI. Governance: runs
   persist by default + THE RECORD provenance.** Git tag `v0.4.0`;
   https://pypi.org/project/rapier-runtime/0.4.0/.
