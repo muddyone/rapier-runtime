@@ -7,5 +7,8 @@
   "stamped": "2026-07-30",
   "pm": {
     "exempt": "Public repo; Bart ruled exempt 2026-10-02"
+  },
+  "ownership": {
+    "owner": "bart"
   }
 }
