@@ -1,0 +1,3 @@
+audited 2026-10-15T16:40:23Z by DEMETER
+fixed: 0 load-bearing (5 grep hits, all technical scope/behaviour qualifiers: compose.py:12,438; verify_grounding.py:516,608; rider_record.py:30)
+left: 0 historical
