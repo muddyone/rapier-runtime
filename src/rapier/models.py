@@ -178,14 +178,21 @@ class OpenAICompatibleModelClient(ModelClient):
 # vendor -> (base_url, key_env, default_model). Defaults are overridable in the
 # manifest; only xai's default is live-validated (2026-07-06 — Grok's API is
 # OpenAI-compatible). Others are best-effort until validated with a real key.
+# Checked against each vendor's deprecation page 2026-10-15 (see CHANGELOG.md).
 _OPENAI_COMPATIBLE: dict[str, tuple[str, str, str]] = {
-    "gemini":     ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", "gemini-2.5-flash"),  # frontier; also has a native API
+    # gemini-2.5-flash is closed to new API users; Google points new projects here, same price.
+    "gemini":     ("https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", "gemini-3.5-flash-lite"),  # also has a native API
     "xai":        ("https://api.x.ai/v1",            "XAI_API_KEY",        "grok-4.3"),
-    "deepseek":   ("https://api.deepseek.com/v1",    "DEEPSEEK_API_KEY",   "deepseek-chat"),
-    "mistral":    ("https://api.mistral.ai/v1",      "MISTRAL_API_KEY",    "mistral-large-latest"),
-    "groq":       ("https://api.groq.com/openai/v1", "GROQ_API_KEY",       "llama-3.3-70b-versatile"),
-    "together":   ("https://api.together.xyz/v1",    "TOGETHER_API_KEY",   "meta-llama/Llama-3.3-70B-Instruct-Turbo"),
-    "openrouter": ("https://openrouter.ai/api/v1",   "OPENROUTER_API_KEY", "openai/gpt-4o"),
+    # deepseek-chat was retired 2026-07-24; deepseek-flash is DeepSeek's current name.
+    "deepseek":   ("https://api.deepseek.com/v1",    "DEEPSEEK_API_KEY",   "deepseek-flash"),
+    "mistral":    ("https://api.mistral.ai/v1",      "MISTRAL_API_KEY",    "mistral-large-latest"),  # alias, follows Mistral's current Large
+    # llama-3.3-70b-versatile was shut down 2026-08-16; this is Groq's named replacement.
+    "groq":       ("https://api.groq.com/openai/v1", "GROQ_API_KEY",       "openai/gpt-oss-120b"),
+    # Llama-3.3-70B-Instruct-Turbo leaves serverless 2026-10-22; the cheapest current open model there.
+    "together":   ("https://api.together.xyz/v1",    "TOGETHER_API_KEY",   "openai/gpt-oss-120b"),
+    # gpt-4o stops working 2027-01-14. gpt-6-sol is OpenAI's current flagship, the same class
+    # gpt-4o was and slightly cheaper, so no caller gets a weaker critic or a bigger bill.
+    "openrouter": ("https://openrouter.ai/api/v1",   "OPENROUTER_API_KEY", "openai/gpt-6-sol"),
     "ollama":     ("http://localhost:11434/v1",      "OLLAMA_API_KEY",     "llama3.1"),  # local, zero-egress
 }
 
