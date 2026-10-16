@@ -1,9 +1,23 @@
 # Rapier — dev status
 
-_Last updated: 2026-10-16 (tag v0.5.1, 230 tests)._ A running "where we are /
+_Last updated: 2026-10-16 (tag v0.5.2, 235 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-10-16) — `rapier-runtime` 0.5.2 on PyPI. The report stops
+  calling a same-vendor review independent.** Git tag `v0.5.2`;
+  https://pypi.org/project/rapier-runtime/0.5.2/. A live 0.5.1 run with only an
+  OpenAI key (author and reviewer both `gpt-6-sol`) showed three defects. The
+  report said "an independent, different-vendor reviewer" raised the objections
+  while its own trust section said the review was not independent. The progress
+  warning blamed a missing OpenAI key that was set. LaTeX arithmetic printed raw.
+  All three are fixed (`compose.py`, `cross_review.py`; the vendored reviewer is
+  untouched) and re-checked on a second live run. 235 tests. The same day the
+  repo gained the Loom secret-scan gate: the GitHub gitleaks workflow, the
+  pre-commit hook and `.gitleaks.toml`.
+  The live runs confirmed `gpt-6-sol` works, including the framing step at its
+  1,024-token limit, but went to OpenAI directly: no OpenRouter key exists yet,
+  so OpenRouter's own routing is still untested.
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.5.1 on PyPI. Default models for
   five vendors replaced.** Git tag `v0.5.1`;
   https://pypi.org/project/rapier-runtime/0.5.1/. OpenRouter's default
