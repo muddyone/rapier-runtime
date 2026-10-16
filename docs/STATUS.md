@@ -23,8 +23,12 @@ what's next" so a new session can continue without reconstructing from git log.
   `OpenRouter` (field `rapier-runtime-test` for tests).
   **Gemini default `gemini-3.5-flash-lite` confirmed live (2026-10-16):** one
   `frame` call with only the stored Gemini key returned a complete answer.
-  Still never called live: `deepseek-flash` (no DeepSeek key) and the Groq and
-  Together `openai/gpt-oss-120b` defaults (no keys).
+  **DeepSeek default `deepseek-flash` confirmed live (2026-10-16):** DeepSeek's
+  own model list for the key is `deepseek-flash` and `deepseek-v4-pro`, and one
+  `frame` call with only the DeepSeek key returned a complete answer. Key:
+  1Password, Sparring Framework vault, item `DeepSeek`.
+  Still never called live: the Groq and Together `openai/gpt-oss-120b`
+  defaults (no keys).
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.5.1 on PyPI. Default models for
   five vendors replaced.** Git tag `v0.5.1`;
   https://pypi.org/project/rapier-runtime/0.5.1/. OpenRouter's default
