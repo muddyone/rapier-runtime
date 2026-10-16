@@ -169,8 +169,15 @@ what's next" so a new session can continue without reconstructing from git log.
 2. **Paper 2 (the Proposer)** stays parked until the engine is fully shipped.
    Note: the Proposer study runs *on* this engine — Frame, seeded generation, and
    the depth knob are the instrument it will exercise.
-3. **Optional polish, if worth it:** expose runs as MCP *resources* rather than
-   tools; a landing line advertising the front door / `--depth` / `--seed`.
+3. ~~**Optional polish:** runs as MCP resources; a landing line for the front
+   door / `--depth` / `--seed`.~~ **DONE (2026-10-16).** The landing line is live.
+   Saved runs are MCP resources (`rapier://runs`, `rapier://runs/{run_id}`,
+   `rapier://runs/{run_id}/record`); the `list_runs` / `get_run` tools stay for
+   tool-only clients. Not yet released: ships with the next version, together
+   with the `mcp<2` cap that makes a fresh `pip install "rapier-runtime[mcp]"`
+   start again (mcp 2.0 renamed FastMCP).
+4. **Port the MCP server to the mcp 2.x SDK** (`FastMCP` → `MCPServer`, per the
+   SDK's migration guide), then lift the `<2` cap.
 
 _(M4 publish is **DONE** — v0.4.0 on PyPI + the full landing live; see Done above.
 Loom submodule pin bumped to the v0.4.0 release commit `514df56`.)_

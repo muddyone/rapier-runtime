@@ -4,6 +4,30 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## Unreleased
+
+### Added: saved runs as MCP resources
+
+MCP clients can now browse saved runs instead of calling tools:
+
+- `rapier://runs`: every saved run, newest first, with its kind, topic and
+  verdict (JSON).
+- `rapier://runs/{run_id}`: a run's report, as the CLI printed it (plain text).
+- `rapier://runs/{run_id}/record`: a run's full record, redacted when it was
+  saved (JSON).
+
+Each saved run also appears in the client's resource list, titled by kind and
+topic, including runs saved after the server started. The `list_runs` and
+`get_run` tools still work.
+
+### Fixed: `rapier mcp` failed on a fresh install
+
+The `[mcp]` extra allowed any `mcp>=1.2`, so a new install got the mcp 2.x SDK,
+which renamed the server API this version uses. `rapier mcp` then exited with a
+message telling you to install the extra you already had. The extra is now
+capped at `mcp<2`, and if a 2.x SDK is present anyway, `rapier mcp` says so and
+gives the command that fixes it.
+
 ## 0.5.2 — 2026-10-16
 
 ### Fixed: the report no longer calls a same-vendor review independent

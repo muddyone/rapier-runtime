@@ -162,6 +162,57 @@ def list_runs(ledger_root: str | None) -> dict[str, Any]:
     return {"ok": True, "runs": runs, "ledger_root": ledger_root}
 
 
+def _load_envelope(ledger_root: str | None, run_id: str) -> dict[str, Any]:
+    """A run's persisted envelope (already redacted on write); ``LookupError`` if absent."""
+    if not ledger_root:
+        raise LookupError("run persistence is disabled (RAPIER_NO_PERSIST is set)")
+    if not _safe_run_id(run_id):
+        raise LookupError("invalid run id")
+    path = os.path.join(ledger_root, run_id, "envelope.json")
+    if not os.path.isfile(path):
+        raise LookupError(f"run '{run_id}' not found")
+    with open(path, encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def run_index(ledger_root: str | None) -> dict[str, Any]:
+    """Every persisted run with enough to choose one: kind, topic, verdict (newest first).
+
+    Backs the ``rapier://runs`` resource. A run id is ``<YYYYmmddHHMMSS>-<kind>``.
+    """
+    listed = list_runs(ledger_root)
+    if not listed.get("ok"):
+        return listed
+    runs = []
+    for run_id in reversed(listed["runs"]):
+        try:
+            env = _load_envelope(ledger_root, run_id)
+        except (LookupError, ValueError, OSError):
+            continue  # an in-progress or foreign dir has no envelope; it isn't a run yet
+        request = (env.get("request") or "").strip()
+        runs.append({
+            "run_id": run_id,
+            "kind": run_id.split("-", 1)[1] if "-" in run_id else "",
+            "topic": request.splitlines()[0][:120] if request else "",
+            "verdict": env.get("verdict"),
+            "report_uri": f"rapier://runs/{run_id}",
+            "record_uri": f"rapier://runs/{run_id}/record",
+        })
+    return {"ok": True, "ledger_root": ledger_root, "runs": runs}
+
+
+def run_report(ledger_root: str | None, run_id: str) -> str:
+    """A run's plain-text report, as the CLI printed it. ``LookupError`` if absent."""
+    env = _load_envelope(ledger_root, run_id)
+    meta = env.get("meta") or {}
+    return meta.get("report_md") or meta.get("report") or env.get("recommendation") or ""
+
+
+def run_record(ledger_root: str | None, run_id: str) -> dict[str, Any]:
+    """A run's full persisted record (the redacted envelope). ``LookupError`` if absent."""
+    return _load_envelope(ledger_root, run_id)
+
+
 def get_run(ledger_root: str | None, run_id: str) -> dict[str, Any]:
     """Return a persisted run's report + verdict by id (from its envelope.json)."""
     if not ledger_root:

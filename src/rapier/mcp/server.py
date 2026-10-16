@@ -1,4 +1,6 @@
-"""The ``rapier mcp`` stdio server — frame / proposer / spar / sparring / doctor as MCP tools.
+"""The ``rapier mcp`` stdio server — frame / proposer / spar / sparring / doctor as MCP tools,
+and saved runs as MCP resources (``rapier://runs``, ``rapier://runs/{run_id}``,
+``rapier://runs/{run_id}/record``).
 
 Optional: requires the ``mcp`` extra (``pip install "rapier-runtime[mcp]"``). The
 SDK is imported lazily inside :func:`build_server`, so importing this module (and
@@ -18,9 +20,14 @@ annotations`` — FastMCP evaluates each tool's signature, and the lazily-import
 ``Context`` annotation must be a real class object at definition time, not a
 string it cannot resolve.
 """
+import json
 import os
 import sys
 from typing import Any, Callable
+
+# Cap on runs listed individually in resources/list; every run stays readable by URI
+# and is indexed in rapier://runs.
+_MAX_LISTED_RUNS = 200
 
 
 async def _run_with_progress(
@@ -208,17 +215,65 @@ def build_server():
         values) and whether cross-vendor review is available."""
         return tools.doctor()
 
+    # Kept for clients that only call tools; the resources below are the browsable form.
     @server.tool()
     def list_runs() -> dict:
-        """List persisted run ids (requires the server's RAPIER_MCP_LEDGER)."""
+        """List persisted run ids. Clients that support resources can browse rapier://runs instead."""
         return tools.list_runs(ledger_root)
 
     @server.tool()
     def get_run(run_id: str) -> dict:
-        """Fetch a persisted run's report + verdict by id (requires RAPIER_MCP_LEDGER)."""
+        """Fetch a persisted run's report + verdict by id. Also readable as rapier://runs/{run_id}."""
         return tools.get_run(ledger_root, run_id)
 
+    # ── saved runs as resources ──────────────────────────────────────────────
+    @server.resource("rapier://runs", name="runs", mime_type="application/json",
+                     description="Every saved run, newest first: kind, topic, verdict, and "
+                                 "the URIs of its report and full record.")
+    def runs_index() -> str:
+        return json.dumps(tools.run_index(ledger_root), indent=2)
+
+    @server.resource("rapier://runs/{run_id}", name="run-report", mime_type="text/plain",
+                     description="A saved run's report, as the CLI printed it.")
+    def run_report(run_id: str) -> str:
+        return tools.run_report(ledger_root, run_id)
+
+    @server.resource("rapier://runs/{run_id}/record", name="run-record",
+                     mime_type="application/json",
+                     description="A saved run's full record (redacted on write): request, "
+                                 "recommendation, trust rider, verdict, trace, meta.")
+    def run_record(run_id: str) -> str:
+        return json.dumps(tools.run_record(ledger_root, run_id), indent=2, default=str)
+
+    # FastMCP lists only resources registered at startup, so runs saved after the
+    # server started would never appear. Replace the list handler with one that adds
+    # each saved run's report as a concrete resource every time a client asks.
+    from mcp.types import Resource
+
+    async def _list_resources():
+        listed = await server.list_resources()
+        index = tools.run_index(ledger_root)
+        for run in (index.get("runs") or [])[:_MAX_LISTED_RUNS]:
+            listed.append(Resource(
+                uri=run["report_uri"],
+                name=run["run_id"],
+                title=f"{run['kind']}: {run['topic']}" if run["topic"] else run["run_id"],
+                description=f"verdict: {run['verdict']}" if run["verdict"] else None,
+                mimeType="text/plain",
+            ))
+        return listed
+
+    server._mcp_server.list_resources()(_list_resources)
+
     return server
+
+
+def _installed_mcp_version() -> str | None:
+    try:
+        from importlib.metadata import PackageNotFoundError, version
+        return version("mcp")
+    except PackageNotFoundError:
+        return None
 
 
 def serve() -> int:
@@ -226,11 +281,20 @@ def serve() -> int:
     try:
         server = build_server()
     except ImportError:
-        print(
-            'The MCP server needs the optional "mcp" extra:\n'
-            '    pip install "rapier-runtime[mcp]"',
-            file=sys.stderr,
-        )
+        installed = _installed_mcp_version()
+        if installed and installed.split(".")[0].isdigit() and int(installed.split(".")[0]) >= 2:
+            print(
+                f"The MCP server needs the mcp SDK 1.x, but {installed} is installed\n"
+                "(mcp 2.0 renamed the server API this version uses). Install a 1.x SDK:\n"
+                '    pip install "mcp>=1.2,<2"',
+                file=sys.stderr,
+            )
+        else:
+            print(
+                'The MCP server needs the optional "mcp" extra:\n'
+                '    pip install "rapier-runtime[mcp]"',
+                file=sys.stderr,
+            )
         return 1
     server.run()  # stdio transport by default
     return 0

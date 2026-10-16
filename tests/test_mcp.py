@@ -169,3 +169,14 @@ def test_runs_disabled_without_ledger():
 
     assert tools.list_runs(None)["ok"] is False
     assert tools.get_run(None, "x")["ok"] is False
+
+
+def test_serve_names_mcp_2_when_that_is_why_import_failed(monkeypatch, capsys):
+    def _raise():
+        raise ImportError("No module named 'mcp.server.fastmcp'")
+
+    monkeypatch.setattr(server, "build_server", _raise)
+    monkeypatch.setattr(server, "_installed_mcp_version", lambda: "2.3.0")
+    assert server.serve() == 1
+    err = capsys.readouterr().err
+    assert "2.3.0 is installed" in err and 'pip install "mcp>=1.2,<2"' in err

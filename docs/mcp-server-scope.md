@@ -97,7 +97,15 @@ existing redaction on every tool result. No new secret surface — keys stay in 
   **THE RECORD** section naming the run directory, so a Desktop user can see the
   audit trail exists and where — governance is only real if the record is visible.
 
-Follow-ups: consider exposing runs as MCP *resources* (currently tools).
+Saved runs are also MCP **resources** (2026-10-16): `rapier://runs` (index,
+JSON), `rapier://runs/{run_id}` (the report, plain text) and
+`rapier://runs/{run_id}/record` (the full redacted envelope, JSON). Each saved
+run is listed as its own resource every time a client asks, including runs saved
+after the server started. The `list_runs` / `get_run` tools remain for clients
+that only call tools.
+
+Follow-ups: port to the mcp 2.x SDK (`FastMCP` was renamed `MCPServer`); until
+then the `[mcp]` extra is capped at `mcp<2`.
 
 ## Open decisions
 1. `rapier mcp` subcommand (recommended) vs a separate `rapier-mcp` entry point.
