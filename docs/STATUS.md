@@ -1,9 +1,19 @@
 # Rapier — dev status
 
-_Last updated: 2026-08-28 (tag v0.5.0, 223 tests)._ A running "where we are /
+_Last updated: 2026-10-16 (tag v0.5.1, 230 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-10-16) — `rapier-runtime` 0.5.1 on PyPI. Default models for
+  five vendors replaced.** Git tag `v0.5.1`;
+  https://pypi.org/project/rapier-runtime/0.5.1/. OpenRouter's default
+  `openai/gpt-4o` (stops working 2027-01-14, Loom Plan 26) is now
+  `openai/gpt-6-sol` (Bart's ruling). Checking every OpenAI-compatible default
+  against its vendor's deprecation page found two already failing (DeepSeek
+  `deepseek-chat`, Groq `llama-3.3-70b-versatile`), one leaving 2026-10-22
+  (Together's Llama 3.3 Turbo) and one closed to new users (`gemini-2.5-flash`).
+  The full table is in `CHANGELOG.md`, which starts with this release. None of
+  the new defaults has been tried on a live run yet; that needs vendor keys.
 - **RELEASED (2026-08-28) — `rapier-runtime` 0.5.0 on PyPI. The verifier stops
   calling real citations fabricated.** Git tag `v0.5.0`;
   https://pypi.org/project/rapier-runtime/0.5.0/. Eleven commits, and the
