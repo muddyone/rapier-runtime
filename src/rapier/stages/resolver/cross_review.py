@@ -7,6 +7,10 @@ the anchored-correction stage to act on.
 """
 from __future__ import annotations
 
+import contextlib
+import io
+import sys
+
 from ...envelope import Envelope
 from ...stage import StageContext, TransformStage, register_stage
 
@@ -24,10 +28,23 @@ class CrossReviewStage(TransformStage):
         primary_v, secondary_v = bind_pair(
             env, secondary_pref=ctx.config.get("reviewer_vendor"), policy=ctx.policy
         )
+        # The vendored reviewer names its two slots after Anthropic and OpenAI, so
+        # its fallback warning ("OPENAI_API_KEY absent; falling back to a Claude
+        # reviewer") is wrong once the slots are bound to other vendors. Capture
+        # it and say what actually happened instead; other stderr passes through.
+        captured = io.StringIO()
         try:
-            result = B.review(env.request, env.recommendation, None, None)
+            with contextlib.redirect_stderr(captured):
+                result = B.review(env.request, env.recommendation, None, None)
         finally:
             B.reset_slots()
+        for line in captured.getvalue().splitlines():
+            if line.startswith("WARN spar-cross-review:") and not result.get("cross_vendor"):
+                if result.get("reviewer_vendor") is None:
+                    continue  # no keys at all; the pipeline's own preflight reports that
+                line = (f"WARN cross_review: no second vendor available; the reviewer runs on "
+                        f"{primary_v}, the author's vendor (NOT cross-vendor).")
+            sys.stderr.write(line + "\n")
 
         env.meta["review"] = result
         n = len(result.get("objections") or [])

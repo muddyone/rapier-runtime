@@ -48,6 +48,13 @@ def _verdict_sentence(verdict, gate) -> str:
             "to check, or the checker was unavailable), so treat the stated specifics as unverified.")
 
 
+def _challenge_phrase(review) -> str:
+    """Who raised the challenge, worded so a same-vendor review is never called independent."""
+    if review.get("cross_vendor"):
+        return "an independent, different-vendor reviewer"
+    return "a reviewer on the same vendor as the author (not an independent check)"
+
+
 def _reviewer_sentence(review) -> str:
     """Whether the challenge was genuinely independent — in plain words."""
     if review.get("cross_vendor"):
@@ -132,9 +139,36 @@ def _bullets(items) -> str:
     """One finding per bullet, hanging-indented so the marker column stays a clean
     vertical scan-line."""
     return "\n".join(
-        textwrap.fill(str(it).strip(), width=_W, initial_indent="• ", subsequent_indent="  ")
+        textwrap.fill(_plain_math(str(it)).strip(), width=_W, initial_indent="• ",
+                      subsequent_indent="  ")
         for it in items
     )
+
+
+# Models often write arithmetic as LaTeX (\( H \times 0.60 \)), which a terminal
+# prints literally. Only text inside \( \) or \[ \] is rewritten, so a stray
+# backslash elsewhere in the prose is left alone.
+_MATH_SPAN_RE = re.compile(r"\\\((.+?)\\\)|\\\[(.+?)\\\]", re.S)
+_MATH_SYMBOLS = {
+    "times": "×", "div": "÷", "cdot": "·", "approx": "≈", "pm": "±",
+    "leq": "≤", "le": "≤", "geq": "≥", "ge": "≥", "neq": "≠", "ne": "≠",
+    "to": "→", "rightarrow": "→", "infty": "∞", "%": "%", "$": "$",
+    ",": " ", ";": " ", "!": "", " ": " ", "quad": " ", "qquad": " ",
+}
+
+
+def _plain_math(text: str) -> str:
+    def span(m: re.Match) -> str:
+        t = m.group(1) if m.group(1) is not None else m.group(2)
+        for _ in range(3):  # nested \frac / \text unwrap from the inside out
+            t = re.sub(r"\\[dt]?frac\{([^{}]*)\}\{([^{}]*)\}", r"(\1)/(\2)", t)
+            t = re.sub(r"\\(?:text|mathrm|mathbf|operatorname)\{([^{}]*)\}", r"\1", t)
+        t = re.sub(r"\\left|\\right", "", t)
+        t = re.sub(r"\\([A-Za-z]+|[%$,;! ])",
+                   lambda k: _MATH_SYMBOLS.get(k.group(1), k.group(0)), t)
+        t = t.replace("{", "").replace("}", "")
+        return re.sub(r"\s+", " ", t).strip()
+    return _MATH_SPAN_RE.sub(span, text or "")
 
 
 def _demote_md(text: str) -> str:
@@ -150,7 +184,7 @@ def _demote_md(text: str) -> str:
     s = re.sub(r"\*\*(.+?)\*\*", r"\1", s)   # bold
     s = re.sub(r"(?<![\w*])\*(?!\s)([^*\n]+?)(?<!\s)\*(?![\w*])", r"\1", s)  # italic
     s = re.sub(r"(?<!\w)`([^`]+)`(?!\w)", r"\1", s)  # inline code
-    return s
+    return _plain_math(s)
 
 
 # The stored verdicts carry the citation gate's shape (``status``:
@@ -183,7 +217,7 @@ def _grounding_body(env: Envelope) -> str:
         return ("The recommendation cited nothing externally checkable — no CVE, CWE, "
                 "RFC, DOI, or URL — so there was nothing to confirm against a public "
                 "registry. This is normal for judgment and strategy questions, where the "
-                "load-bearing work is the cross-vendor challenge above, not citation.")
+                "load-bearing work is the challenge below, not citation.")
     lines = []
     nver = 0
     for v in verdicts:
@@ -299,7 +333,7 @@ def _render_report(env: Envelope) -> str:
     L += ["", "", _HEAVY, "  TRUST RIDER", _HEAVY, "",
           "How far to trust the recommendation above: what is still yours to",
           "confirm, what was verified for you, and how the answer held up under",
-          "an independent challenge."]
+          "challenge."]
 
     assumptions = rider.get("assumptions_to_verify") or []
     L += _sec("STILL YOURS TO CHECK",
@@ -322,13 +356,15 @@ def _render_report(env: Envelope) -> str:
 
     contested = _texts(review.get("objections"))
     L += _sec("ALREADY FIXED UNDER CHALLENGE",
-              "Not action items — already folded into the recommendation above. An "
-              "independent, different-vendor reviewer raised each of these, and the "
-              "answer was revised to address it. Shown so you can see what the "
-              "challenge caught and how the recommendation got stronger.",
+              "Not action items — already folded into the recommendation above. "
+              + _challenge_phrase(review)[0].upper() + _challenge_phrase(review)[1:]
+              + " raised each of these, and the answer was revised to address it. "
+              "Shown so you can see what the challenge caught and how the "
+              "recommendation got stronger.",
               _bullets(contested) if contested
-              else "The independent review found nothing material to change — the "
-                   "recommendation held up as written.")
+              else "The review found nothing material to change — the recommendation "
+                   "held up as written. See HOW MUCH TO TRUST THIS for how independent "
+                   "that review was.")
 
     dissent = rider.get("proposer_dissent_forwarded")
     if dissent:
