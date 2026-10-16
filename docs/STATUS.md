@@ -183,8 +183,11 @@ what's next" so a new session can continue without reconstructing from git log.
    Saved runs are MCP resources (`rapier://runs`, `rapier://runs/{run_id}`,
    `rapier://runs/{run_id}/record`); the `list_runs` / `get_run` tools stay for
    tool-only clients. Released in 0.5.3.
-4. **Port the MCP server to the mcp 2.x SDK** (`FastMCP` → `MCPServer`, per the
-   SDK's migration guide), then lift the `<2` cap.
+4. ~~**Port the MCP server to the mcp 2.x SDK.**~~ **DONE (2026-10-16), not yet
+   released.** `MCPServer` replaces `FastMCP`; the `[mcp]` extra is now
+   `mcp>=2.3,<3`. 250 tests pass on mcp 2.3.0, and a built wheel was checked over
+   real stdio: tools, resources, a live `frame` call with progress, and the new
+   run appearing in the next listing. Ships with the next release.
 
 _(M4 publish is **DONE** — v0.4.0 on PyPI + the full landing live; see Done above.
 Loom submodule pin bumped to the v0.4.0 release commit `514df56`.)_

@@ -50,9 +50,9 @@ Paper = "https://doi.org/10.5281/zenodo.21210264"
 dev = ["pytest>=8.0"]
 # The MCP server (`rapier mcp`) — kept out of the core so the tiny runtime stays
 # `requests` + `pyyaml`. Install with: pip install "rapier-runtime[mcp]".
-# Capped below 2: mcp 2.0 renamed FastMCP (to MCPServer) and changed other APIs
-# the server uses, so an uncapped install broke `rapier mcp`.
-mcp = ["mcp>=1.2,<2"]
+# Built on the mcp 2.x SDK (MCPServer). Capped below the next major, because 2.0
+# renamed the server API and an uncapped >=1.2 broke `rapier mcp` (0.5.2).
+mcp = ["mcp>=2.3,<3"]
 
 [project.scripts]
 rapier = "rapier.cli:main"

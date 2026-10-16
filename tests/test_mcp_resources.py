@@ -60,9 +60,9 @@ def test_report_rejects_traversal_and_unknown_ids(ledger, bad):
 
 
 def test_resources_over_the_protocol(ledger, monkeypatch):
-    pytest.importorskip("mcp.server.fastmcp")
+    pytest.importorskip("mcp.server.mcpserver")
     anyio = pytest.importorskip("anyio")
-    from mcp.shared.memory import create_connected_server_and_client_session
+    from mcp import Client
 
     from rapier.mcp.server import build_server
 
@@ -71,10 +71,10 @@ def test_resources_over_the_protocol(ledger, monkeypatch):
     server = build_server()
 
     async def go():
-        async with create_connected_server_and_client_session(server._mcp_server) as client:
+        async with Client(server) as client:
             listed = {str(r.uri): r for r in (await client.list_resources()).resources}
-            templates = {t.uriTemplate for t in
-                         (await client.list_resource_templates()).resourceTemplates}
+            templates = {t.uri_template for t in
+                         (await client.list_resource_templates()).resource_templates}
 
             # A run saved after the server started still shows up in the next listing.
             _save_run(ledger, "20261016110000-sparring", request="Later run")
@@ -89,7 +89,7 @@ def test_resources_over_the_protocol(ledger, monkeypatch):
     listed, templates, relisted, index, report, record = anyio.run(go)
 
     assert "rapier://runs" in listed
-    assert listed["rapier://runs/20261016095044-spar"].mimeType == "text/plain"
+    assert listed["rapier://runs/20261016095044-spar"].mime_type == "text/plain"
     assert "rapier://runs/20261016100000-spar" not in listed  # unfinished run not listed
     assert {"rapier://runs/{run_id}", "rapier://runs/{run_id}/record"} <= templates
     assert "rapier://runs/20261016110000-sparring" in relisted

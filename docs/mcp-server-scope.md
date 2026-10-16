@@ -104,8 +104,10 @@ run is listed as its own resource every time a client asks, including runs saved
 after the server started. The `list_runs` / `get_run` tools remain for clients
 that only call tools.
 
-Follow-ups: port to the mcp 2.x SDK (`FastMCP` was renamed `MCPServer`); until
-then the `[mcp]` extra is capped at `mcp<2`.
+The server is built on the mcp **2.x** SDK (`MCPServer`; ported 2026-10-16), and
+the `[mcp]` extra requires `mcp>=2.3,<3`. Stage progress is sent as the
+`notifications/progress` message, because 2.x delivers log messages only to
+clients that opt in.
 
 ## Open decisions
 1. `rapier mcp` subcommand (recommended) vs a separate `rapier-mcp` entry point.

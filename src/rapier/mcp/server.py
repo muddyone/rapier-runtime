@@ -15,8 +15,10 @@ minutes, so the tools **stream per-stage progress** to the client: the engine's
 run-log lines are bridged from the worker thread to MCP ``info`` + ``report_progress``
 notifications, so the client shows life instead of a hang.
 
+Built on the mcp 2.x SDK (``MCPServer``; it was ``FastMCP`` in 1.x).
+
 NOTE: this module deliberately does *not* use ``from __future__ import
-annotations`` — FastMCP evaluates each tool's signature, and the lazily-imported
+annotations`` — MCPServer evaluates each tool's signature, and the lazily-imported
 ``Context`` annotation must be a real class object at definition time, not a
 string it cannot resolve.
 """
@@ -39,8 +41,13 @@ async def _run_with_progress(
     **kwargs: Any,
 ) -> dict:
     """Run a blocking tool ``fn(log=…, cancel=…, ledger_root=…, **kwargs)`` in a
-    worker thread while streaming its log lines to the MCP client as info +
-    progress notifications, with cooperative cancellation and an optional timeout.
+    worker thread while streaming its log lines to the MCP client, with
+    cooperative cancellation and an optional timeout.
+
+    Every line goes out as an ``info`` log message, and each ``stage:`` line also
+    ticks progress with that line as the progress message. The mcp 2.x SDK
+    deprecates the logging helpers and delivers them only to clients that opt in,
+    so the progress message is what keeps every client showing the stage.
 
     ``ctx`` may be ``None`` (a unit test with no session), in which case the run
     proceeds silently. On client cancellation or timeout the cancel flag is set,
@@ -76,11 +83,14 @@ async def _run_with_progress(
             if msg is sentinel:
                 return
             if ctx is not None:
-                await ctx.info(msg)
+                try:
+                    await ctx.info(msg)
+                except Exception:
+                    pass  # logging is best-effort; never fail a run over it
                 if msg.startswith("stage:"):
                     done += 1
                     try:
-                        await ctx.report_progress(done, total)
+                        await ctx.report_progress(done, total, message=msg)
                     except Exception:
                         pass  # progress is best-effort; never fail a run over it
 
@@ -106,22 +116,26 @@ async def _run_with_progress(
 
 
 def build_server():
-    """Construct the FastMCP server with Rapier's tools.
+    """Construct the MCP server with Rapier's tools and run resources.
 
     Raises ``ImportError`` if the ``mcp`` extra is not installed (handled by
     :func:`serve`).
     """
-    from mcp.server.fastmcp import Context, FastMCP  # optional dependency
+    import warnings
+
+    from mcp.server.mcpserver import Context, MCPServer  # optional dependency
+    from mcp.shared.exceptions import MCPDeprecationWarning
+    from mcp.types import Resource
 
     from .. import __version__
     from ..presets import load_preset
     from . import tools
 
-    server = FastMCP("rapier")
-    # FastMCP doesn't forward a version to the low-level server, which then reports
-    # the mcp SDK's own version in the initialize handshake. Set ours so a client
-    # sees rapier's version, not the SDK's.
-    server._mcp_server.version = __version__
+    # ctx.info is deprecated (SEP-2577) but still reaches clients that opt in to
+    # logs; keep sending it without the SDK warning on the server's stderr. The
+    # warning is raised inside the SDK, so match its text, not the calling module.
+    warnings.filterwarnings("ignore", message="The logging capability is deprecated",
+                            category=MCPDeprecationWarning)
     # Run persistence (governance default: ON). Ceremonies are written to a
     # durable run dir and become retrievable via list_runs / get_run. Precedence:
     # RAPIER_NO_PERSIST opts out entirely; else RAPIER_MCP_LEDGER pins the location
@@ -132,6 +146,26 @@ def build_server():
         ledger_root = None
     else:
         ledger_root = os.environ.get("RAPIER_MCP_LEDGER") or default_runs_root()
+
+    class _RapierServer(MCPServer):
+        async def list_resources(self):
+            # MCPServer lists only resources registered at startup, so runs saved
+            # after the server started would never appear. Add each saved run's
+            # report as a concrete resource every time a client asks.
+            listed = await super().list_resources()
+            index = tools.run_index(ledger_root)
+            for run in (index.get("runs") or [])[:_MAX_LISTED_RUNS]:
+                listed.append(Resource(
+                    uri=run["report_uri"],
+                    name=run["run_id"],
+                    title=f"{run['kind']}: {run['topic']}" if run["topic"] else run["run_id"],
+                    description=f"verdict: {run['verdict']}" if run["verdict"] else None,
+                    mime_type="text/plain",
+                ))
+            return listed
+
+    # The version goes in the initialize handshake; without it 2.x reports "".
+    server = _RapierServer("rapier", version=__version__)
 
     def _stage_total(name: str, settle: int = 0, verify: str = "gate",
                      seed: list | None = None, depth: str = "standard") -> int:
@@ -245,26 +279,6 @@ def build_server():
     def run_record(run_id: str) -> str:
         return json.dumps(tools.run_record(ledger_root, run_id), indent=2, default=str)
 
-    # FastMCP lists only resources registered at startup, so runs saved after the
-    # server started would never appear. Replace the list handler with one that adds
-    # each saved run's report as a concrete resource every time a client asks.
-    from mcp.types import Resource
-
-    async def _list_resources():
-        listed = await server.list_resources()
-        index = tools.run_index(ledger_root)
-        for run in (index.get("runs") or [])[:_MAX_LISTED_RUNS]:
-            listed.append(Resource(
-                uri=run["report_uri"],
-                name=run["run_id"],
-                title=f"{run['kind']}: {run['topic']}" if run["topic"] else run["run_id"],
-                description=f"verdict: {run['verdict']}" if run["verdict"] else None,
-                mimeType="text/plain",
-            ))
-        return listed
-
-    server._mcp_server.list_resources()(_list_resources)
-
     return server
 
 
@@ -282,11 +296,12 @@ def serve() -> int:
         server = build_server()
     except ImportError:
         installed = _installed_mcp_version()
-        if installed and installed.split(".")[0].isdigit() and int(installed.split(".")[0]) >= 2:
+        major = installed.split(".")[0] if installed else ""
+        if major.isdigit() and int(major) != 2:
             print(
-                f"The MCP server needs the mcp SDK 1.x, but {installed} is installed\n"
-                "(mcp 2.0 renamed the server API this version uses). Install a 1.x SDK:\n"
-                '    pip install "mcp>=1.2,<2"',
+                f"The MCP server needs the mcp SDK 2.x, but {installed} is installed\n"
+                "(its server API differs). Install a 2.x SDK:\n"
+                '    pip install "mcp>=2.3,<3"',
                 file=sys.stderr,
             )
         else:

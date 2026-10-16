@@ -4,6 +4,21 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## Unreleased
+
+### Changed: the MCP server now runs on the mcp 2.x SDK
+
+The `[mcp]` extra now requires `mcp>=2.3,<3` (it was `>=1.2,<2`), and the
+server is built on the SDK's `MCPServer`. Tools, their results and the run
+resources behave as before. Two visible differences:
+
+- **Progress shows the stage.** Each stage's progress update now carries the
+  stage name as its message. mcp 2.x sends log messages only to clients that
+  ask for them, so the progress message is what every client will show.
+- **`pip install -U "rapier-runtime[mcp]"` upgrades the SDK.** An environment
+  pinned to mcp 1.x will be moved to 2.x. If a 1.x SDK is installed anyway,
+  `rapier mcp` says so and gives the command that fixes it.
+
 ## 0.5.3 — 2026-10-16
 
 ### Added: saved runs as MCP resources

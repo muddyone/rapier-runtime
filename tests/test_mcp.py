@@ -1,6 +1,6 @@
 """MCP-0 — tool logic (no SDK needed) + graceful behaviour when the extra is absent.
 
-The FastMCP wiring itself is exercised only when the optional ``mcp`` extra is
+The MCPServer wiring itself is exercised only when the optional ``mcp`` extra is
 installed; these tests lock in the parts that must hold regardless.
 """
 from __future__ import annotations
@@ -66,8 +66,8 @@ def test_run_with_progress_streams_stage_progress():
         async def info(self, m):
             self.infos.append(m)
 
-        async def report_progress(self, done, total=None):
-            self.progress.append((done, total))
+        async def report_progress(self, done, total=None, message=None):
+            self.progress.append((done, total, message))
 
     def _fn(log=None, **kw):
         log("stage: author (transform)")
@@ -78,7 +78,9 @@ def test_run_with_progress_streams_stage_progress():
     ctx = _Ctx()
     out = anyio.run(server._run_with_progress, _fn, ctx, 2)
     assert out == {"ok": True, "report_md": "R"}
-    assert ctx.progress == [(1, 2), (2, 2)]  # one tick per 'stage:' line
+    # one tick per 'stage:' line, carrying that line as the progress message
+    assert ctx.progress == [(1, 2, "stage: author (transform)"),
+                            (2, 2, "stage: compose (transform)")]
     assert any("substitution" in m for m in ctx.infos)  # every line streamed as info
 
 
@@ -111,9 +113,19 @@ def test_build_server_advertises_rapier_version_not_sdk():
     pytest.importorskip("mcp")
     from rapier import __version__
 
+    anyio = pytest.importorskip("anyio")
+    from mcp import Client
+
     srv = server.build_server()
-    # The initialize handshake must report rapier's version, not the mcp SDK's.
-    assert srv._mcp_server.version == __version__
+
+    async def go():
+        async with Client(srv) as client:
+            return client.server_info
+
+    # The initialize handshake must report rapier's name and version (2.x
+    # reports "" when a server passes none).
+    info = anyio.run(go)
+    assert (info.name, info.version) == ("rapier", __version__)
 
 
 # --- MCP-2: timeout + ledger-run access ---
@@ -171,12 +183,22 @@ def test_runs_disabled_without_ledger():
     assert tools.get_run(None, "x")["ok"] is False
 
 
-def test_serve_names_mcp_2_when_that_is_why_import_failed(monkeypatch, capsys):
+def test_serve_names_an_old_mcp_sdk_when_that_is_why_import_failed(monkeypatch, capsys):
     def _raise():
-        raise ImportError("No module named 'mcp.server.fastmcp'")
+        raise ImportError("No module named 'mcp.server.mcpserver'")
 
     monkeypatch.setattr(server, "build_server", _raise)
-    monkeypatch.setattr(server, "_installed_mcp_version", lambda: "2.3.0")
+    monkeypatch.setattr(server, "_installed_mcp_version", lambda: "1.30.0")
     assert server.serve() == 1
     err = capsys.readouterr().err
-    assert "2.3.0 is installed" in err and 'pip install "mcp>=1.2,<2"' in err
+    assert "1.30.0 is installed" in err and 'pip install "mcp>=2.3,<3"' in err
+
+
+def test_serve_without_sdk_points_at_the_extra(monkeypatch, capsys):
+    def _raise():
+        raise ImportError("No module named 'mcp'")
+
+    monkeypatch.setattr(server, "build_server", _raise)
+    monkeypatch.setattr(server, "_installed_mcp_version", lambda: None)
+    assert server.serve() == 1
+    assert 'pip install "rapier-runtime[mcp]"' in capsys.readouterr().err
