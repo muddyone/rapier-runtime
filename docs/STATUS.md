@@ -1,9 +1,16 @@
 # Rapier — dev status
 
-_Last updated: 2026-10-16 (tag v0.5.3, 249 tests with the mcp SDK)._ A running "where we are /
+_Last updated: 2026-10-16 (tag v0.6.0, 250 tests with the mcp SDK)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-10-16) — `rapier-runtime` 0.6.0 on PyPI. The MCP server runs
+  on the mcp 2.x SDK.** Git tag `v0.6.0`;
+  https://pypi.org/project/rapier-runtime/0.6.0/. `MCPServer` replaces
+  `FastMCP`; the `[mcp]` extra is `mcp>=2.3,<3`; stage progress carries the
+  stage name as its message. Verified from PyPI: a clean install and an upgrade
+  from 0.5.3 (mcp 1.30.0) both resolve mcp 2.3.0, and `rapier mcp` reports
+  0.6.0 with 7 tools and the saved runs as resources.
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.5.3 on PyPI. Saved runs as MCP
   resources, and `rapier mcp` starts again on a fresh install.** Git tag
   `v0.5.3`; https://pypi.org/project/rapier-runtime/0.5.3/. Resources:
@@ -187,7 +194,7 @@ what's next" so a new session can continue without reconstructing from git log.
    released.** `MCPServer` replaces `FastMCP`; the `[mcp]` extra is now
    `mcp>=2.3,<3`. 250 tests pass on mcp 2.3.0, and a built wheel was checked over
    real stdio: tools, resources, a live `frame` call with progress, and the new
-   run appearing in the next listing. Ships with the next release.
+   run appearing in the next listing. Released in 0.6.0.
 
 _(M4 publish is **DONE** — v0.4.0 on PyPI + the full landing live; see Done above.
 Loom submodule pin bumped to the v0.4.0 release commit `514df56`.)_
