@@ -11,7 +11,7 @@ fonts. `index.html` is **light-only** and serves the logo master
   Kept as a rollback target; **not** what is deployed.
 - **`index.html`** — the full MVP landing page. **This is what is live** at
   rapierruntime.com (swapped in at launch, 2026-07-16; verified byte-identical
-  2026-08-28).
+  2026-10-16, after adding the quickstart line for `frame`, `--depth` and `--seed`).
 
 ## Status: LAUNCHED 2026-07-16 — the full landing is live
 
