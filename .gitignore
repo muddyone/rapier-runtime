@@ -32,3 +32,6 @@ runs/
 
 # Nested git worktrees — registered checkouts, never committed into the repo
 .claude/worktrees/
+
+# Loom per-machine stamp (when the explainability reminder last ran)
+.loom/last-explainability-reminder
