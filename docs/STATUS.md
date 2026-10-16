@@ -1,9 +1,18 @@
 # Rapier — dev status
 
-_Last updated: 2026-10-16 (tag v0.5.2, 235 tests)._ A running "where we are /
+_Last updated: 2026-10-16 (tag v0.5.3, 249 tests with the mcp SDK)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-10-16) — `rapier-runtime` 0.5.3 on PyPI. Saved runs as MCP
+  resources, and `rapier mcp` starts again on a fresh install.** Git tag
+  `v0.5.3`; https://pypi.org/project/rapier-runtime/0.5.3/. Resources:
+  `rapier://runs`, `rapier://runs/{run_id}`, `rapier://runs/{run_id}/record`;
+  each saved run is listed individually, including runs saved after the server
+  started. The fix: `[mcp]` allowed any `mcp>=1.2`, so new installs got mcp
+  2.3.0, which renamed FastMCP, and 0.5.2's `rapier mcp` failed with a message
+  pointing at the wrong cause. Capped at `mcp<2`. Verified from PyPI in a clean
+  environment: the install resolved mcp 1.30.0 and the server listed its runs.
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.5.2 on PyPI. The report stops
   calling a same-vendor review independent.** Git tag `v0.5.2`;
   https://pypi.org/project/rapier-runtime/0.5.2/. A live 0.5.1 run with only an
@@ -173,9 +182,7 @@ what's next" so a new session can continue without reconstructing from git log.
    door / `--depth` / `--seed`.~~ **DONE (2026-10-16).** The landing line is live.
    Saved runs are MCP resources (`rapier://runs`, `rapier://runs/{run_id}`,
    `rapier://runs/{run_id}/record`); the `list_runs` / `get_run` tools stay for
-   tool-only clients. Not yet released: ships with the next version, together
-   with the `mcp<2` cap that makes a fresh `pip install "rapier-runtime[mcp]"`
-   start again (mcp 2.0 renamed FastMCP).
+   tool-only clients. Released in 0.5.3.
 4. **Port the MCP server to the mcp 2.x SDK** (`FastMCP` → `MCPServer`, per the
    SDK's migration guide), then lift the `<2` cap.
 
