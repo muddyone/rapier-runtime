@@ -1,0 +1,82 @@
+#!/bin/bash
+# Loom pre-commit secret-scan gate (project template).
+#
+# Lives in .githooks/ so it is git-tracked and shared across all clones.
+# Activated per-clone with: git config core.hooksPath .githooks
+# (projlaunch wires new worktrees automatically; /sync-now sets it on existing
+# clones -- see loom-secret-scan-check.)
+#
+# Why this exists: the 2026-06-30 .env-leak incident (CR-0004). A `.env` backup
+# with live keys was committed via `git add -A` and auto-pushed to origin within
+# seconds -- no human gate. .gitignore is one typo from failing, and it did.
+# This is the local backstop: it blocks the commit BEFORE any auto-push fires.
+# The server-side scan (.github/workflows/secret-scan.yml) is the guarantee;
+# this hook is defense-in-depth that catches a secret before it leaves the box.
+#
+# Three gates:
+#   1. PATH gate    -- refuses to stage any .env secret file (templates/examples
+#      excepted). This alone would have stopped the CR-0004 incident.
+#   2. CONTENT gate -- scans added lines for high-signal credential signatures,
+#      including in chatlogs and ordinary markdown (the inline-paste vector).
+#      Skips only dirs that legitimately carry the pattern literals / key-format
+#      teaching prose: .githooks/, docs/security/, docs/onboarding/.
+#   3. gitleaks     -- run if installed, as broader defense in depth (uses this
+#      repo's .gitleaks.toml automatically).
+#
+# Bypass (intentional, rare -- e.g. a verified false positive):
+#   git commit --no-verify
+# Prefer fixing the staged content over bypassing.
+
+set -uo pipefail
+
+staged=$(git diff --cached --name-only --diff-filter=AM)
+[ -z "$staged" ] && exit 0
+
+fail=0
+
+# --- Gate 1: env-secret file PATHS (the CR-0004 incident class) -------------
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    base=$(basename "$f")
+    case "$base" in
+        *.example|*.template|*.sample) continue ;;
+    esac
+    if printf '%s\n' "$base" | grep -qE '^\.env($|[.-])'; then
+        echo "[pre-commit] BLOCKED: staged env-secret file: $f" >&2
+        fail=1
+    fi
+done <<< "$staged"
+
+# --- Gate 2: credential SIGNATURES in added lines --------------------------
+# High-signal, prefix-anchored signatures (near-zero false positives). Generic
+# high-entropy / base64 detection is deliberately left to gitleaks (Gate 3),
+# where the false positives live.
+patterns='sk-ant-[A-Za-z0-9_-]{16}|sk-proj-[A-Za-z0-9_-]{16}|sk-[A-Za-z0-9]{20}|xai-[A-Za-z0-9]{16}|SG\.[A-Za-z0-9_.-]{16}|AC[a-z0-9]{30}|(sk|rk|pk)_(live|test)_[A-Za-z0-9]{16}|whsec_[A-Za-z0-9]{16}|AKIA[0-9A-Z]{16}|gh[opsu]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{20}|xox[baprs]-[A-Za-z0-9-]{10}|xapp-[A-Za-z0-9-]{10}|AIza[0-9A-Za-z_-]{35}|GOCSPX-[A-Za-z0-9_-]{20}|-----BEGIN [A-Z ]*PRIVATE KEY-----'
+while IFS= read -r f; do
+    [ -z "$f" ] && continue
+    case "$f" in
+        .githooks/*|docs/security/*|docs/onboarding/*) continue ;;
+    esac
+    added=$(git diff --cached -U0 -- "$f" | grep '^+' | grep -v '^+++' || true)
+    if printf '%s\n' "$added" | grep -qE "$patterns"; then
+        echo "[pre-commit] BLOCKED: credential-like signature in staged change: $f" >&2
+        fail=1
+    fi
+done <<< "$staged"
+
+# --- Gate 3: gitleaks if available (defense in depth) ----------------------
+if command -v gitleaks >/dev/null 2>&1; then
+    if ! gitleaks protect --staged --no-banner >/dev/null 2>&1; then
+        echo "[pre-commit] BLOCKED: gitleaks flagged staged content." >&2
+        fail=1
+    fi
+fi
+
+if [ "$fail" -ne 0 ]; then
+    echo "[pre-commit] -------------------------------------------------------------" >&2
+    echo "[pre-commit] Commit blocked by the secret-scan gate. Remove the secret from" >&2
+    echo "[pre-commit] the staged set -- env backups belong OUTSIDE the repo tree." >&2
+    echo "[pre-commit] If this is a verified false positive: git commit --no-verify" >&2
+    exit 1
+fi
+exit 0

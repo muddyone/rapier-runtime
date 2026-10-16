@@ -1,0 +1,23 @@
+# gitleaks configuration for this repo.
+#
+# What this is: a small settings file (TOML format -- plain "key = value" lines
+# grouped under [section] headers) that tells the secret scanner two things:
+# which detection rules to use, and which files to deliberately skip so we don't
+# raise false alarms. Read by BOTH the server-side scan
+# (.github/workflows/secret-scan.yml) and the optional local pre-commit hook.
+
+[extend]
+# Use gitleaks' built-in rule set (Anthropic, OpenAI, AWS, Stripe, GitHub, ...).
+useDefault = true
+
+[allowlist]
+description = "Known false-positive surfaces (safe to skip)"
+paths = [
+    # Dependency lock files: integrity hashes, never real credentials.
+    '''(^|/)(package-lock\.json|composer\.lock|yarn\.lock|pnpm-lock\.yaml)$''',
+    # Redaction tests feed fake key-shaped strings (sk-..., sk-ant-...) on purpose.
+    '''^tests/test_secrets\.py$''',
+]
+# Add project-specific entries above as real false positives appear, e.g.:
+#   '''database/migrations/.*\.sql$'''   # bulk data with high-entropy strings
+#   '''(^|/)\.env\.example$'''           # ONLY if its placeholders trip the scanner
