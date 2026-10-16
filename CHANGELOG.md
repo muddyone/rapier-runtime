@@ -4,7 +4,7 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
-## Unreleased
+## 0.6.0 — 2026-10-16
 
 ### Changed: the MCP server now runs on the mcp 2.x SDK
 
