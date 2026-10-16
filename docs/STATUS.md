@@ -16,8 +16,11 @@ what's next" so a new session can continue without reconstructing from git log.
   repo gained the Loom secret-scan gate: the GitHub gitleaks workflow, the
   pre-commit hook and `.gitleaks.toml`.
   The live runs confirmed `gpt-6-sol` works, including the framing step at its
-  1,024-token limit, but went to OpenAI directly: no OpenRouter key exists yet,
-  so OpenRouter's own routing is still untested.
+  1,024-token limit. **OpenRouter confirmed end to end (2026-10-16)** with only
+  an OpenRouter key set: `frame` (1 call) and a full `spar` (8 calls) all went
+  to `openrouter` / `openai/gpt-6-sol` with no empty responses, and the 0.5.2
+  single-vendor wording held. Keys: 1Password, Sparring Framework vault, item
+  `OpenRouter` (field `rapier-runtime-test` for tests).
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.5.1 on PyPI. Default models for
   five vendors replaced.** Git tag `v0.5.1`;
   https://pypi.org/project/rapier-runtime/0.5.1/. OpenRouter's default
