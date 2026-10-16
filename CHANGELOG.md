@@ -4,6 +4,25 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## 0.5.2 — 2026-10-16
+
+### Fixed: the report no longer calls a same-vendor review independent
+
+Found on a live run with a single vendor's key, where the reviewer and the
+author were the same model:
+
+- **The report contradicted itself.** "Already fixed under challenge" said
+  "an independent, different-vendor reviewer raised each of these," and the
+  registry section pointed to "the cross-vendor challenge," while "How much to
+  trust this" correctly said the review was not independent. Every section
+  now says what actually happened; a cross-vendor run reads as before.
+- **The progress warning blamed the wrong key.** It said "OPENAI_API_KEY
+  absent; falling back to a Claude reviewer" when the OpenAI key was set and
+  no Claude model was used. It now names the vendor that ran the review.
+- **Arithmetic printed as raw LaTeX.** Math the model wrote as `\( H \times
+  0.60 \)` now reads `H × 0.60` in the report. Only text inside `\( \)` or
+  `\[ \]` is rewritten.
+
 ## 0.5.1 — 2026-10-16
 
 ### Changed: default models for five OpenAI-compatible vendors
