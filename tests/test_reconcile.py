@@ -70,6 +70,29 @@ def test_rounding_allowance_reads_whole_numbers_to_the_unit():
     assert _rounding_allowance(1000.0) == 0.5
 
 
+def test_precision_is_read_from_the_quote_not_the_json_number():
+    """0.120 arrives as 0.12; the trailing zero the text wrote is the precision it claims."""
+    from rapier.stages.reconcile import _rounding_allowance as allowance
+    assert allowance(0.12, "\u221a(0.435/30) \u2248 **0.120**") == 0.0005
+    assert allowance(0.12, "no numeral that matches") == 0.005
+    assert allowance(0.12, "0.12 then 0.120") == 0.0005          # most precise writing wins
+    assert allowance(6e-5, "\u2248 6\u00d710\u207b\u2075") == 5e-6
+    assert allowance(6.1e-5, "about 6.1x10^-5") == 5e-7
+    assert allowance(1e-5, "1e-5") == 5e-6
+    assert allowance(0.435, "(\u22120.035, 0.435)") == 0.0005
+    assert allowance(0.025, "\u22482.5% per model") == 0.0005    # percent read as a fraction
+    assert allowance(1200, "total $1,200") == 0.5
+    assert allowance(1000, "1000 seats") == 0.5
+
+
+def test_trailing_zero_tightens_the_check():
+    # 0.124 against a stated "0.12": within half a unit of the hundredths.
+    loose = reconcile_relations([_expr("x", 0.12, "0.124", quote="\u2248 0.12")])[0]
+    tight = reconcile_relations([_expr("x", 0.12, "0.124", quote="\u2248 0.120")])[0]
+    assert loose.status == "agrees"
+    assert tight.status == "mismatch"
+
+
 def test_count_operation():
     assert reconcile_relations([rel("phases", "count", 3, [1, 1, 1])])[0].status == "agrees"
     assert reconcile_relations([rel("phases", "count", 4, [1, 1, 1])])[0].status == "mismatch"

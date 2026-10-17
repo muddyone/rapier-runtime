@@ -52,23 +52,56 @@ from ..stage import StageContext, TransformStage, register_stage
 DEFAULT_TOLERANCE = 0.005
 
 
-def _rounding_allowance(stated: float) -> float:
-    """Half a unit in the last digit the stated figure shows: 6e-05 -> 5e-06, 0.12 -> 0.005.
+_SUPERSCRIPT = str.maketrans("\u207b\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079",
+                             "-0123456789")
+# A numeral as a document writes it: 1,200 / 0.120 / 6e-5 / 6x10^-5 / 6.1×10⁻⁵ / 2.5%.
+_NUMERAL = re.compile(
+    r"(?<![\d.])(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?"
+    r"(?:\s*[\u00d7x\u00b7*]\s*10\^?([\u207b-]?[\u2070\u00b9\u00b2\u00b3\u2074-\u2079\d]+)"
+    r"|[eE]([+-]?\d+))?(\s*%)?")
 
-    Whole numbers count as written to the unit, never to their trailing zeros, so "a total
-    of 1000" is not read as "somewhere from 500 to 1500"."""
+
+def _half_unit(written: str) -> float | None:
+    """Half a unit in the last digit of a numeral string, keeping trailing zeros: "0.120"
+    -> 0.0005. Whole numbers count to the unit, never their trailing zeros, so "a total of
+    1000" is not read as "somewhere from 500 to 1500"."""
     try:
-        exponent = Decimal(repr(stated)).normalize().as_tuple().exponent
+        exponent = Decimal(written).as_tuple().exponent
     except (InvalidOperation, ValueError):
-        return 0.0
+        return None
     if not isinstance(exponent, int):  # NaN / infinity
-        return 0.0
+        return None
     return 0.5 * 10.0 ** min(exponent, 0)
 
 
-def _agrees(stated: float, computed: float, tolerance: float) -> bool:
+def _rounding_allowance(stated: float, quote: str = "") -> float:
+    """Half a unit in the last digit the stated figure shows.
+
+    Read from the quote where a numeral there equals the stated value, because the
+    extracted number has already lost its trailing zeros (0.120 arrives as 0.12). Where
+    the same value is written more than once, the most precise writing is the claim.
+    Otherwise fall back to the number itself: 6e-05 -> 5e-06, 0.12 -> 0.005."""
+    best: float | None = None
+    for m in _NUMERAL.finditer(quote or ""):
+        whole, frac, sup_exp, e_exp, pct = m.groups()
+        exp = (sup_exp or "").translate(_SUPERSCRIPT) or e_exp
+        written = whole.replace(",", "") + (frac or "") + (f"e{exp}" if exp else "")
+        half = _half_unit(written)
+        if half is None:
+            continue
+        value = float(written)
+        for v, h in ((value, half), (value / 100, half / 100)) if pct else ((value, half),):
+            if math.isclose(v, abs(stated), rel_tol=1e-9, abs_tol=1e-15):
+                best = h if best is None else min(best, h)
+    if best is not None:
+        return best
+    return _half_unit(str(Decimal(repr(stated)).normalize())) or 0.0
+
+
+def _agrees(stated: float, computed: float, tolerance: float, quote: str = "") -> bool:
     delta = abs(computed - stated)
-    allowed = max(tolerance * max(abs(stated), abs(computed)), _rounding_allowance(stated))
+    allowed = max(tolerance * max(abs(stated), abs(computed)),
+                  _rounding_allowance(stated, quote))
     # A hair of float slack so an exact half-unit (0.0835 stated as 0.083) is not a defect.
     return delta <= allowed * (1 + 1e-9) + 1e-12
 
@@ -228,7 +261,7 @@ def reconcile_relations(
                 r.note = f"operation {op!r} could not be applied to {len(values)} component(s)"
         if r.computed is not None:
             r.delta = r.computed - r.stated
-            r.status = "agrees" if _agrees(r.stated, r.computed, tolerance) else "mismatch"
+            r.status = "agrees" if _agrees(r.stated, r.computed, tolerance, r.aggregate_quote) else "mismatch"
         out.append(r)
     return out
 
