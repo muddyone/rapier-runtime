@@ -1,9 +1,23 @@
 # Rapier — dev status
 
-_Last updated: 2026-10-16 (tag v0.6.0, 250 tests with the mcp SDK)._ A running "where we are /
+_Last updated: 2026-10-16 (tag v0.6.1, 264 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-10-16) — `rapier-runtime` 0.6.1 on PyPI. The arithmetic
+  check ("WHETHER THE NUMBERS ADD UP") stops flagging correct formulas.** Git
+  tag `v0.6.1`; https://pypi.org/project/rapier-runtime/0.6.1/. Reported by
+  valkyrie-sparring-1: a stats-heavy spar
+  (sparring-framework `docs/spars/202610161853-gopnik-pilot-design-review/`)
+  got five false mismatches out of five, because every stated result was
+  checked as a sum of the numbers near it. Fixes: `difference` and
+  `expression` operations (the formula is evaluated as written, by a
+  literal-only evaluator); "not checked" where the operation can't be
+  recovered, or a "sum" quote shows a formula; the agreement margin is 0.5% of
+  the figures (no floor of 1) or half a unit of the last digit the quote
+  shows. Also: the ledger permission test skips where the filesystem ignores
+  chmod (WSL `/mnt/c`). Verified from PyPI: a clean install reports 0.6.1 and
+  the reported standard-error case agrees.
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.6.0 on PyPI. The MCP server runs
   on the mcp 2.x SDK.** Git tag `v0.6.0`;
   https://pypi.org/project/rapier-runtime/0.6.0/. `MCPServer` replaces
