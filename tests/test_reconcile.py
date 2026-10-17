@@ -48,6 +48,28 @@ def test_transposed_digit_is_caught():
     assert r.status == "mismatch"
 
 
+def test_small_figures_are_not_waved_through():
+    """The old floor of 1 let any figure under 1 agree with nearly anything."""
+    assert reconcile_relations([_expr("p", 6e-5, "0.004")])[0].status == "mismatch"
+    assert reconcile_relations([rel("share", "sum", 0.12, [0.10, 0.05])])[0].status == "mismatch"
+
+
+def test_small_figures_rounded_to_their_shown_digits_agree():
+    cases = [(6e-5, "4*0.025**3*0.975 + 0.025**4"),  # 6.13e-5, written to one digit
+             (0.083, "0.167*0.5"),                    # 0.0835, an exact half-unit
+             (0.12, "sqrt(0.435/30)")]                # 0.1204
+    for stated, expr in cases:
+        assert reconcile_relations([_expr("x", stated, expr)])[0].status == "agrees", expr
+
+
+def test_rounding_allowance_reads_whole_numbers_to_the_unit():
+    from rapier.stages.reconcile import _rounding_allowance
+    assert _rounding_allowance(6e-5) == 5e-6
+    assert _rounding_allowance(0.12) == 0.005
+    assert _rounding_allowance(85.0) == 0.5
+    assert _rounding_allowance(1000.0) == 0.5
+
+
 def test_count_operation():
     assert reconcile_relations([rel("phases", "count", 3, [1, 1, 1])])[0].status == "agrees"
     assert reconcile_relations([rel("phases", "count", 4, [1, 1, 1])])[0].status == "mismatch"

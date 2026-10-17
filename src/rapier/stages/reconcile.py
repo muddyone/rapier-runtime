@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import ast
 import math
+from decimal import Decimal, InvalidOperation
 import operator
 import re
 from dataclasses import dataclass, field, asdict
@@ -45,7 +46,31 @@ from ..stage import StageContext, TransformStage, register_stage
 # Floating-point slack for a reconciliation to count as agreeing. Money and counts in
 # planning documents are routinely rounded when summarised; 0.5% keeps honest rounding
 # from being reported as a defect while still catching a transposed digit.
+# The 0.5% is measured against the figures themselves, with no floor: a floor of 1 once
+# let any figure under 1 "agree" with almost anything (6e-5 against 0.004). Small figures
+# get their rounding slack from _rounding_allowance instead.
 DEFAULT_TOLERANCE = 0.005
+
+
+def _rounding_allowance(stated: float) -> float:
+    """Half a unit in the last digit the stated figure shows: 6e-05 -> 5e-06, 0.12 -> 0.005.
+
+    Whole numbers count as written to the unit, never to their trailing zeros, so "a total
+    of 1000" is not read as "somewhere from 500 to 1500"."""
+    try:
+        exponent = Decimal(repr(stated)).normalize().as_tuple().exponent
+    except (InvalidOperation, ValueError):
+        return 0.0
+    if not isinstance(exponent, int):  # NaN / infinity
+        return 0.0
+    return 0.5 * 10.0 ** min(exponent, 0)
+
+
+def _agrees(stated: float, computed: float, tolerance: float) -> bool:
+    delta = abs(computed - stated)
+    allowed = max(tolerance * max(abs(stated), abs(computed)), _rounding_allowance(stated))
+    # A hair of float slack so an exact half-unit (0.0835 stated as 0.083) is not a defect.
+    return delta <= allowed * (1 + 1e-9) + 1e-12
 
 EXTRACT_SYSTEM = """You extract ARITHMETIC RELATIONS from a document. You do not judge them.
 
@@ -203,8 +228,7 @@ def reconcile_relations(
                 r.note = f"operation {op!r} could not be applied to {len(values)} component(s)"
         if r.computed is not None:
             r.delta = r.computed - r.stated
-            scale = max(abs(r.stated), abs(r.computed), 1.0)
-            r.status = "agrees" if abs(r.delta) / scale <= tolerance else "mismatch"
+            r.status = "agrees" if _agrees(r.stated, r.computed, tolerance) else "mismatch"
         out.append(r)
     return out
 
