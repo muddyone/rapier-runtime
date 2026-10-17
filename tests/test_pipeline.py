@@ -1,6 +1,10 @@
 """Control-flow tests for the pipeline — mocked models, no network, no keys."""
 from __future__ import annotations
 
+import os
+
+import pytest
+
 from rapier.manifest import Manifest
 
 
@@ -60,6 +64,18 @@ def test_transcript_sink_reset_after_run(tmp_path):
     assert models._transcript_sink is None  # cleaned up so it can't leak across runs
 
 
+def _keeps_posix_modes(directory) -> bool:
+    """False on filesystems that ignore chmod (WSL's /mnt/c, some network mounts): every
+    file there reads back as 0o777 whatever the code sets."""
+    probe = directory / ".mode-probe"
+    probe.touch()
+    try:
+        os.chmod(probe, 0o600)
+        return oct(probe.stat().st_mode)[-3:] == "600"
+    finally:
+        probe.unlink()
+
+
 def test_ledger_persists_redacted_run(tmp_path):
     m = _echo_manifest()
     env = m.build().run("decide X", ledger_root=str(tmp_path))
@@ -67,7 +83,9 @@ def test_ledger_persists_redacted_run(tmp_path):
     assert len(runs) == 1
     assert (runs[0] / "envelope.json").exists()
     assert (runs[0] / "ledger.jsonl").exists()
-    # owner-only permissions
+    # owner-only permissions -- only checkable where the filesystem keeps them
+    if not _keeps_posix_modes(tmp_path):
+        pytest.skip(f"{tmp_path} ignores file permissions; owner-only mode can't be checked")
     assert oct((runs[0] / "envelope.json").stat().st_mode)[-3:] == "600"
 
 
