@@ -4,6 +4,25 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## 0.6.1 — 2026-10-16
+
+### Fixed: "WHETHER THE NUMBERS ADD UP" no longer flags correct formulas
+
+The arithmetic check summed the numbers in any stated result, so a correct
+standard error, interval, sample size or difference was reported as wrong. In
+a statistics-heavy answer that was five false alarms out of five.
+
+- **Formulas are worked out as written.** Roots, powers, quotients and ±
+  bounds are evaluated in code, and a mismatch shows the formula it evaluated.
+  Differences are checked as differences.
+- **"Not checked" instead of a guess.** Where the operation can't be recovered
+  from the text, or a "total" turns out to be a formula, the figure is counted
+  as not checked, never as a mismatch. The section says how many there were.
+- **Small figures are checked properly.** The agreement margin used to be
+  measured against 1, so any figure under 1 agreed with almost anything. It is
+  now 0.5% of the figures themselves, or half a unit of the last digit the
+  text shows (`0.120` allows ±0.0005; `6×10⁻⁵` allows ±5×10⁻⁶).
+
 ## 0.6.0 — 2026-10-16
 
 ### Changed: the MCP server now runs on the mcp 2.x SDK
