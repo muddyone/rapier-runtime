@@ -95,6 +95,63 @@ def test_unknown_operation_is_unverifiable():
     assert "could not be applied" in r.note
 
 
+def test_difference_operation():
+    """A gap is first-minus-rest, not a sum (the "20-point effect" false alarm)."""
+    r = reconcile_relations([rel("effect", "difference", 0.20, [0.45, 0.25])])[0]
+    assert r.status == "agrees"
+
+
+def _expr(label, total, expr, quote="q"):
+    return {"label": label, "operation": "expression", "expr": expr,
+            "aggregate": {"value": total, "quote": quote, "location": "§1"}, "components": []}
+
+
+def test_expression_results_that_are_right_agree():
+    """The five correct figures valkyrie-sparring-1 saw flagged as wrong in a stats answer."""
+    results = reconcile_relations([
+        _expr("SE", 0.120, "sqrt((0.45*0.55 + 0.25*0.75)/30)"),
+        _expr("interval upper", 0.435, "0.20 + 1.96*0.120"),
+        _expr("n per arm", 85, "((1.96 + 0.84)**2 * 0.435) / 0.04"),
+        _expr("P(>=3 of 4)", 6e-5, "4*0.025**3*0.975 + 0.025**4"),
+    ])
+    assert [r.status for r in results] == ["agrees"] * 4
+
+
+def test_expression_that_is_wrong_is_a_mismatch():
+    r = reconcile_relations([_expr("n per arm", 60, "((1.96 + 0.84)**2 * 0.435) / 0.04")])[0]
+    assert r.status == "mismatch"
+    assert r.expr
+
+
+def test_expression_that_cannot_be_evaluated_is_not_checked():
+    for bad in ["", "p1*(1-p1)", "__import__('os')", "(-1)**0.5", "1/0", "9.0**9**9"]:
+        r = reconcile_relations([_expr("x", 1, bad)])[0]
+        assert r.status == "unverifiable", bad
+        assert "not checked" in r.note
+
+
+def test_sum_whose_quote_is_a_formula_is_not_checked():
+    """A mislabelled formula must not be reported as a wrong total."""
+    r = reconcile_relations([rel("SE", "sum", 0.120, [0.45, 0.25, 30],
+                                 quote="\u221a[ (0.45\u00b70.55 + 0.25\u00b70.75)/30 ] \u2248 0.120")])[0]
+    assert r.status == "unverifiable"
+    assert "formula" in r.note
+
+
+def test_bold_and_unit_rates_do_not_hide_a_real_total():
+    r = reconcile_relations([rel("cost", "sum", 100, [40, 50],
+                                 quote="**Total: $100/seat**")])[0]
+    assert r.status == "mismatch"
+
+
+def test_missing_or_other_operation_is_not_checked_never_summed():
+    no_op = rel("x", None, 10, [3, 4])
+    other = rel("x", "other", 10, [3, 4])
+    for r in reconcile_relations([no_op, other]):
+        assert r.status == "unverifiable"
+        assert "not checked" in r.note
+
+
 def test_empty_input_is_unchecked_not_pass():
     assert summarize(reconcile_relations([]))["verdict"] == "UNCHECKED"
 
@@ -180,3 +237,20 @@ def test_report_quotes_both_sides_of_a_mismatch():
 
 def test_report_handles_a_run_with_no_gate_at_all():
     assert "No stated totals" in _flat(_reconcile_body(Envelope(request="x")))
+
+
+def test_report_says_what_was_not_checked():
+    body = _flat(_reconcile_body(_env({
+        "verdict": "PASS", "checked": 2,
+        "counts": {"agrees": 2, "mismatch": 0, "unverifiable": 3}, "relations": []})))
+    assert "agreed" in body and "3 other figure(s) were not checked" in body
+
+
+def test_report_shows_the_formula_behind_a_mismatch():
+    body = _flat(_reconcile_body(_env({
+        "verdict": "MISMATCH", "checked": 1,
+        "counts": {"agrees": 0, "mismatch": 1, "unverifiable": 0},
+        "relations": [{"label": "n", "status": "mismatch", "operation": "expression",
+                       "expr": "7.84*0.435/0.04", "stated": 60.0, "computed": 85.26,
+                       "aggregate_quote": "\u2248 60 per cell", "aggregate_location": "\u00a72"}]})))
+    assert "evaluating 7.84*0.435/0.04" in body

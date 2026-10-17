@@ -31,6 +31,10 @@ rather than silently dropped or silently passed. Silence and a pass must never l
 """
 from __future__ import annotations
 
+import ast
+import math
+import operator
+import re
 from dataclasses import dataclass, field, asdict
 from typing import Any
 
@@ -47,18 +51,69 @@ EXTRACT_SYSTEM = """You extract ARITHMETIC RELATIONS from a document. You do not
 
 Find every place where a number stated in ONE location should be derivable from numbers
 stated in ANOTHER location: a total and its line items, a count and the things counted, a
-percentage and its base, a rate applied to a quantity.
+percentage and its base, a rate applied to a quantity, a result worked out from a formula.
 
 For each one, report the aggregate and its components, each with the exact quote and where
 it appears. If the components are not stated somewhere in the document, do not invent them
 -- report the aggregate with an empty component list.
 
+Choose the operation the text ACTUALLY performs. Never default to "sum":
+  - "sum": ONLY where the text asserts a total of its parts ("total", "in all", "a + b = c").
+  - "difference": the aggregate is the first component minus the rest ("a - b", "a 20-point gap").
+  - "product", "count", "percent_of" ([part, whole]): as named.
+  - "expression": anything else written as a formula -- roots, powers, quotients, mixed
+    operators, a +/- interval bound. Put the formula in "expr" exactly as the text writes it,
+    as one Python arithmetic expression over numeric literals (sqrt() allowed; write
+    (1.96 + 0.84)**2 for a square, 0.20 + 1.96*0.120 for the upper bound of 0.20 +/- 1.96*0.120).
+  - "other": the operation cannot be recovered from the text. It will be reported as not checked.
+
 Do NOT calculate anything. Do NOT say whether it is correct. Extraction only.
 
 STRICT JSON:
-{"relations":[{"label":str,"operation":"sum"|"product"|"count"|"percent_of",
+{"relations":[{"label":str,
+"operation":"sum"|"difference"|"product"|"count"|"percent_of"|"expression"|"other",
+"expr":str (only for "expression"),
 "aggregate":{"value":number,"quote":str,"location":str},
 "components":[{"label":str,"value":number,"quote":str,"location":str}]}]}"""
+
+# Symbols that mean a stated figure is a formula, not a total. A "sum" whose own quote carries
+# one of these was mislabelled by the extractor; summing its operands would report a correct
+# result as wrong, so it is left unchecked instead.
+# "/" is left out because unit rates ("$40/seat") sit in honest totals; Markdown bold is
+# stripped before the test so "**Total: 100**" is not read as multiplication.
+_NON_ADDITIVE = re.compile(r"[\u00b7\u00d7*\u00f7\u221a^\u00b1\u00b2\u00b3\u2074]|\bsqrt\b")
+
+
+def _looks_like_formula(quote: str) -> bool:
+    return bool(_NON_ADDITIVE.search(re.sub(r"\*\*|__", "", quote)))
+
+_OPS = {ast.Add: operator.add, ast.Sub: operator.sub, ast.Mult: operator.mul,
+        ast.Div: operator.truediv, ast.Pow: operator.pow,
+        ast.USub: operator.neg, ast.UAdd: operator.pos}
+_FUNCS = {"sqrt": math.sqrt, "abs": abs, "min": min, "max": max}
+
+
+def _eval_expr(expr: str) -> float | None:
+    """Evaluate a numeric-literal arithmetic expression. No names, no attributes, no arbitrary
+    calls; None for anything that does not parse or evaluate cleanly."""
+    def ev(n: ast.AST) -> float:
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)) \
+                and not isinstance(n.value, bool):
+            return float(n.value)
+        if isinstance(n, ast.BinOp) and type(n.op) in _OPS:
+            return _OPS[type(n.op)](ev(n.left), ev(n.right))
+        if isinstance(n, ast.UnaryOp) and type(n.op) in _OPS:
+            return _OPS[type(n.op)](ev(n.operand))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) \
+                and n.func.id in _FUNCS and not n.keywords:
+            return float(_FUNCS[n.func.id](*[ev(a) for a in n.args]))
+        raise ValueError(type(n).__name__)
+
+    try:
+        out = ev(ast.parse((expr or "").strip(), mode="eval").body)
+    except Exception:  # noqa: BLE001 -- any failure means "could not evaluate", never a crash
+        return None
+    return out if isinstance(out, float) and math.isfinite(out) else None
 
 
 @dataclass
@@ -74,6 +129,7 @@ class Reconciliation:
     delta: float | None = None
     aggregate_quote: str = ""
     aggregate_location: str = ""
+    expr: str = ""
     note: str = ""
 
     def to_dict(self) -> dict[str, Any]:
@@ -86,6 +142,8 @@ def _compute(operation: str, values: list[float]) -> float | None:
         return None
     if operation == "sum":
         return sum(values)
+    if operation == "difference":
+        return values[0] - sum(values[1:])
     if operation == "count":
         return float(len(values))
     if operation == "product":
@@ -113,7 +171,8 @@ def reconcile_relations(
     for rel in relations or []:
         agg = rel.get("aggregate") or {}
         comps = [c for c in (rel.get("components") or []) if isinstance(c, dict)]
-        op = str(rel.get("operation") or "sum")
+        # No operation means none could be recovered -- never assume a sum.
+        op = str(rel.get("operation") or "other")
         r = Reconciliation(
             label=str(rel.get("label") or "(unlabelled)"),
             operation=op,
@@ -122,21 +181,30 @@ def reconcile_relations(
             components=comps,
             aggregate_quote=str(agg.get("quote") or ""),
             aggregate_location=str(agg.get("location") or ""),
+            expr=str(rel.get("expr") or ""),
         )
 
         values = [v for v in (_num(c.get("value")) for c in comps) if v is not None]
         if r.stated is None:
             r.note = "aggregate value not extractable as a number"
+        elif op == "other":
+            r.note = "not checked: the operation could not be recovered from the text"
+        elif op == "sum" and _looks_like_formula(r.aggregate_quote):
+            r.note = "not checked: the stated figure is a formula, not a total of its parts"
+        elif op == "expression":
+            r.computed = _eval_expr(r.expr)
+            if r.computed is None:
+                r.note = "not checked: the formula could not be evaluated"
         elif not values:
             r.note = "components were not stated in the document"
         else:
             r.computed = _compute(op, values)
             if r.computed is None:
                 r.note = f"operation {op!r} could not be applied to {len(values)} component(s)"
-            else:
-                r.delta = r.computed - r.stated
-                scale = max(abs(r.stated), abs(r.computed), 1.0)
-                r.status = "agrees" if abs(r.delta) / scale <= tolerance else "mismatch"
+        if r.computed is not None:
+            r.delta = r.computed - r.stated
+            scale = max(abs(r.stated), abs(r.computed), 1.0)
+            r.status = "agrees" if abs(r.delta) / scale <= tolerance else "mismatch"
         out.append(r)
     return out
 

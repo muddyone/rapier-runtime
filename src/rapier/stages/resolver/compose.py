@@ -294,19 +294,28 @@ def _reconcile_body(env) -> str:
                 "the arithmetic could not be confirmed either way. This is not a pass.")
         return _para("No stated totals were found to check.")
 
+    unchecked = counts.get("unverifiable", 0)
+    not_checked = (
+        f" {unchecked} other figure(s) were not checked: their parts or the operation "
+        "could not be recovered from the text, so they are neither confirmed nor flagged."
+        if unchecked else "")
+
     if not mismatches:
         return _para(
             f"{checked} stated figure(s) were recomputed from their parts and agreed. "
-            "The arithmetic was done in code, not judged by a model.")
+            "The arithmetic was done in code, not judged by a model." + not_checked)
 
     lines = []
     for m in mismatches:
         stated, computed = m.get("stated"), m.get("computed")
+        how = (f"evaluating {m['expr']}" if m.get("operation") == "expression" and m.get("expr")
+               else m.get("operation"))
         lines.append(
             f"{m.get('label')}: the text states {stated}, but its parts come to {computed}"
-            f" ({m.get('operation')}). Stated at {m.get('aggregate_location') or 'unknown location'}: "
+            f" ({how}). Stated at {m.get('aggregate_location') or 'unknown location'}: "
             f"\u201c{(m.get('aggregate_quote') or '').strip()}\u201d")
-    return _bullets(lines)
+    body = _bullets(lines)
+    return body + "\n\n" + _para(not_checked.strip()) if not_checked else body
 
 
 def _render_report(env: Envelope) -> str:
@@ -345,8 +354,9 @@ def _render_report(env: Envelope) -> str:
 
     if env.meta.get("reconcile"):
         L += _sec("WHETHER THE NUMBERS ADD UP",
-                  "Every total the answer states, recomputed from the parts it states "
-                  "elsewhere — arithmetic done in code, with no model deciding the result.",
+                  "Every total or worked figure the answer states, recomputed from the parts "
+                  "or formula it gives — arithmetic done in code, with no model deciding "
+                  "the result.",
                   _reconcile_body(env))
 
     L += _sec("WHAT WAS VERIFIED AGAINST PUBLIC REGISTRIES",
