@@ -63,6 +63,7 @@ def _answer_rewritten_after(env: Envelope, trace) -> bool:
                for t in env.trace[at + 1:])
 
 
+_NOT_DECLARED_REVIEW = "the review is not part of this pipeline"
 _BEFORE_ANSWER = "it ran before the final answer was written, so it never checked it"
 
 
@@ -157,9 +158,21 @@ def final_state(env: Envelope) -> tuple[str, str]:
         return "non-decision", ("The deliberation could not agree on one option. The "
                                 "recommendation below pressure-tests its strongest candidate, "
                                 "but choosing between the options still standing is yours: "
-                                "weigh the standing objections before you rely on it.")
+                                "weigh the standing objections before you rely on it."
+                                + (" The correctness check also did not run, so treat its "
+                                   "stated specifics as unverified."
+                                   if correctness_outcome(env)[0] == "did-not-run" else ""))
     cstatus, creason = correctness_outcome(env)
     v = (env.verdict or "").upper()
+    rstatus, rreason = review_outcome(env)
+    if env.meta.get("require_independent") and (rstatus == "did-not-run" or rreason):
+        # DEFER (cross-lane ruling with agent-runtime L3): a required control that
+        # did not run decided nothing, so it is never block and never act. REFUSE
+        # stays for the pre-run refusal.
+        why = rreason or "no second vendor reviewed it"
+        return "defer", ("The operator requires an independent second-vendor review, and none "
+                         f"happened on this answer ({why}). Do not rely on it until it has "
+                         "been independently reviewed.")
     if cstatus == "did-not-run":
         return "defer", (f"The correctness check did not run ({creason}). Verify the stated "
                          "specifics yourself before acting on this.")
@@ -175,16 +188,67 @@ def final_state(env: Envelope) -> tuple[str, str]:
                                      or greason in (_BEFORE_ANSWER, "the check produced no result")):
         return "defer", (f"The citation check did not run ({greason}). Confirm any references "
                          "it cites before acting on this.")
+    if rstatus == "did-not-run" and rreason != _NOT_DECLARED_REVIEW:
+        return "defer", (f"The challenge review did not run ({rreason}), so nothing "
+                         "pressure-tested this answer. Treat it as unreviewed before acting.")
     if v == "REVIEW":
         return "escalate", ("A stated specific reads ambiguously between fact and estimate. "
                             "That call is yours: see STILL YOURS TO CHECK.")
-    return "act", ("The answer cleared its checks. Rapier only advises: acting on it, and "
-                   "the constraints no model here can see, stay yours.")
+    return "act", _act_sentence(env, cstatus, gstatus, greason, rreason)
 
 
-_STATE_TITLE = {"act": "ACT (advice cleared its checks)", "block": "BLOCK",
+def _act_sentence(env, cstatus, gstatus, greason, rreason) -> str:  # noqa: ARG001
+    """Say which checks ran, so ``act`` never claims a check that was off."""
+    ran, off = [], []
+    ran.append("the correctness check" + (" (nothing to check)" if cstatus == "nothing-to-check" else ""))
+    if gstatus in ("ran", "nothing-to-check"):
+        ran.append("the citation check" + (" (nothing to check)" if gstatus == "nothing-to-check" else ""))
+    else:
+        off.append(f"the citation check did not run ({greason})")
+    if rreason == _NOT_DECLARED_REVIEW:
+        off.append("no challenge review is part of this method")
+    else:
+        ran.append("a same-vendor review, not an independent one" if rreason else
+                   "an independent cross-vendor review")
+    s = "The answer cleared the checks that ran: " + ", ".join(ran) + "."
+    if off:
+        s += " Not run: " + "; ".join(off) + "."
+    return s + " Rapier only advises: acting on it, and the constraints no model here can see, stay yours."
+
+
+_STATE_TITLE = {"act": "ACT", "block": "BLOCK",
                 "defer": "DEFER", "escalate": "ESCALATE (your call)",
                 "non-decision": "NON-DECISION", "refuse": "REFUSE"}
+
+
+REVIEW_STAGE = "cross_review"
+
+
+def review_outcome(env: Envelope) -> tuple[str, str]:
+    """What happened to the cross-vendor challenge on the final draft.
+
+    ``did-not-run`` when the reviewer's last run crashed or was skipped, its
+    result is missing, or the vendored reviewer reports ``degraded`` (it is
+    fail-soft: a model error returns no objections). ``ran`` otherwise, with
+    reason ``same vendor (not independent)`` when no second vendor reviewed."""
+    if env.meta.get("review_outcome"):
+        return tuple(env.meta["review_outcome"])
+    last = _last(env, REVIEW_STAGE)
+    review = env.meta.get("review")
+    if last is None and not review:
+        return "did-not-run", _NOT_DECLARED_REVIEW
+    if last is not None:
+        if (last.data or {}).get("error"):
+            return "did-not-run", f"the review crashed: {str(last.data['error'])[:200]}"
+        if "skipped" in (last.summary or ""):
+            return "did-not-run", "there was no recommendation to review"
+    if not review:
+        return "did-not-run", "the review produced no result"
+    if review.get("degraded"):
+        return "did-not-run", str(review["degraded"])[:200]
+    if not review.get("cross_vendor"):
+        return "ran", "same vendor (not independent)"
+    return "ran", ""
 
 
 def _drop_stale_results(env: Envelope) -> None:
@@ -198,6 +262,8 @@ def _drop_stale_results(env: Envelope) -> None:
     # Fixed here, before anything is moved aside, so every later reader agrees.
     env.meta["correctness_outcome"] = list(outcome)
     env.meta["citation_outcome"] = list(coutcome)
+    env.meta.pop("review_outcome", None)
+    env.meta["review_outcome"] = list(review_outcome(env))
     status = outcome[0]
     if status == "did-not-run" and (env.verdict or "").upper() in ("PASS", "REVIEW", "FAIL"):
         env.meta["stale_verdict"] = env.verdict
@@ -286,15 +352,23 @@ def declared_vs_ran(env: Envelope) -> list[str]:
     return lines
 
 
-def _challenge_phrase(review) -> str:
-    """Who raised the challenge, worded so a same-vendor review is never called independent."""
+def _challenge_phrase(review, env: Envelope | None = None) -> str:
+    """Who raised the challenge, worded so a same-vendor review is never called
+    independent, and a review that did not run is never called a challenge."""
+    if env is not None and review_outcome(env)[0] == "did-not-run":
+        return "an earlier review round, before the final review failed to run,"
     if review.get("cross_vendor"):
         return "an independent, different-vendor reviewer"
     return "a reviewer on the same vendor as the author (not an independent check)"
 
 
-def _reviewer_sentence(review) -> str:
+def _reviewer_sentence(review, env: Envelope | None = None) -> str:
     """Whether the challenge was genuinely independent — in plain words."""
+    if env is not None:
+        status, reason = review_outcome(env)
+        if status == "did-not-run":
+            return (f"The challenge review did NOT run on this answer ({reason}). Nothing "
+                    "pressure-tested it, independent or otherwise: treat it as unreviewed.")
     if review.get("cross_vendor"):
         v = review.get("reviewer_vendor") or "a different vendor"
         return (f"An independent reviewer from a different vendor ({v}) pressure-tested it, so the "
@@ -629,14 +703,16 @@ def _render_report(env: Envelope) -> str:
     contested = _texts(review.get("objections"))
     L += _sec("ALREADY FIXED UNDER CHALLENGE",
               "Not action items — already folded into the recommendation above. "
-              + _challenge_phrase(review)[0].upper() + _challenge_phrase(review)[1:]
+              + _challenge_phrase(review, env)[0].upper() + _challenge_phrase(review, env)[1:]
               + " raised each of these, and the answer was revised to address it. "
               "Shown so you can see what the challenge caught and how the "
               "recommendation got stronger.",
               _bullets(contested) if contested
-              else "The review found nothing material to change — the recommendation "
+              else ("No review ran on the final answer, so nothing here was challenged. "
+                    "See HOW MUCH TO TRUST THIS." if review_outcome(env)[0] == "did-not-run" else
+                    "The review found nothing material to change — the recommendation "
                    "held up as written. See HOW MUCH TO TRUST THIS for how independent "
-                   "that review was.")
+                   "that review was."))
 
     dissent = rider.get("proposer_dissent_forwarded")
     if dissent:
@@ -647,7 +723,7 @@ def _render_report(env: Envelope) -> str:
     L += _sec("HOW MUCH TO TRUST THIS",
               "How independent the challenge really was — and the limits no model "
               "here can see past.",
-              _para(_reviewer_sentence(review)
+              _para(_reviewer_sentence(review, env)
                     + ("\n\n" + _checks_policy_sentence(env) if _checks_policy_sentence(env) else "")
                     + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
                     "the load-bearing call stays yours."))

@@ -12,10 +12,13 @@ The report's BOTTOM LINE opens with a final state, using the six names from the
 Accountable Agents paper, and the same value is in the trust rider, `ceremony.json`
 (`final_state`, `final_state_next`) and the MCP result:
 
-- `act`: the advice cleared its checks. Rapier only advises; acting on it is yours.
+- `act`: the advice cleared the checks that ran, and the report names them and any
+  that were switched off. Rapier only advises; acting on it is yours.
 - `block`: a specific failed the correctness check, or a reference was refuted.
-- `defer`: a declared check did not run on the answer (crashed, no key, or ran
-  before the answer was written). Verify before acting.
+- `defer`: a declared check or the challenge review did not run on the answer
+  (crashed, no key, a reviewer error, or ran before the answer was written), or
+  the operator requires an independent review and none happened. A control that
+  did not run decided nothing, so this is never `block` and never `act`.
 - `escalate`: a specific reads ambiguously between fact and estimate; your call.
 - `non-decision`: the Proposer hit its round cap without agreeing on one option.
   The report says so at the top, and in the Proposer report. The Resolver still
@@ -24,7 +27,8 @@ Accountable Agents paper, and the same value is in the trust rider, `ceremony.js
   independence requirement).
 
 A citation check that was switched off or never declared doesn't change the
-state; the report already says so.
+state, but `act` says it didn't run. A review that failed at run time (the
+reviewer is fail-soft) is reported as not run, never as an independent challenge.
 
 ### Added: the operator can require an independent review
 

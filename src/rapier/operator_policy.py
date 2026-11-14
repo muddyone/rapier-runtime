@@ -70,6 +70,7 @@ class VerifyDecision:
     minimum: str | None       # the operator minimum, if any
     minimum_source: str       # e.g. "/etc/rapier/policy.json" or "RAPIER_MIN_VERIFY"
     minimum_external: bool    # True only if the running process could not change it
+    require_independent: bool = False  # operator requires a second-vendor review (D-68)
 
     def meta(self) -> dict:
         return {
@@ -78,6 +79,9 @@ class VerifyDecision:
             "verify_minimum": self.minimum,
             "verify_minimum_source": self.minimum_source,
             "verify_minimum_external": self.minimum_external,
+            # Carried to compose, so a required review that fails AT RUN TIME
+            # can't be reported as passed (verifier R6-1).
+            "require_independent": self.require_independent,
         }
 
 
@@ -188,7 +192,8 @@ def decide_verify(requested: str, set_by: str) -> VerifyDecision:
             f"verify={requested!r} ({set_by}) is below the operator minimum "
             f"verify={minimum!r}, set by {source} ({reach}). A caller cannot lower "
             "it. Ask for verify='gate' or 'round', or have the operator change the policy.")
-    return VerifyDecision(requested, set_by, minimum, source, external)
+    return VerifyDecision(requested, set_by, minimum, source, external,
+                          require_independent()[0])
 
 
 def decide_manifest(stages) -> VerifyDecision:
