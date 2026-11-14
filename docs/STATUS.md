@@ -1,9 +1,17 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-14 (tag v0.6.2, 382 tests)._ A running "where we are /
+_Last updated: 2026-11-14 (tag v0.6.3, 389 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-11-14) — `rapier-runtime` 0.6.3 on PyPI. An unreadable
+  operator policy no longer reads as the minimum refusing the run.** Git tag
+  `v0.6.3` (c3e7cddd); https://pypi.org/project/rapier-runtime/0.6.3/. A policy
+  file that can't be read or checked still stops the run (MCP `ok: false`, CLI
+  exit 2), now as `final_state: "defer"` with `operator_policy: "did-not-run:
+  …"` and no `refused_by`, because the minimum was never read. Found by the
+  verifier after 0.6.2, against the rule agreed with Loom's agent-runtime lane;
+  Bart D-70 a. Verified from PyPI: a clean install reports 0.6.3.
 - **RELEASED (2026-11-14) — `rapier-runtime` 0.6.2 on PyPI. The six Accountable
   Agents changes** (from Thomas Gessler's two concept papers,
   doi:10.5281/zenodo.20687710 and doi:10.5281/zenodo.21850919). Git tag `v0.6.2`
