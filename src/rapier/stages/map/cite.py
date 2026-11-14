@@ -265,13 +265,27 @@ def _section_before(loc: str, pos: int, source: str) -> str | None:
     return None
 
 
+_IDENT = re.compile(r"^[A-Za-z0-9][\w.\-/:]*[A-Za-z0-9_]$")
+
+
+def _identifier(raw: str) -> bool:
+    """One token shaped like an identifier: it has ``_``, ``.``, ``/``, ``::``, a
+    digit, an internal capital, or a hyphen between letters, and isn't a number."""
+    t = raw.strip().strip("`")
+    if " " in t or len(t) < 3 or not _IDENT.match(t) or t.replace(".", "").isdigit():
+        return False
+    return bool(re.search(r"[_./]|::|\d|[a-z][A-Z]|[A-Za-z]-[A-Za-z]", t))
+
+
 def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) -> dict:
     """The citation check for one class a locus: ``{"status": found | misquoted
     | fabricated, ...}`` with the failing quote and nearest passage when not found.
 
     - If the locus quotes the source, every quote is checked (``check_quote``);
       any fabricated quote makes the locus fabricated, else any misquoted one
-      makes it misquoted.
+      makes it misquoted. Only an ELLIPSIS quote is held to the section named
+      before it in the locus; a quote with no ellipsis only has to be in the
+      source (v1.4), and its nearest passage is sought over the whole source.
     - Otherwise, the whole locus found verbatim counts; failing that, every
       section it names must exist (a "§2 table vs §13" style pointer). A bare
       number is too weak to be a section reference."""
@@ -293,10 +307,11 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) 
     pieces = _pieces(text, min_evidence=True)
     if pieces and all(_fold(p) in _fold(source) for p in pieces):
         return {"status": "found"}
-    # A bare term or identifier ("finding_id"): found if it is in the source as
-    # written. Too short a term (under 6 characters) or a bare number proves nothing.
+    # A bare identifier ("finding_id", "config.yaml", "eu-west"): found if it is
+    # in the source as written. A common word ("service") is not a section, a
+    # line or a quoted claim, so it proves nothing (verifier V-1).
     whole = _fold(text)
-    if len(whole) >= 6 and not whole.replace(".", "").isdigit() and whole in _fold(source):
+    if _identifier(text) and whole in _fold(source):
         return {"status": "found"}
     refs = [m.group(1) or m.group(2) for m in _SECTION_ANY.finditer(bare)]
     if refs and all(_section_exists(r, source) for r in refs):

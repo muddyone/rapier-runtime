@@ -895,3 +895,25 @@ def test_anchor_rule_sends_absence_claims_to_a_section_locus():
         assert "ABSENT" in prompt and "section where it would be" in prompt
     assert check_locus("§9", D100_SOURCE)["status"] == "found"
     assert check_locus("§9: no `summary` field", D100_SOURCE)["status"] == "fabricated"
+
+
+# ── verifier V-1: a bare common word is not a citation ─────────────────────
+
+@pytest.mark.parametrize("locus", ["service", "Rollout", "region", "answer"])
+def test_bare_common_word_is_not_a_class_a_locus(locus):
+    from rapier.stages.map.cite import check_locus
+    assert check_locus(locus, SOURCE)["status"] == "fabricated"
+
+
+@pytest.mark.parametrize("locus", ["rollout_plan", "eu-west", "config.yaml", "loomAudit",
+                                   "a::b", "step2"])
+def test_control_identifier_shaped_terms_are_found_when_present(locus):
+    from rapier.stages.map.cite import check_locus
+    src = SOURCE + "\nSee rollout_plan, config.yaml, loomAudit, a::b and step2.\n"
+    assert check_locus(locus, src)["status"] == "found"
+
+
+def test_unelided_quote_needs_only_to_be_in_the_source():
+    """v1.4 scopes only ellipsis quotes to the cited section; the docstring says so."""
+    from rapier.stages.map.cite import check_locus
+    assert check_locus('§2 "The service must answer within 200 ms."', SOURCE)["status"] == "found"
