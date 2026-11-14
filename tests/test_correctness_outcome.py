@@ -74,8 +74,10 @@ def test_gate_absent_from_pipeline_is_not_run():
 
 @register_stage("_test_seed_recommendation")
 class _SeedRecommendation(TransformStage):
+    text = "rec"
+
     def run(self, env, ctx):
-        env.recommendation = "rec"
+        env.recommendation = self.text
         return env
 
 
@@ -167,4 +169,135 @@ def test_crashed_citation_gate_is_did_not_run(monkeypatch):
 def test_citations_checked_is_ran():
     env = Envelope(request="p", recommendation="see doi:10.1/x")
     env.meta["citation_verdicts"] = [{"artifact_ref": "doi:10.1/x", "status": "verified"}]
+    assert citation_outcome(env) == ("ran", "")
+
+
+# ── settle >= 1: only the gate's LAST run speaks for the final draft ────────
+# (verifier findings R2-1 and R2-2 on 3ff1e80c)
+
+def _two_round_gate(monkeypatch, first, second, rec="rec"):
+    """Run the definitiveness gate twice through Pipeline. ``first``/``second``
+    are a gate result dict, or an Exception instance to raise."""
+    from rapier.verify import _bootstrap
+
+    calls = iter([first, second])
+
+    def fake(problem, recommendation):
+        r = next(calls)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    monkeypatch.setattr(_bootstrap, "run_gate", fake)
+    monkeypatch.setattr(_SeedRecommendation, "text", rec, raising=False)
+    return Pipeline(
+        [StageSpec(stage="_test_seed_recommendation"),
+         StageSpec(stage="definitiveness_gate"),
+         StageSpec(stage="definitiveness_gate"),
+         StageSpec(stage="compose")],
+        name="t",
+    ).run("decide X")
+
+
+def test_final_round_crash_does_not_leave_an_earlier_pass_standing(monkeypatch):
+    env = _two_round_gate(monkeypatch, _gate("PASS", 2), RuntimeError("round-2 crash"))
+    assert correctness_outcome(env) == ("did-not-run", "the check crashed: round-2 crash")
+    assert env.verdict == "unchecked"
+    assert env.meta["stale_verdict"] == "PASS"  # kept for audit, out of the answer fields
+    assert env.trust_rider["specifics_traceability"] == "unchecked"
+    row = env.meta["ceremony_row"]
+    assert row["answer_verdict"] == "unchecked" and row["converged"] is False
+    assert "passed the correctness check" not in env.meta["report_md"]
+    assert "Nothing flagged" not in env.meta["report_md"]
+    from rapier.mcp.tools import _result
+    assert _result(env, False)["verdict"] == "unchecked"
+
+
+def test_control_final_round_pass_stands(monkeypatch):
+    env = _two_round_gate(monkeypatch, _gate("FAIL", 2), _gate("PASS", 2))
+    assert correctness_outcome(env) == ("ran", "")
+    assert env.verdict == "PASS"
+
+
+def test_earlier_round_crash_does_not_hide_a_final_fail(monkeypatch):
+    fail = _gate("FAIL", 1, failures=[{"text": "40%"}])
+    env = _two_round_gate(monkeypatch, RuntimeError("round-1 crash"), fail)
+    assert correctness_outcome(env) == ("ran", "")
+    assert env.verdict == "FAIL"
+    assert "did NOT pass the correctness check" in env.meta["report_md"]
+    assert env.meta["ceremony_row"]["correctness_check"] == "ran"
+
+
+def test_no_keys_through_pipeline_is_did_not_run(monkeypatch):
+    """End to end: no vendor keys, the real vendored gate, no stub."""
+    from rapier.models import vendor_key_envs
+
+    for name in vendor_key_envs().values():
+        monkeypatch.delenv(name, raising=False)
+    env = Pipeline(
+        [StageSpec(stage="_test_seed_recommendation"),
+         StageSpec(stage="definitiveness_gate"),
+         StageSpec(stage="compose")],
+        name="t",
+    ).run("decide X")
+    status, reason = correctness_outcome(env)
+    assert status == "did-not-run" and "no api keys" in reason
+    assert env.trust_rider["correctness_check"].startswith("did-not-run: no api keys")
+    assert env.meta["ceremony_row"]["correctness_check"] == "did-not-run"
+    assert "did NOT run" in env.meta["report_md"]
+
+
+# ── R2-3: an empty result over an answer that states figures ────────────────
+
+def test_zero_specifics_over_an_answer_with_figures_is_did_not_run(monkeypatch):
+    env = _two_round_gate(monkeypatch, _gate("PASS", 0), _gate("PASS", 0),
+                          rec="Latency drops 40% after the change.")
+    status, reason = correctness_outcome(env)
+    assert status == "did-not-run" and "states figures" in reason
+    assert env.verdict == "unchecked"
+
+
+def test_zero_specifics_over_prose_with_list_numbering_is_nothing_to_check(monkeypatch):
+    env = _two_round_gate(monkeypatch, _gate("PASS", 0), _gate("PASS", 0),
+                          rec="1. Prefer the simpler option.\n2. Revisit it later.")
+    assert correctness_outcome(env)[0] == "nothing-to-check"
+
+
+# ── verify=round: the citation gate's last run counts too ────────────────────
+
+def _two_round_citations(monkeypatch, first, second):
+    from rapier.verify import service
+
+    calls = iter([first, second])
+
+    def fake(*a, **k):
+        r = next(calls)
+        if isinstance(r, Exception):
+            raise r
+        return r
+
+    monkeypatch.setattr(service, "verify_artifacts", fake)
+    arts = [{"backend": "literature", "artifact_ref": "doi:10.1/x"}]
+    return Pipeline(
+        [StageSpec(stage="_test_seed_recommendation"),
+         StageSpec(stage="citation_gate", config={}),
+         StageSpec(stage="citation_gate", config={}),
+         StageSpec(stage="compose")],
+        name="t",
+    ).run("decide X", seed_meta={"verify": "round", "artifacts": arts})
+
+
+_OK = ([{"artifact_ref": "doi:10.1/x", "status": "verified"}], {"gate": "PASS", "grounding_rate": 1.0})
+
+
+def test_citation_final_round_crash_drops_the_earlier_verdicts(monkeypatch):
+    env = _two_round_citations(monkeypatch, _OK, RuntimeError("crossref down"))
+    assert citation_outcome(env)[0] == "did-not-run"
+    assert "citation_verdicts" not in env.meta and env.meta["citation_verdicts_stale"]
+    assert env.meta["ceremony_row"]["grounding_rate"] is None
+    assert "1 of 1 checkable reference confirmed" not in " ".join(env.meta["report_md"].split())
+
+
+def test_citation_earlier_round_crash_does_not_hide_the_final_result(monkeypatch):
+    env = _two_round_citations(monkeypatch, RuntimeError("crossref down"), _OK)
     assert citation_outcome(env) == ("ran", "")

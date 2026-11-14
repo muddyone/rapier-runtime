@@ -33,31 +33,54 @@ def _texts(objs) -> list[str]:
 GATE_STAGE = "definitiveness_gate"
 
 
+_LIST_MARK = re.compile(r"^\s*(?:#+\s*)?(?:\d+[.)]|[-*•])?\s*", re.M)
+
+
+def _states_figures(text: str | None) -> bool:
+    """Does the text state any numeral, outside list numbering? A crude guard:
+    erring toward "did not run" is the safe direction."""
+    return bool(re.search(r"\d", _LIST_MARK.sub("", text or "")))
+
+
+def _last(env: Envelope, stage: str):
+    """The last trace a stage wrote. With settle >= 1 a gate runs once per
+    round, and only its final run speaks for the draft the reader gets."""
+    traces = [t for t in env.trace if t.stage == stage and t.kind != "reconcile"]
+    return traces[-1] if traces else None
+
+
 def correctness_outcome(env: Envelope) -> tuple[str, str]:
     """What happened to the correctness (definitiveness) check, as ``(status, reason)``.
 
     ``status`` is one of:
       ``ran``              the check ran and returned PASS / REVIEW / FAIL over >= 1 specific
       ``nothing-to-check`` the check ran and found no hard specifics to judge
-      ``did-not-run``          the check never produced a verdict; ``reason`` says why
+      ``did-not-run``      the check never produced a verdict; ``reason`` says why
 
     A check that never ran must never read like one that ran and found nothing:
-    they call for opposite reactions from the reader."""
-    gate_traces = [t for t in env.trace if t.stage == GATE_STAGE]
-    errored = [t for t in gate_traces if (t.data or {}).get("error")]
-    if errored:
-        return "did-not-run", f"the check crashed: {str(errored[-1].data['error'])[:200]}"
+    they call for opposite reactions from the reader. Only the gate's LAST run
+    counts: an earlier round's verdict or crash says nothing about the final draft."""
+    if env.meta.get("correctness_outcome"):
+        return tuple(env.meta["correctness_outcome"])
+    last = _last(env, GATE_STAGE)
+    if last is None and not env.meta.get("definitiveness"):
+        return "did-not-run", "the check is not part of this pipeline"
+    if last is None:
+        pass  # a result with no trace (supplied by the caller): judge the result itself
+    elif (last.data or {}).get("error"):
+        return "did-not-run", f"the check crashed: {str(last.data['error'])[:200]}"
+    elif "skipped" in (last.summary or ""):
+        return "did-not-run", "there was no recommendation to check"
     gate = env.meta.get("definitiveness")
     if not gate:
-        if any("skipped" in (t.summary or "") for t in gate_traces):
-            return "did-not-run", "there was no recommendation to check"
-        if not gate_traces:
-            return "did-not-run", "the check is not part of this pipeline"
         return "did-not-run", "the check produced no result"
     v = (env.verdict or gate.get("answer_verdict") or "unchecked").upper()
     if v not in ("PASS", "REVIEW", "FAIL"):
         return "did-not-run", (gate.get("degraded") or "the checker was unavailable")
-    if v == "PASS" and not gate.get("n_specifics") and not gate.get("rows"):
+    if v == "PASS" and gate.get("n_specifics") == 0 and not gate.get("rows"):
+        if _states_figures(env.recommendation):
+            return "did-not-run", ("the checker found no specifics in an answer that states "
+                                   "figures, so its result cannot be trusted")
         return "nothing-to-check", "the answer states no hard specifics"
     return "ran", ""
 
@@ -68,23 +91,50 @@ CITATION_STAGE = "citation_gate"
 def citation_outcome(env: Envelope) -> tuple[str, str]:
     """What happened to the external-canon citation check, as ``(status, reason)``.
 
-    Same three statuses as :func:`correctness_outcome`. ``nothing-to-check``
-    means the gate ran and the answer cited nothing checkable; a gate that was
-    switched off, crashed or was never in the pipeline is ``did-not-run``."""
-    traces = [t for t in env.trace if t.stage == CITATION_STAGE and t.kind != "reconcile"]
-    errored = [t for t in traces if (t.data or {}).get("error")]
-    if errored:
-        return "did-not-run", f"the check crashed: {str(errored[-1].data['error'])[:200]}"
+    Same three statuses as :func:`correctness_outcome`, judged on the gate's last
+    run (with verify=round it runs every round). ``nothing-to-check`` means it
+    ran and the answer cited nothing checkable; a gate that was switched off,
+    crashed or was never in the pipeline is ``did-not-run``."""
+    if env.meta.get("citation_outcome"):
+        return tuple(env.meta["citation_outcome"])
+    last = _last(env, CITATION_STAGE)
+    if last is None and env.meta.get("citation_verdicts"):
+        return "ran", ""  # a result with no trace (supplied by the caller)
+    if last is None:
+        if str(env.meta.get("verify") or "") == "off":
+            by = env.meta.get("verify_set_by")
+            return "did-not-run", (f"switched off by {by} (verify=off)" if by
+                                   else "switched off (verify=off)")
+        return "did-not-run", "the check is not part of this pipeline"
+    if (last.data or {}).get("error"):
+        return "did-not-run", f"the check crashed: {str(last.data['error'])[:200]}"
+    if "skipped" in (last.summary or ""):
+        return "nothing-to-check", "the answer cites nothing externally checkable"
     if env.meta.get("citation_verdicts"):
         return "ran", ""
-    if any("skipped" in (t.summary or "") for t in traces):
-        return "nothing-to-check", "the answer cites nothing externally checkable"
-    if traces:
-        return "did-not-run", "the check produced no result"
-    if str(env.meta.get("verify") or "") == "off":
-        by = env.meta.get("verify_set_by")
-        return "did-not-run", f"switched off by {by} (verify=off)" if by else "switched off (verify=off)"
-    return "did-not-run", "the check is not part of this pipeline"
+    return "did-not-run", "the check produced no result"
+
+
+def _drop_stale_results(env: Envelope) -> None:
+    """When a gate's last run did not produce the result in hand, that result is
+    from an earlier draft. Move it aside (kept for audit) so no field the reader
+    or a calling agent reads still shows it as the answer's verdict."""
+    env.meta.pop("correctness_outcome", None)
+    env.meta.pop("citation_outcome", None)
+    outcome = correctness_outcome(env)
+    coutcome = citation_outcome(env)
+    # Fixed here, before anything is moved aside, so every later reader agrees.
+    env.meta["correctness_outcome"] = list(outcome)
+    env.meta["citation_outcome"] = list(coutcome)
+    status = outcome[0]
+    if status == "did-not-run" and (env.verdict or "").upper() in ("PASS", "REVIEW", "FAIL"):
+        env.meta["stale_verdict"] = env.verdict
+        env.meta["definitiveness_stale"] = env.meta.pop("definitiveness", None)
+        env.verdict = "unchecked"
+    cstatus = coutcome[0]
+    if cstatus != "ran" and env.meta.get("citation_verdicts"):
+        env.meta["citation_verdicts_stale"] = env.meta.pop("citation_verdicts")
+        env.meta["citation_gate_stale"] = env.meta.pop("citation_gate", None)
 
 
 def correctness_label(status: str, reason: str) -> str:
@@ -450,7 +500,10 @@ def _render_report(env: Envelope) -> str:
               "rather than a fact you gave — confirm these against your situation "
               "before you rely on them.",
               _bullets(assumptions) if assumptions
-              else "Nothing flagged — the load-bearing specifics trace to the facts you provided.")
+              else ("Not checked — the correctness check did not run on this answer, so "
+                    "nothing here has been traced to the facts you provided."
+                    if correctness_outcome(env)[0] == "did-not-run"
+                    else "Nothing flagged — the load-bearing specifics trace to the facts you provided."))
 
     if env.meta.get("reconcile"):
         L += _sec("WHETHER THE NUMBERS ADD UP",
@@ -652,6 +705,7 @@ def _ceremony_row(env: Envelope) -> dict:
 @register_stage("compose")
 class ComposeStage(TransformStage):
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
+        _drop_stale_results(env)
         review = env.meta.get("review") or {}
         gate = env.meta.get("definitiveness") or {}
         standing = ((env.meta.get("proposer") or {}).get("cut") or {}).get("standing_objections") or []
