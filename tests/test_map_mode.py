@@ -495,7 +495,7 @@ def test_pattern_lock_runs_per_region_and_says_so(run):
     assert all("FIELD (one region)" in p for p in seen)
     assert pl["merged_count"] == 2 and pl["scope"] == "within each region"
     flat = " ".join(env.meta["report_md"].split())
-    assert "in 2 merge call(s), within each region; duplicates across regions are not merged" in flat
+    assert "in 2 merge call(s) made, within each region; duplicates across regions are not merged" in flat
 
 
 def test_one_region_merge_failing_is_partial_and_disclosed(run):
