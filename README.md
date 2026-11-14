@@ -19,9 +19,11 @@ Free and open source (Apache-2.0). Not monetized.
 
 ---
 
-## Status: pre-alpha — the full ceremony runs end-to-end (M0–M3 complete; M4 in progress)
+## Status: alpha — the full ceremony runs end-to-end (M0–M4 complete)
 
-This is early software, pinned pre-1.0 — but the whole method runs. What works
+This is early software, pinned pre-1.0 — but the whole method runs. The interfaces can still
+change in any minor release. How versions, maturity and evidence are kept apart:
+[docs/versioning.md](docs/versioning.md). What works
 today:
 
 - **The full SPARRING ceremony, end-to-end.** The **Proposer** (divergent
