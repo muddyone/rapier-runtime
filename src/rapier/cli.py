@@ -299,7 +299,9 @@ def main(argv: list[str] | None = None) -> int:
     run.add_argument("--manifest", required=True, help="path to a pipeline manifest (YAML)")
     add_common(run)
 
-    sub.add_parser("doctor", help="check which AI vendor keys are configured")
+    dp = sub.add_parser("doctor", help="check vendor keys, the operator minimum, and what the "
+                                     "ceremonies declare")
+    dp.add_argument("--manifest", help="also check a custom manifest before running it")
     ip = sub.add_parser("init", help="scaffold a .env.example for vendor keys")
     ip.add_argument("--dir", default=".", help="directory to write .env.example into (default: cwd)")
     sub.add_parser("mcp", help="run the MCP server (stdio) exposing frame/proposer/spar/sparring as tools")
@@ -333,10 +335,12 @@ def main(argv: list[str] | None = None) -> int:
         return {"failed": 1, "unchecked": 3}.get(report["status"], 0)
 
     if args.cmd == "doctor":
-        from .onboarding import doctor_report
+        from .onboarding import doctor_report, method_report
 
         print(doctor_report())
-        return 0
+        text, ok = method_report(getattr(args, "manifest", None))
+        print("\n" + text)
+        return 0 if ok else 1
     if args.cmd == "init":
         from .onboarding import init as _init
 
@@ -413,7 +417,15 @@ def main(argv: list[str] | None = None) -> int:
                     report_all=getattr(args, "report_all", False), seed_meta=seed_meta,
                     no_save=getattr(args, "no_save", False))
     if args.cmd == "run":
-        return _run(Manifest.load(args.manifest), request, args.ledger_dir,
+        from .operator_policy import PolicyError, decide_manifest
+
+        manifest = Manifest.load(args.manifest)
+        try:
+            decision = decide_manifest(manifest.stages)
+        except PolicyError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
+        return _run(manifest, request, args.ledger_dir, seed_meta=decision.meta(),
                     no_save=getattr(args, "no_save", False))
     return 1  # pragma: no cover
 

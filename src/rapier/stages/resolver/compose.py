@@ -193,6 +193,27 @@ def _checks_policy_sentence(env: Envelope) -> str:
     return s
 
 
+_RUN_WORD = {"ran": "ran", "failed-soft": "FAILED (the run went on without it)",
+             "skipped": "skipped", "not-reached": "not reached"}
+
+
+def declared_vs_ran(env: Envelope) -> list[str]:
+    """One line per declared stage: what the manifest asked for, and what happened.
+    Compose is this stage, so it is reported as the one writing the report."""
+    runs = env.meta.get("stage_runs")
+    if runs is None:
+        return []
+    lines = []
+    for r in runs:
+        if r.get("stage") == "compose" and r.get("status") == "ran":
+            lines.append("compose: wrote this report")
+            continue
+        word = _RUN_WORD.get(r.get("status"), r.get("status") or "?")
+        detail = r.get("detail")
+        lines.append(f"{r.get('stage')}: {word}" + (f" ({detail})" if detail else ""))
+    return lines
+
+
 def _challenge_phrase(review) -> str:
     """Who raised the challenge, worded so a same-vendor review is never called independent."""
     if review.get("cross_vendor"):
@@ -543,6 +564,19 @@ def _render_report(env: Envelope) -> str:
                     + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
                     "the load-bearing call stays yours."))
 
+    stage_lines = declared_vs_ran(env)
+    warnings = env.meta.get("manifest_warnings") or []
+    if stage_lines or warnings:
+        body = _bullets(stage_lines) if stage_lines else ""
+        if warnings:
+            body += ("\n\n" if body else "") + _para(
+                "Warning about the method itself: this pipeline "
+                + "; it ".join(warnings) + ".")
+        L += _sec("WHAT RAN",
+                  "Every stage the method declared, and what actually happened to it. "
+                  "A stage that failed or was skipped did not check this answer.",
+                  body)
+
     L += _sec("THE RECORD",
               "Where this run is on disk — its audit trail.",
               _para(_record_body(env)))
@@ -682,6 +716,12 @@ def _ceremony_row(env: Envelope) -> dict:
         "citation_check": citation_outcome(env)[0],
         "citation_check_reason": citation_outcome(env)[1],
         "verify_mode": str(env.meta.get("verify") or ""),
+        "stages_declared": len(env.meta.get("stage_runs") or []),
+        "stages_failed_soft": [r["stage"] for r in (env.meta.get("stage_runs") or [])
+                               if r.get("status") == "failed-soft"],
+        "stages_skipped": [r["stage"] for r in (env.meta.get("stage_runs") or [])
+                           if r.get("status") == "skipped"],
+        "manifest_warnings": list(env.meta.get("manifest_warnings") or []),
         "verify_set_by": env.meta.get("verify_set_by") or "",
         "verify_minimum": env.meta.get("verify_minimum"),
         "verify_minimum_source": env.meta.get("verify_minimum_source") or "",
@@ -718,6 +758,10 @@ class ComposeStage(TransformStage):
         rider["overall_confidence"] = env.verdict  # deprecated alias; remove after 0.6.x
         rider["correctness_check"] = correctness_label(*correctness_outcome(env))
         rider["citation_check"] = correctness_label(*citation_outcome(env))
+        if env.meta.get("stage_runs") is not None:
+            rider["stages_run"] = [dict(r) for r in env.meta["stage_runs"]]
+        if env.meta.get("manifest_warnings"):
+            rider["manifest_warnings"] = list(env.meta["manifest_warnings"])
         env.trust_rider = rider
 
         env.meta["report"] = {

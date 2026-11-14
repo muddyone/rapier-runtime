@@ -6,6 +6,24 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: what the method declared, compared with what ran
+
+- **WHAT RAN**, a new report section, lists every stage the method declared
+  and what happened to it: ran, FAILED (the run went on without it), skipped
+  (with the stage's reason) or not reached (cancelled). The pipeline records
+  this itself, so a stage that writes no trace still appears. Also in the trust
+  rider (`stages_run`) and `ceremony.json` (`stages_declared`,
+  `stages_failed_soft`, `stages_skipped`).
+- **Checked before a run.** A pipeline that writes a report but declares no
+  correctness gate, or puts a gate after `compose` where its result can't reach
+  the report, gets a warning in the log, the report and `ceremony.json`
+  (`manifest_warnings`). `rapier doctor` checks every built-in ceremony and
+  shows the operator minimum. `rapier doctor --manifest m.yaml` checks a custom
+  manifest and exits 1 if it warns or would be refused.
+- **Custom manifests meet the operator minimum.** `rapier run --manifest` with
+  no citation gate before `compose` counts as `verify=off` and is refused under
+  a `gate` minimum.
+
 ### Added: an operator minimum for the checks, which the caller cannot lower
 
 Over MCP the agent whose answer is being checked chose `verify`, so it could

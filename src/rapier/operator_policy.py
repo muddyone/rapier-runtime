@@ -141,3 +141,21 @@ def decide_verify(requested: str, set_by: str) -> VerifyDecision:
             f"verify={minimum!r}, set by {source} ({reach}). A caller cannot lower "
             "it. Ask for verify='gate' or 'round', or have the operator change the policy.")
     return VerifyDecision(requested, set_by, minimum, source, external)
+
+
+def decide_manifest(stages) -> VerifyDecision:
+    """Apply the operator minimum to a custom manifest (``rapier run --manifest``).
+
+    A manifest that composes a report but declares no citation gate before
+    compose runs with the check switched off, whatever any flag says. Under a
+    ``gate`` minimum that is refused, the same as ``verify=off``."""
+    from .pipeline import manifest_declares
+
+    names = [s.stage for s in stages]
+    if "compose" not in names:  # no report, nothing for a minimum to hold
+        mode = "gate"
+    elif not manifest_declares(stages, "citation_gate"):
+        mode = "off"
+    else:
+        mode = "round" if names.count("citation_gate") > 1 else "gate"
+    return decide_verify(mode, "custom manifest")

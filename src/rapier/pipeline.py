@@ -60,6 +60,36 @@ def _resolve_role_spec(
     return swapped, ms.vendor
 
 
+GATE_STAGES = ("definitiveness_gate", "citation_gate", "reconcile", "traceability_gate")
+
+
+def manifest_warnings(stages: list[StageSpec]) -> list[str]:
+    """Check what a pipeline declares before it runs.
+
+    Only pipelines that compose a report are held to this: the Frame and
+    Proposer-only presets end before a verdict exists, by design. Warns when no
+    correctness gate is declared, or when a gate sits after ``compose``, where
+    its result can never reach the verdict or the report."""
+    names = [s.stage for s in stages]
+    if "compose" not in names:
+        return []
+    out: list[str] = []
+    compose_at = names.index("compose")
+    if "definitiveness_gate" not in names[:compose_at]:
+        out.append("declares no correctness gate (definitiveness_gate) before compose, so "
+                   "the report's verdict is never checked")
+    for i, n in enumerate(names):
+        if n in GATE_STAGES and i > compose_at:
+            out.append(f"{n} runs after compose, so its result never reaches the verdict "
+                       "or the report")
+    return out
+
+
+def manifest_declares(stages: list[StageSpec], stage: str) -> bool:
+    names = [s.stage for s in stages]
+    return stage in names and ("compose" not in names or names.index(stage) < names.index("compose"))
+
+
 class Pipeline:
     def __init__(self, stages: list[StageSpec], name: str = "pipeline", policy=None):
         self.stages = stages
@@ -113,12 +143,24 @@ class Pipeline:
         else:
             env.meta["persisted"] = False
         available = available_vendors()
+        # Declared vs ran (Accountable Agents item 3). The pipeline, not each
+        # stage, records what happened to every declared stage, so a stage that
+        # writes no trace of its own still shows up.
+        warnings = manifest_warnings(self.stages)
+        env.meta["manifest_warnings"] = warnings
+        for w in warnings:
+            log(f"  manifest warning: {w}")
+        runs: list[dict[str, Any]] = []
+        env.meta["stage_runs"] = runs
         for spec in self.stages:
             # Cooperative cancellation: stop at a stage boundary (never mid-call)
             # so the partial envelope stays coherent and auditable.
             if cancel is not None and cancel():
                 env.add_trace(spec.stage, "control", "run cancelled — stopping before this stage")
                 log(f"  cancelled — stopping before {spec.stage}")
+                done = len(runs)
+                runs.extend({"stage": s.stage, "status": "not-reached",
+                             "detail": "run cancelled"} for s in self.stages[done:])
                 break
             stage = get_stage(spec.stage)()
             clients = {}
@@ -141,6 +183,9 @@ class Pipeline:
                 policy=self.policy,
             )
             log(f"stage: {spec.stage} ({stage.kind})")
+            n_before = len(env.trace)
+            record: dict[str, Any] = {"stage": spec.stage, "status": "ran", "detail": ""}
+            runs.append(record)
             try:
                 env = stage.run(env, ctx)
             except NotImplementedError:
@@ -150,6 +195,13 @@ class Pipeline:
             except Exception as exc:  # fail-soft: record and continue
                 env.add_trace(spec.stage, stage.kind, f"ERROR (fail-soft): {exc}", error=str(exc))
                 log(f"  stage {spec.stage} failed-soft: {exc}")
+                record.update(status="failed-soft", detail=str(exc)[:200])
+            else:
+                own = [t for t in env.trace[n_before:] if t.stage == spec.stage]
+                skipped = next((t.summary for t in own if "skipped" in (t.summary or "")), None)
+                if skipped:
+                    record.update(status="skipped", detail=skipped)
+            env.meta["stage_runs"] = runs  # a stage may have replaced env.meta
 
             if ledger:
                 tail = env.trace[-1].summary if env.trace else ""

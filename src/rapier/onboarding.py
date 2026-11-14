@@ -78,6 +78,54 @@ def doctor_report() -> str:
     return "\n".join(lines)
 
 
+def method_report(manifest_path: str | None = None) -> tuple[str, bool]:
+    """What the ceremonies declare, checked before any run: the operator minimum,
+    and for each built-in preset (and an optional custom manifest) whether a
+    correctness gate is declared and its result reaches the report.
+    Returns ``(text, ok)``; ``ok`` is False only for a custom manifest that
+    warns or that the operator minimum would refuse."""
+    from .manifest import Manifest
+    from .operator_policy import PolicyError, decide_manifest, operator_minimum
+    from .pipeline import manifest_warnings
+    from .presets import PRESETS, load_preset
+
+    lines = ["Operator minimum for the citation check", ""]
+    try:
+        level, source, external = operator_minimum()
+    except PolicyError as exc:
+        level, source, external = None, "", False
+        lines.append(f"  ✗ {exc}")
+    if level:
+        reach = ("out of the calling agent's reach" if external
+                 else "within the calling agent's reach — not an independent control")
+        lines.append(f"  ✓ at least '{level}', from {source} ({reach})")
+    elif not lines[-1].startswith("  ✗"):
+        lines.append("  · none set — the caller chooses whether the citation check runs")
+    lines += ["", "What each ceremony declares", ""]
+    for name in sorted(PRESETS):
+        warns = manifest_warnings(load_preset(name).stages)
+        if warns:
+            lines += [f"  ⚠ {name}: " + w for w in warns]
+        else:
+            lines.append(f"  ✓ {name}")
+    ok = True
+    if manifest_path:
+        try:
+            m = Manifest.load(manifest_path)
+        except (OSError, ValueError) as exc:
+            return "\n".join(lines + ["", f"  ✗ {manifest_path}: cannot load ({exc})"]), False
+        warns = manifest_warnings(m.stages)
+        lines += ["", f"Custom manifest {manifest_path}", ""]
+        lines += [f"  ⚠ {w}" for w in warns] or ["  ✓ declares a correctness gate that reaches the report"]
+        try:
+            decide_manifest(m.stages)
+        except PolicyError as exc:
+            lines.append(f"  ✗ would be refused: {exc}")
+            ok = False
+        ok = ok and not warns
+    return "\n".join(lines), ok
+
+
 _ENV_EXAMPLE_HEADER = """\
 # Rapier reads AI vendor keys from the environment only.
 # Copy this file to `.env`, fill in the key(s) you have, then load it into your
