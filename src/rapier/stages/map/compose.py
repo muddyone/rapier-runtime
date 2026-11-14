@@ -139,7 +139,9 @@ def render_map(env: Envelope) -> str:
     attacks = m.get("attacks") or {}
     for r in regions:
         lab = g["labels"].get(r["id"], {})
-        p2.append(f"{r['id']}: {lab.get('label')}" + (f" ({'; '.join(lab.get('why'))})" if lab.get("why") else ""))
+        n_items = sum(1 for i in items if r["id"] in i["regions"])
+        p2.append(f"{r['id']}: {lab.get('label')}" + (f" ({'; '.join(lab.get('why'))})" if lab.get("why") else "")
+                  + ("; this region yielded no items" if n_items == 0 and lab.get("label") != "UNPROBED" else ""))
         for c in (attacks.get(r["id"]) or {}).get("candidates", []):
             if not c.get("new"):
                 p2.append(f"  not new: “{c['text']}” matched to {c.get('matched')}")

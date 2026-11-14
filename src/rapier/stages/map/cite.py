@@ -52,6 +52,17 @@ def locus_exists(locus: str, source: str) -> bool:
     return False
 
 
+# An entry identifier that says there is none (verifier M-2): "industry best
+# practice" has no entry identifier, and "N/A" is a model saying exactly that.
+_PLACEHOLDERS = {"n/a", "na", "n.a.", "none", "null", "nil", "-", "--", "\u2014", "\u2013",
+                 "unknown", "tbd", "tba", "general", "generic", "various", "any", "all",
+                 "see title", "not applicable", "no entry", "n/a."}
+
+
+def _placeholder(entry: str) -> bool:
+    return entry.strip().strip(".").lower() in _PLACEHOLDERS or entry.strip().lower() in _PLACEHOLDERS
+
+
 def check_item(item: dict, source: str) -> None:
     """Apply the citation check to one item, in place."""
     a = item["anchor"]
@@ -61,7 +72,7 @@ def check_item(item: dict, source: str) -> None:
         a["citation_check"] = "found" if ok else "fabricated"
     elif cls == "b":
         title, entry = a.get("title", "").strip(), a.get("entry_id", "").strip()
-        if title and entry and entry.lower() != title.lower():
+        if title and entry and entry.lower() != title.lower() and not _placeholder(entry):
             a["citation_check"] = "named"
         else:
             item["anchor"] = {"class": "c", "basis": "", "downgraded_from": "b",

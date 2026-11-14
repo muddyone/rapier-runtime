@@ -97,7 +97,15 @@ def evaluate(m: dict) -> dict:
     fail, review = [], []
     if fabricated:
         fail.append(f"fabricated class a anchor(s): {', '.join(fabricated)}")
-    if not frame_recorded_before_generation(m):
+    generated = any(c.get("purpose") not in _PRE_FRAME for c in (m.get("calls") or []))
+    if not frame:
+        if generated:
+            fail.append("the search frame was not recorded before generation")
+        else:
+            # No frame and nothing generated: the framer did not run, so it decided
+            # nothing. Never a FAIL (verifier M-1); the run defers.
+            did_not_run.append(f"search frame ({m.get('frame_error') or 'no frame was declared'})")
+    elif not frame_recorded_before_generation(m):
         fail.append("the search frame was not recorded before generation")
     if overall != "HELD":
         review.append(f"the overall label is {overall}")

@@ -388,3 +388,48 @@ def test_frame_hash_and_contract_hashes_reach_the_record(run):
     assert row["attack_contract_hash"].startswith("sha256:")
     assert row["matcher_prompt_hash"].startswith("sha256:")
     assert row["method_hash"].startswith("sha256:")
+
+
+# ── verifier M-1 / M-2 ─────────────────────────────────────────────────────
+
+def test_crashed_framer_with_nothing_generated_defers_not_fails(run):
+    env = run({FR.FRAME_DRAFT: RuntimeError("framer 503")}, regions=None)
+    m = _m(env)
+    g = m["gate"]
+    assert g["fail"] == [] and g["verdict"] != "FAIL"
+    assert any(x.startswith("search frame (drafting failed: framer 503") for x in g["did_not_run"])
+    assert map_final_state(m)[0] == "defer"
+    assert not any(c["purpose"] == "generate" for c in m["calls"])
+
+
+def test_control_frame_recorded_out_of_order_still_fails(run):
+    m = _m(run())
+    m["frame"]["recorded_at_call"] = len(m["calls"])
+    assert evaluate(m)["verdict"] == "FAIL"
+
+
+def test_generation_without_any_frame_fails(run):
+    m = _m(run())
+    del m["frame"]
+    g = evaluate(m)
+    assert any("not recorded before generation" in x for x in g["fail"])
+
+
+@pytest.mark.parametrize("entry", ["N/A", "none", "null", "-", "—", "unknown", "TBD",
+                                   "general", "various", "see title", "Not applicable"])
+def test_placeholder_entry_id_drops_to_c(run, entry):
+    env = run({F.GENERATE: lambda p, v: {"items": [
+        {"text": "x", "anchor": {"class": "b", "title": "Industry best practice", "entry_id": entry}}]}})
+    a = _m(env)["items"][0]["anchor"]
+    assert a["class"] == "c" and a["downgraded_from"] == "b"
+
+
+def test_control_real_entry_id_is_named(run):
+    env = run({F.GENERATE: lambda p, v: {"items": [
+        {"text": "x", "anchor": {"class": "b", "title": "OWASP ASVS", "entry_id": "V1.2"}}]}})
+    assert _m(env)["items"][0]["anchor"]["citation_check"] == "named"
+
+
+def test_empty_region_is_disclosed(run):
+    env = run({F.GENERATE: lambda p, v: {"items": []}})
+    assert "this region yielded no items" in env.meta["report_md"]
