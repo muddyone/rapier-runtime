@@ -1,6 +1,6 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-14 (tag v0.6.3, 389 tests)._ A running "where we are /
+_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode on a branch, 482 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
@@ -210,6 +210,17 @@ what's next" so a new session can continue without reconstructing from git log.
   `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
+0. **Map mode (SPARRING v1.3 §3.7): built and reviewed, NOT released.** On branch
+   `worktree-demeter-rapier-runtime-2` (not on main; D-101 merges it only together with
+   its release, after a live run passes). `rapier map`, the `map` preset and MCP tool,
+   every check passed by the verifier. First live run (D-100, $20.85) FAILED: a
+   drafted 47-region frame hit the 120-call cap, and the citation check misread real
+   loci (fixed: 871/948 now found). Since then: per-region Pattern Lock, a hard
+   dollar cap (`--max-usd`, `RAPIER_MAX_USD`, never exceeded), matcher scoped to its
+   region. **Waiting on Bart's D-115** (about $8 path: build the v1.4 rules — 12-unit
+   frame cap, misquoted demotion, pre-run budget check — then one capped run of
+   Loom plan 19). Cost lesson: the whole field resent on every attack and matcher
+   call (~90k tokens each) was the bill, not the source.
 1. ~~**Confirm the MCP server on Claude Desktop.**~~ **DONE (2026-07-18) — end to
    end.** Desktop (Windows, MSIX-packaged build) launches the `rapier` server (`py
    -m rapier.cli mcp`, `serverInfo 0.3.1`, 7 tools) AND a **live `spar` tool call
