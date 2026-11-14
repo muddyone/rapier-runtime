@@ -34,6 +34,7 @@ def _result(env, report_all: bool) -> dict[str, Any]:
         "verdict": env.verdict,
         "correctness_check": (env.trust_rider or {}).get("correctness_check"),
         "citation_check": (env.trust_rider or {}).get("citation_check"),
+        "final_state": (env.trust_rider or {}).get("final_state"),
         "grounding": (
             {
                 "gate": gate.get("gate"),

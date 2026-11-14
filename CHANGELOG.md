@@ -6,6 +6,26 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: every run names its final state
+
+The report's BOTTOM LINE opens with a final state, using the six names from the
+Accountable Agents paper, and the same value is in the trust rider, `ceremony.json`
+(`final_state`, `final_state_next`) and the MCP result:
+
+- `act`: the advice cleared its checks. Rapier only advises; acting on it is yours.
+- `block`: a specific failed the correctness check, or a reference was refuted.
+- `defer`: a declared check did not run on the answer (crashed, no key, or ran
+  before the answer was written). Verify before acting.
+- `escalate`: a specific reads ambiguously between fact and estimate; your call.
+- `non-decision`: the Proposer hit its round cap without agreeing on one option.
+  The report says so at the top, and in the Proposer report. The Resolver still
+  tests the strongest candidate, but choosing between the options is yours.
+- `refuse`: the run was refused before it started (operator minimum or
+  independence requirement).
+
+A citation check that was switched off or never declared doesn't change the
+state; the report already says so.
+
 ### Added: the operator can require an independent review
 
 `"require_independent": true` in the operator policy file refuses any review

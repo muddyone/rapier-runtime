@@ -136,6 +136,57 @@ def citation_outcome(env: Envelope) -> tuple[str, str]:
     return "did-not-run", "the check produced no result"
 
 
+# The papers' six final states, mapped in Rapier's own layer (D-67: label, keep
+# going). Rapier gives advice and never acts on anything itself, so "act" means
+# the advice cleared its checks and is the reader's to act on.
+FINAL_STATES = ("act", "refuse", "block", "defer", "escalate", "non-decision")
+
+
+def proposer_non_decision(env: Envelope) -> bool:
+    """The Proposer exited its Cut without both roles agreeing on one option."""
+    cut = ((env.meta.get("proposer") or {}).get("cut")) or {}
+    if not cut or cut.get("no_op"):
+        return False
+    return not cut.get("converged")
+
+
+def final_state(env: Envelope) -> tuple[str, str]:
+    """``(state, what the reader should do next)``. A refused run never reaches
+    compose; its ``refuse`` state is set where it is refused (MCP/CLI)."""
+    if proposer_non_decision(env):
+        return "non-decision", ("The deliberation could not agree on one option. The "
+                                "recommendation below pressure-tests its strongest candidate, "
+                                "but choosing between the options still standing is yours: "
+                                "weigh the standing objections before you rely on it.")
+    cstatus, creason = correctness_outcome(env)
+    v = (env.verdict or "").upper()
+    if cstatus == "did-not-run":
+        return "defer", (f"The correctness check did not run ({creason}). Verify the stated "
+                         "specifics yourself before acting on this.")
+    citation = env.meta.get("citation_gate") or {}
+    if v == "FAIL" or citation.get("gate") == "blocked":
+        return "block", ("Do not rely on this as stated: at least one specific or reference "
+                         "failed its check. See the sections below for which.")
+    gstatus, greason = citation_outcome(env)
+    # A citation check that was declared but failed to check the answer defers the
+    # run. One switched off or never declared is a choice the report already
+    # states (WHAT WAS VERIFIED, HOW MUCH TO TRUST), so it doesn't change the state.
+    if gstatus == "did-not-run" and (greason.startswith("the check crashed")
+                                     or greason in (_BEFORE_ANSWER, "the check produced no result")):
+        return "defer", (f"The citation check did not run ({greason}). Confirm any references "
+                         "it cites before acting on this.")
+    if v == "REVIEW":
+        return "escalate", ("A stated specific reads ambiguously between fact and estimate. "
+                            "That call is yours: see STILL YOURS TO CHECK.")
+    return "act", ("The answer cleared its checks. Rapier only advises: acting on it, and "
+                   "the constraints no model here can see, stay yours.")
+
+
+_STATE_TITLE = {"act": "ACT (advice cleared its checks)", "block": "BLOCK",
+                "defer": "DEFER", "escalate": "ESCALATE (your call)",
+                "non-decision": "NON-DECISION", "refuse": "REFUSE"}
+
+
 def _drop_stale_results(env: Envelope) -> None:
     """When a gate's last run did not produce the result in hand, that result is
     from an earlier draft. Move it aside (kept for audit) so no field the reader
@@ -531,9 +582,15 @@ def _render_report(env: Envelope) -> str:
     if topic:
         L += ["", f"On: {topic}"]
 
+    state, next_step = final_state(env)
+    if state == "non-decision":
+        L += ["", _HEAVY, "  NON-DECISION: the deliberation did not commit to one option", _HEAVY,
+              "", _para(next_step)]
     L += _sec("BOTTOM LINE",
               "How far to trust this, in one breath.",
-              _para(_verdict_sentence(env.verdict, gate, correctness_outcome(env))
+              _para(f"Final state: {_STATE_TITLE[state]}. " + (next_step if state != "non-decision" else
+                    "See the NON-DECISION note above.")
+                    + "\n\n" + _verdict_sentence(env.verdict, gate, correctness_outcome(env))
                     + " The full advice is under THE RECOMMENDATION below."))
 
     L += _sec("THE RECOMMENDATION",
@@ -646,6 +703,11 @@ def _render_proposer_report(env: Envelope) -> str | None:
                         "novelty, and commit one — with its unresolved objections — for "
                         "the Resolver to pressure-test.", width=_W)]
 
+    if proposer_non_decision(env):
+        L += ["", _HEAVY, "  NON-DECISION: the roles could not agree on one option", _HEAVY, "",
+              _para("The Cut hit its round cap still in disagreement. The option below is "
+                    "the strongest candidate, carried forward for pressure-testing, not an "
+                    "agreed choice. Choosing between it and the standing objections is yours.")]
     L += _sec("THE COMMITTED OPTION",
               "What the deliberation chose to put forward for pressure-testing.",
               _reflow(_demote_md((env.committed
@@ -742,6 +804,8 @@ def _ceremony_row(env: Envelope) -> dict:
         "strongest_quote": (_texts(objections)[0] if objections else "")[:400],
         "verdict": "MATTERED" if load_bearing else "DID_NOT_MATTER",
         "answer_verdict": env.verdict or "unchecked",
+        "final_state": final_state(env)[0],
+        "final_state_next": final_state(env)[1],
         "correctness_check": correctness_outcome(env)[0],
         "correctness_check_reason": correctness_outcome(env)[1],
         "citation_check": citation_outcome(env)[0],
@@ -792,6 +856,7 @@ class ComposeStage(TransformStage):
         rider["overall_confidence"] = env.verdict  # deprecated alias; remove after 0.6.x
         rider["correctness_check"] = correctness_label(*correctness_outcome(env))
         rider["citation_check"] = correctness_label(*citation_outcome(env))
+        rider["final_state"] = final_state(env)[0]
         if env.meta.get("stage_runs") is not None:
             rider["stages_run"] = [dict(r) for r in env.meta["stage_runs"]]
         if env.meta.get("manifest_warnings"):
