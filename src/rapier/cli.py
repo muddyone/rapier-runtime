@@ -309,7 +309,7 @@ def main(argv: list[str] | None = None) -> int:
 
     mp = sub.add_parser(
         "map",
-        help="map a problem space instead of deciding (SPARRING v1.3 §3.7): the field by region, "
+        help="map a problem space instead of deciding (SPARRING v1.4 §3.7): the field by unit, "
              "with a coverage rider and a map gate",
     )
     add_common(mp)
@@ -317,6 +317,16 @@ def main(argv: list[str] | None = None) -> int:
         "--region", action="append", metavar="NAME[: DEFINITION]", default=None,
         help="a region of the search frame (repeatable). Without any, a separate Frame call "
              "drafts the frame and the rider marks it drafted",
+    )
+    mp.add_argument(
+        "--frame", metavar="FILE",
+        help="a JSON search frame: {\"regions\": [...], \"blocks\": [{\"name\", \"basis\": "
+             "\"section\"|\"lens\", \"members\": [...]}], \"max_units\": N}. Above 12 units "
+             "(or max_units), blocks are required",
+    )
+    mp.add_argument(
+        "--max-calls", type=int, default=None, metavar="N",
+        help="call budget: if the planned call count is over it, the run does not start",
     )
 
     fr = sub.add_parser(
@@ -416,11 +426,30 @@ def main(argv: list[str] | None = None) -> int:
         except PolicyError as exc:
             print(stop_message(exc), file=sys.stderr)
             return 2
-        regions = []
+        regions: list = []
+        frame_extra: dict = {}
+        if getattr(args, "frame", None):
+            import json as _json
+
+            try:
+                with open(args.frame, encoding="utf-8") as fh:
+                    fd = _json.load(fh)
+            except (OSError, ValueError) as exc:
+                print(f"can't read --frame {args.frame}: {exc}", file=sys.stderr)
+                return 2
+            if isinstance(fd, list):
+                fd = {"regions": fd}
+            regions = list(fd.get("regions") or [])
+            if fd.get("blocks"):
+                frame_extra["map_blocks"] = fd["blocks"]
+            if fd.get("max_units"):
+                frame_extra["map_max_units"] = fd["max_units"]
         for r in getattr(args, "region", None) or []:
             name, _, definition = r.partition(":")
             regions.append({"name": name.strip(), "definition": (definition or name).strip()})
-        seed_meta = {**decision.meta(), **({"map_regions": regions} if regions else {})}
+        if getattr(args, "max_calls", None):
+            frame_extra["map_max_calls"] = args.max_calls
+        seed_meta = {**decision.meta(), **({"map_regions": regions} if regions else {}), **frame_extra}
         return _run(preset, request, args.ledger_dir, seed_meta=seed_meta,
                     no_save=getattr(args, "no_save", False),
                     max_usd=getattr(args, "max_usd", None))

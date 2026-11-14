@@ -1,7 +1,8 @@
 """map_spark and map_pattern_lock: build the field, region by region.
 
-SPARRING spec v1.3 §3.7. Each region gets its own generation call (the probe),
-and the Challenger's SPARK function, EXPAND, runs per region too. Every item
+SPARRING spec v1.4 §3.7. Each unit (a region, or a declared block) gets its own
+generation call (the probe), and the Challenger's SPARK function, EXPAND, runs
+per unit too. Every item
 carries its region(s), anchor, origin, the role and vendor that raised it, and
 (after Pattern Lock) the ids of the items merged into it. No prompt asks for a
 number of items: breadth comes from the frame and the attacks, never a budget.
@@ -24,17 +25,18 @@ ANCHOR_RULE = (
 )
 
 GENERATE = (
-    "You are the Generator in the SPARK phase of a SPARRING map. Map ONE region of the "
-    "problem space: list what a reader should consider in this region (risks, gaps, "
-    "options, failure modes, as the request asks). Stay inside the region. Do not rank "
+    "You are the Generator in the SPARK phase of a SPARRING map. Map ONE unit of the "
+    "problem space (a region, or a block of regions taken together): list what a reader "
+    "should consider in it (risks, gaps, options, failure modes, as the request asks). "
+    "Stay inside it. Do not rank "
     "and do not judge which matter most. " + ANCHOR_RULE
     + ' Respond STRICT JSON: {"items": [{"text": str, "anchor": {...}}]}.'
 )
 
 EXPAND = (
     "You are the Challenger in the SPARK phase of a SPARRING map; your function is "
-    "EXPAND. Given one region and the Generator's items for it, add only items that are "
-    "genuinely new for this region (not rewordings of listed items). " + ANCHOR_RULE
+    "EXPAND. Given one unit and the Generator's items for it, add only items that are "
+    "genuinely new for this unit (not rewordings of listed items). " + ANCHOR_RULE
     + ' Respond STRICT JSON: {"items": [{"text": str, "anchor": {...}}]} (an empty list '
     "if you find nothing new)."
 )
@@ -86,17 +88,17 @@ def add_item(m: dict, *, text: str, anchor: dict, regions: list[str], origin: st
     return item
 
 
-def _region_text(r: dict) -> str:
-    return f"REGION {r['id']}: {r['name']} — {r['definition']}"
+def _unit_text(m: dict, u: dict) -> str:
+    return C.unit_text(u, {r["id"]: r for r in C.region_list(m)})
 
 
 @register_stage("map_spark")
 class MapSparkStage(TransformStage):
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         m = C.state(env)
-        regions = C.region_list(m)
+        regions = C.unit_list(m)
         if not regions:
-            env.add_trace("map_spark", self.kind, "no recorded search frame — skipped")
+            env.add_trace("map_spark", self.kind, "no recorded search frame, or the run stopped — skipped")
             return env
         v = C.vendors(env, ctx)
         gen, chal = v["generator"], v["challenger"] or v["generator"]
@@ -106,7 +108,7 @@ class MapSparkStage(TransformStage):
             try:
                 reply = C.call(env, role="generator", vendor=gen, purpose="generate", region=r["id"],
                                system=ctx.config.get("generate_prompt", GENERATE),
-                               prompt=f"REQUEST AND SOURCE:\n{env.request}\n\n{_region_text(r)}")
+                               prompt=f"REQUEST AND SOURCE:\n{env.request}\n\n{_unit_text(m, r)}")
                 got = norm_items(reply)
                 p["generate"] = "ran" if got is not None else "off-contract"
             except Exception as exc:  # noqa: BLE001
@@ -118,8 +120,8 @@ class MapSparkStage(TransformStage):
             try:
                 reply = C.call(env, role="challenger", vendor=chal, purpose="expand", region=r["id"],
                                system=ctx.config.get("expand_prompt", EXPAND),
-                               prompt=(f"REQUEST AND SOURCE:\n{env.request}\n\n{_region_text(r)}\n\n"
-                                       f"GENERATOR'S ITEMS FOR THIS REGION:\n{listed}"))
+                               prompt=(f"REQUEST AND SOURCE:\n{env.request}\n\n{_unit_text(m, r)}\n\n"
+                                       f"GENERATOR'S ITEMS FOR THIS UNIT:\n{listed}"))
                 got = norm_items(reply)
                 p["expand"] = "ran" if got is not None else "off-contract"
             except Exception as exc:  # noqa: BLE001
@@ -129,7 +131,7 @@ class MapSparkStage(TransformStage):
                          origin="spark", role="challenger", vendor=chal)
         m["spark_raw"] = [dict(i) for i in m.get("items", [])]  # debugging view, never terminal
         env.add_trace("map_spark", self.kind,
-                      f"regions={len(regions)} items={len(m.get('items', []))}")
+                      f"units={len(regions)} items={len(m.get('items', []))}")
         return env
 
 
@@ -151,7 +153,7 @@ def _valid_groups(raw: Any, ids: set[str], used: set[str]) -> list[dict]:
 
 @register_stage("map_pattern_lock")
 class MapPatternLockStage(TransformStage):
-    """Pattern Lock, one region at a time.
+    """Pattern Lock, one unit at a time.
 
     One merge call over the whole field fails quietly on a real map: on the
     D-100 live run (1,135 items, ~370k characters) the model answered "no
@@ -173,7 +175,7 @@ class MapPatternLockStage(TransformStage):
         groups_all: list[dict] = []
         unmerged: list[str] = []
         used: set[str] = set()
-        for r in C.region_list(m):
+        for r in C.unit_list(m):
             batch = [i for i in items if (i["regions"] or [None])[0] == r["id"]]
             if len(batch) < 2:
                 continue
@@ -183,7 +185,7 @@ class MapPatternLockStage(TransformStage):
             try:
                 reply = C.call(env, role="generator", vendor=gen, purpose="merge", region=r["id"],
                                system=ctx.config.get("merge_prompt", MERGE),
-                               prompt=f"REQUEST:\n{env.request}\n\nFIELD (one region):\n{listing}")
+                               prompt=f"REQUEST:\n{env.request}\n\nFIELD (one unit):\n{listing}")
                 raw = reply.get("groups") if isinstance(reply, dict) else None
                 if not isinstance(raw, list):
                     raise ValueError("off-contract merge reply")
@@ -196,7 +198,7 @@ class MapPatternLockStage(TransformStage):
                 try:
                     reply = C.call(env, role="challenger", vendor=chal, purpose="filter", region=r["id"],
                                    system=ctx.config.get("filter_prompt", FILTER),
-                                   prompt=(f"FIELD (one region):\n{listing}\n\nPROPOSED MERGES:\n"
+                                   prompt=(f"FIELD (one unit):\n{listing}\n\nPROPOSED MERGES:\n"
                                            + "\n".join(f"{g['keep']} <- {g['merged']}" for g in groups)))
                     wrong = set(map(str, (reply or {}).get("wrong_merges") or [])) if isinstance(reply, dict) else set()
                 except Exception as exc:  # noqa: BLE001
@@ -217,7 +219,7 @@ class MapPatternLockStage(TransformStage):
         m["items"] = [i for i in items if i["id"] not in drop]
         failed = [b for b in batches if b.get("status") != "ran"]
         status = ("ran" if not failed else "did-not-run" if len(failed) == len(batches) else "partial")
-        pl: dict[str, Any] = {"status": status, "scope": "within each region", "groups": groups_all,
+        pl: dict[str, Any] = {"status": status, "scope": "within each unit", "groups": groups_all,
                               "unmerged": unmerged, "batches": batches, "merge_calls": len(batches),
                               "merged_count": len(drop),
                               "merged_share": round(len(drop) / len(items), 3) if items else 0.0}

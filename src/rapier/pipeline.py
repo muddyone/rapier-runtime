@@ -118,7 +118,7 @@ def manifest_warnings(stages: list[StageSpec]) -> list[str]:
     return list(dict.fromkeys(out))
 
 
-# Map mode (spec v1.3 §3.7): each check must run, in this order, before compose_map.
+# Map mode (spec v1.4 §3.7): each check must run, in this order, before compose_map.
 MAP_REQUIRED = ("map_frame", "map_spark", "map_attack", "map_cite", "map_gate")
 
 

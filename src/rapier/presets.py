@@ -121,21 +121,23 @@ def _resolver(settle: int = 0, verify: str = "gate", reconcile: str = "gate") ->
 
 
 def _map(support: bool = False) -> list[dict]:
-    """Map mode (SPARRING spec v1.3 §3.7). Every prompt the method relies on is
+    """Map mode (SPARRING spec v1.4 §3.7). Every prompt the method relies on is
     carried here in the manifest config, so the method hash covers the frame
     prompts, the attack contract and the matcher."""
     from .stages.map import attack, cite, field, frame
 
     stages = [
         {"stage": "map_frame", "config": {"draft_prompt": frame.FRAME_DRAFT,
-                                          "frame_attack_prompt": frame.FRAME_ATTACK}},
+                                          "block_prompt": frame.FRAME_BLOCK,
+                                          "frame_attack_prompt": frame.FRAME_ATTACK,
+                                          "per_unit_calls": frame.PER_UNIT_CALLS + (1 if support else 0)}},
         {"stage": "map_spark", "config": {"generate_prompt": field.GENERATE,
                                           "expand_prompt": field.EXPAND}},
         {"stage": "map_pattern_lock", "config": {"merge_prompt": field.MERGE,
                                                  "filter_prompt": field.FILTER}},
         {"stage": "map_attack", "config": {"attack_contract": attack.ATTACK_CONTRACT,
                                            "matcher_prompt": attack.MATCHER}},
-        {"stage": "map_cite", "config": {}},
+        {"stage": "map_cite", "config": {"misquote_threshold": cite.MISQUOTE_THRESHOLD}},
     ]
     if support:
         stages.append({"stage": "map_support", "config": {"support_prompt": cite.SUPPORT}})
@@ -154,7 +156,7 @@ def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | N
         }
     if name == "proposer":  # settle is resolver-only; verify now gates the Proposer too
         return {"name": "proposer", "pipeline": _proposer(seed, depth, verify)}
-    if name == "map":  # SPARRING v1.3 §3.7 — the field is the product; no Cut, no Resolver
+    if name == "map":  # SPARRING v1.4 §3.7 — the field is the product; no Cut, no Resolver
         return {"name": "map", "policy": {"independence": "preferred"}, "pipeline": _map()}
     if name == "frame":  # front-door classifier only — settle/verify/seed/depth are no-ops
         return {"name": "frame", "pipeline": [{"stage": "frame", "roles": {"framer": _FRAMER}}]}

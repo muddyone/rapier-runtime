@@ -1,20 +1,27 @@
-"""map_attack: one completeness attack per region, and the "new?" matcher.
+"""map_attack: one completeness attack per unit, and the "new?" matcher.
 
-SPARRING spec v1.3 §3.7, "Each region gets a probe and an attack" and "'New' is
-a judgment, disclosed and biased toward caution".
+SPARRING spec v1.4 §3.7, "Each region gets a probe and an attack" and "'New' is
+a judgment, disclosed and biased toward caution". Every rule written for a
+region applies to a unit (a region, or a declared block).
 
 The attack contract and the matcher prompt are fixed templates carried in the
 manifest config, so the method hash covers them. A reply counts as an attack
 only if it carries candidates, each with an anchor, or ``none_found`` with what
 was searched. Anything else (a crash, an empty or malformed reply) is recorded
-as **no attack**, which can never make a region HELD.
+as **no attack**, which can never make a unit HELD.
 
-The matcher judges each candidate on its own call. Ties go to *new*, and so does
-a matcher call that crashes or replies off-contract: the rider then says the
-matcher did not run for that candidate. A false "not new" is the error that
-produces a false HELD, so every "not new" is shown beside the item it matched.
-The matcher is shown only the attacked region's items, so a cross-region
-duplicate counts as new.
+Each candidate keeps the anchor class it CLAIMS (``claimed_class``): a new
+candidate claiming class a or b keeps its unit from HELD whatever the citation
+check later finds, so an attack that misquotes can't produce HELD (v1.4).
+
+The matcher judges all of one attack's candidates in one call, against the
+WHOLE field (v1.4 overlap rule: newness is never judged only against the
+attacked unit's items). A new candidate is credited to the attacking unit and
+tagged with any other unit the matcher says it also fits; a unit's label
+depends only on its own attack. Ties go to *new*, and so does a candidate the
+matcher left out, a reply off-contract, or a matcher call that failed: the rider
+then says the matcher did not judge it. Every "not new" is shown beside the
+item it matched, since a false "not new" is what produces a false HELD.
 """
 from __future__ import annotations
 
@@ -35,9 +42,12 @@ ATTACK_CONTRACT = (
 )
 
 MATCHER = (
-    "You decide whether a CANDIDATE is already in a FIELD of items. It is 'not new' only "
-    "if one field item already says the same thing; if you are unsure, it is new. Respond "
-    'STRICT JSON: {"new": true} or {"new": false, "match": "<the field item id>"}.'
+    "You decide, for each numbered CANDIDATE, whether it is already in the FIELD of items. "
+    "A candidate is 'not new' only if one field item already says the same thing; if you "
+    "are unsure, it is new. For a new candidate, also list any UNITS other than the "
+    "attacked one that it fits. Respond STRICT JSON: "
+    '{"judgments": [{"candidate": <number>, "new": true, "also_fits": ["<unit id>", ...]} '
+    'or {"candidate": <number>, "new": false, "match": "<the field item id>"}]}.'
 )
 
 
@@ -63,8 +73,8 @@ def parse_attack(reply: Any) -> tuple[str, list[dict], str]:
 
 
 def parse_match(reply: Any, field_ids: set[str]) -> tuple[bool, str | None, str]:
-    """``(is_new, matched_id, note)``. Anything but a clean "not new" naming a
-    real field item is new."""
+    """One judgment: ``(is_new, matched_id, note)``. Anything but a clean "not
+    new" naming a real field item is new."""
     if isinstance(reply, dict) and reply.get("new") is False:
         mid = str(reply.get("match") or "")
         if mid in field_ids:
@@ -75,14 +85,45 @@ def parse_match(reply: Any, field_ids: set[str]) -> tuple[bool, str | None, str]
     return True, None, "the matcher replied off-contract, so the candidate counts as new"
 
 
+def parse_matches(reply: Any, n: int, field_ids: set[str], unit_ids: set[str],
+                  attacked: str) -> list[tuple[bool, str | None, str, list[str]]]:
+    """Judgments for candidates 1..n: ``(is_new, matched, note, also_fits)``.
+    A candidate the reply leaves out, or judges twice, counts as new."""
+    out: list[tuple[bool, str | None, str, list[str]]] = [
+        (True, None, "the matcher did not judge this candidate, so it counts as new", [])] * n
+    js = reply.get("judgments") if isinstance(reply, dict) else None
+    if not isinstance(js, list):
+        return [(True, None, "the matcher replied off-contract, so the candidate counts as new", [])] * n
+    seen: dict[int, int] = {}
+    for j in js:
+        if not isinstance(j, dict):
+            continue
+        try:
+            k = int(j.get("candidate"))
+        except (TypeError, ValueError):
+            continue
+        if 1 <= k <= n:
+            seen[k] = seen.get(k, 0) + 1
+            is_new, matched, note = parse_match(j, field_ids)
+            fits = sorted({str(u) for u in (j.get("also_fits") or []) if str(u) in unit_ids
+                           and str(u) != attacked}) if is_new and isinstance(j.get("also_fits"), list) else []
+            out[k - 1] = (is_new, matched, note, fits)
+    for k, cnt in seen.items():
+        if cnt > 1:
+            out[k - 1] = (True, None, "the matcher judged this candidate twice, so it counts as new", [])
+    return out
+
+
 @register_stage("map_attack")
 class MapAttackStage(TransformStage):
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         m = C.state(env)
-        regions = C.region_list(m)
-        if not regions or not m.get("items") and not m.get("probes"):
+        units = C.unit_list(m)
+        if not units or not m.get("items") and not m.get("probes"):
             env.add_trace("map_attack", self.kind, "no recorded frame or field — skipped")
             return env
+        by_id = {r["id"]: r for r in C.region_list(m)}
+        unit_ids = {u["id"] for u in units}
         v = C.vendors(env, ctx)
         attacker = v["challenger"] or v["generator"]
         independent = bool(v["challenger"])
@@ -90,47 +131,50 @@ class MapAttackStage(TransformStage):
         contract = ctx.config.get("attack_contract", ATTACK_CONTRACT)
         matcher = ctx.config.get("matcher_prompt", MATCHER)
         m["attack_contract_hash"] = C.sha256(contract)
-        m["matcher"] = {"vendor": matcher_v, "prompt_hash": C.sha256(matcher)}
+        m["matcher"] = {"vendor": matcher_v, "prompt_hash": C.sha256(matcher), "scope": "whole field"}
         attacks: dict[str, dict] = m.setdefault("attacks", {})
-        for r in regions:
+        unit_listing = "\n".join(f"{u['id']}: {u['name']}" for u in units)
+        for r in units:
             field = list(m.get("items") or [])
             listing = "\n".join(f"{i['id']} [{','.join(i['regions'])}]: {i['text']}" for i in field)
             rec: dict[str, Any] = {"vendor": attacker, "independent": independent, "candidates": []}
             try:
                 reply = C.call(env, role="challenger", vendor=attacker, purpose="completeness-attack",
                                region=r["id"], system=contract,
-                               prompt=(f"REQUEST AND SOURCE:\n{env.request}\n\nREGION {r['id']}: "
-                                       f"{r['name']} — {r['definition']}\n\nFIELD:\n{listing}"))
+                               prompt=(f"REQUEST AND SOURCE:\n{env.request}\n\n{C.unit_text(r, by_id)}"
+                                       f"\n\nFIELD:\n{listing}"))
                 status, cands, note = parse_attack(reply)
             except Exception as exc:  # noqa: BLE001
                 status, cands, note = "error", [], f"the attack crashed: {str(exc)[:200]}"
             rec.update(status=status, note=note)
-            # The matcher sees only this region's items (cost: on the D-100 live run
-            # every matcher call carried the whole ~370k-character field). A duplicate
-            # in another region is then missed and counts as new: cautious, never a
-            # false "not new".
-            own = [i for i in field if r["id"] in i["regions"]]
-            ids = {i["id"] for i in own}
-            own_listing = "\n".join(f"{i['id']}: {i['text']}" for i in own) or "(no items yet)"
-            for c in cands:
+            judgments: list = []
+            if cands:
+                ids = {i["id"] for i in field}
+                numbered = "\n".join(f"{k}. {c['text']}" for k, c in enumerate(cands, 1))
                 try:
                     reply = C.call(env, role="matcher", vendor=matcher_v, purpose="match",
                                    region=r["id"], system=matcher,
-                                   prompt=f"FIELD (this region):\n{own_listing}\n\nCANDIDATE:\n{c['text']}")
-                    is_new, matched, mnote = parse_match(reply, ids)
+                                   prompt=(f"UNITS:\n{unit_listing}\n\nATTACKED UNIT: {r['id']}\n\n"
+                                           f"FIELD:\n{listing or '(no items yet)'}\n\n"
+                                           f"CANDIDATES:\n{numbered}"))
+                    judgments = parse_matches(reply, len(cands), ids, unit_ids, r["id"])
                 except Exception as exc:  # noqa: BLE001
-                    is_new, matched, mnote = True, None, (
-                        f"the matcher did not run ({str(exc)[:120]}), so the candidate counts as new")
-                cand = {"text": c["text"], "anchor": c["anchor"], "new": is_new, "matched": matched,
-                        "matcher_note": mnote}
+                    judgments = [(True, None, f"the matcher did not run ({str(exc)[:120]}), so the "
+                                              "candidate counts as new", [])] * len(cands)
+            for c, (is_new, matched, mnote, fits) in zip(cands, judgments):
+                cand = {"text": c["text"], "anchor": c["anchor"],
+                        "claimed_class": c["anchor"].get("class"), "new": is_new,
+                        "matched": matched, "matcher_note": mnote, "also_fits": fits}
                 if is_new:
-                    item = add_item(m, text=c["text"], anchor=c["anchor"], regions=[r["id"]],
+                    item = add_item(m, text=c["text"], anchor=dict(c["anchor"]), regions=[r["id"]],
                                     origin="completeness-attack", role="challenger", vendor=attacker)
+                    if fits:
+                        item["also_fits"] = fits
                     cand["item_id"] = item["id"]
                 rec["candidates"].append(cand)
             attacks[r["id"]] = rec
         env.add_trace("map_attack", self.kind,
-                      f"regions={len(regions)} attacks_ran="
+                      f"units={len(units)} attacks_ran="
                       f"{sum(1 for a in attacks.values() if a['status'] == 'ran')} "
                       f"independent={independent}")
         return env

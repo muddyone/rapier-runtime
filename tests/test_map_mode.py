@@ -1,4 +1,4 @@
-"""Map mode, SPARRING spec v1.3 §3.7.
+"""Map mode, SPARRING spec v1.4 §3.7.
 
 Runs go through the real Pipeline and the real map stages, with only the model
 call stubbed (``_common.client_for``), so every contract parser runs. Each
@@ -32,7 +32,7 @@ REGIONS = [{"name": "Performance", "definition": "latency and load"},
 
 
 def _gen_items(prompt):
-    rid = re.search(r"REGION (R\d+)", prompt).group(1)
+    rid = re.search(r"UNIT ([RB]\d+)", prompt).group(1)
     return {"items": [{"text": f"{rid} cited risk", "anchor": {"class": "a", "locus": "§1"}},
                       {"text": f"{rid} ground risk",
                        "anchor": {"class": "b", "title": "OWASP ASVS", "entry_id": "V1.2"}}]}
@@ -46,8 +46,13 @@ DEFAULT = {
     F.MERGE: lambda p, v: {"groups": []},
     F.FILTER: lambda p, v: {"wrong_merges": []},
     A.ATTACK_CONTRACT: lambda p, v: {"none_found": True, "searched": "sections 1-2 and the field"},
-    A.MATCHER: lambda p, v: {"new": True},
+    A.MATCHER: lambda p, v: _all_new(p),
 }
+
+
+def _all_new(prompt):
+    n = len(re.findall(r"^\d+\. ", prompt.split("CANDIDATES:")[-1], re.M))
+    return {"judgments": [{"candidate": k, "new": True} for k in range(1, n + 1)]}
 
 
 class _Resp:
@@ -210,13 +215,17 @@ def test_speculative_candidate_does_not_make_a_region_yielding(run):
 def test_not_new_is_shown_beside_its_match(run):
     env = run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
                {"text": "dup", "anchor": {"class": "a", "locus": "§1"}}]},
-               A.MATCHER: lambda p, v: {"new": False, "match": "I1"}})
+               A.MATCHER: lambda p, v: {"judgments": [{"candidate": 1, "new": False, "match": "I1"}]}})
     m = _m(env)
     assert m["gate"]["labels"]["R1"]["label"] == "HELD"
     assert "not new: “dup” matched to I1" in env.meta["report_md"]
 
 
-@pytest.mark.parametrize("bad", [RuntimeError("matcher down"), "nonsense", {"new": False}])
+@pytest.mark.parametrize("bad", [RuntimeError("matcher down"), "nonsense", {"new": False},
+                                 {"judgments": [{"candidate": 1, "new": False}]},
+                                 {"judgments": []},
+                                 {"judgments": [{"candidate": 1, "new": False, "match": "I1"},
+                                                {"candidate": 1, "new": False, "match": "I2"}]}])
 def test_failed_matcher_counts_as_new(run, bad):
     over = bad if not isinstance(bad, dict) else (lambda p, v, b=bad: b)
     env = run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
@@ -432,7 +441,7 @@ def test_control_real_entry_id_is_named(run):
 
 def test_empty_region_is_disclosed(run):
     env = run({F.GENERATE: lambda p, v: {"items": []}})
-    assert "this region yielded no items" in env.meta["report_md"]
+    assert "this unit yielded no items" in env.meta["report_md"]
 
 
 # ── live-run regressions (D-100, plan 19): real loci the first check misread ──
@@ -492,10 +501,10 @@ def test_pattern_lock_runs_per_region_and_says_so(run):
     m = _m(env)
     pl = m["pattern_lock"]
     assert pl["merge_calls"] == 2 and len(seen) == 2          # one per region
-    assert all("FIELD (one region)" in p for p in seen)
-    assert pl["merged_count"] == 2 and pl["scope"] == "within each region"
+    assert all("FIELD (one unit)" in p for p in seen)
+    assert pl["merged_count"] == 2 and pl["scope"] == "within each unit"
     flat = " ".join(env.meta["report_md"].split())
-    assert "in 2 merge call(s) made, within each region; duplicates across regions are not merged" in flat
+    assert "in 2 merge call(s) made, within each unit; duplicates across units are not merged" in flat
 
 
 def test_one_region_merge_failing_is_partial_and_disclosed(run):
@@ -547,16 +556,331 @@ def test_control_real_elided_quote_within_one_section_is_found():
     assert locus_exists('"eu-west"', SOURCE)  # an unelided short quote is still checked whole
 
 
-def test_matcher_sees_only_its_region(run):
+# ── v1.4 overlap: newness against the whole field, credit and tags ───────────
+
+def test_matcher_sees_the_whole_field_in_one_call_per_attack(run):
     seen = []
 
     def matcher(p, v):
         seen.append(p)
-        return {"new": True}
+        return _all_new(p)
 
     run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
-         {"text": "c", "anchor": {"class": "c", "basis": "x"}}]},
+         {"text": "c1", "anchor": {"class": "c", "basis": "x"}},
+         {"text": "c2", "anchor": {"class": "c", "basis": "x"}}]},
          A.MATCHER: matcher})
+    assert len(seen) == 2  # one per unit, not one per candidate
     r1 = seen[0]
-    assert "FIELD (this region)" in r1
-    assert "R1 cited risk" in r1 and "R2 cited risk" not in r1
+    assert "R1 cited risk" in r1 and "R2 cited risk" in r1  # the whole field
+
+
+def test_cross_unit_duplicate_is_not_new_and_overlap_is_tagged(run):
+    """v1.4: a candidate already in another unit is not new; a new one is
+    credited to the attacking unit and tagged with others it fits; the other
+    unit's label depends only on its own attack."""
+    def attack(p, v):
+        if "UNIT R1" in p:
+            return {"candidates": [{"text": "R2 cited risk again", "anchor": {"class": "a", "locus": "§1"}},
+                                   {"text": "shared risk", "anchor": {"class": "c", "basis": "x"}}]}
+        return {"none_found": True, "searched": "all"}
+
+    def matcher(p, v):
+        m = re.search(r"^(I\d+) \[R2\]: R2 cited risk$", p, re.M)
+        return {"judgments": [{"candidate": 1, "new": False, "match": m.group(1)},
+                              {"candidate": 2, "new": True, "also_fits": ["R2", "R9", "R1"]}]}
+
+    env = run({A.ATTACK_CONTRACT: attack, A.MATCHER: matcher})
+    m = _m(env)
+    c1, c2 = m["attacks"]["R1"]["candidates"]
+    assert c1["new"] is False and c2["new"] is True and c2["also_fits"] == ["R2"]
+    item = next(i for i in m["items"] if i["text"] == "shared risk")
+    assert item["regions"] == ["R1"] and item["also_fits"] == ["R2"]
+    assert m["gate"]["labels"]["R1"]["label"] == "HELD"   # the only new one is class c
+    assert m["gate"]["labels"]["R2"]["label"] == "HELD"   # its own attack held
+    assert "credited to R1, also fits R2" in env.meta["report_md"]
+
+
+# ── v1.4 labels: a new candidate counts by the class it CLAIMS ─────────────────
+
+def test_misquoting_attack_cannot_produce_held(run):
+    """The candidate claims class a with a misquote: the check demotes the item
+    to c, but the unit is YIELDING, not HELD."""
+    env = run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
+        {"text": "gap", "anchor": {"class": "a",
+         "locus": '§2: "Rollout happens region by region, beginning with eu-west."'}}]}
+        if "UNIT R2" in p else {"none_found": True, "searched": "all"}})
+    m = _m(env)
+    c = m["attacks"]["R2"]["candidates"][0]
+    assert c["claimed_class"] == "a" and c["anchor"]["class"] == "c" and c["anchor"]["misquoted"]
+    assert m["gate"]["labels"]["R2"]["label"] == "YIELDING"
+
+
+def test_control_new_speculative_candidate_keeps_held(run):
+    env = run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
+        {"text": "maybe", "anchor": {"class": "c", "basis": "a hunch"}}]}})
+    assert _m(env)["gate"]["labels"]["R1"]["label"] == "HELD"
+
+
+# ── v1.4 class a check: misquoted vs fabricated ──────────────────────────────
+
+@pytest.mark.parametrize("locus,status", [
+    ('§2: "Rollout happens region by region, starting with eu-west."', "found"),
+    ('§2: "rollout happens   REGION by **region**, starting with eu-west"', "found"),   # normalized
+    ('§2: "Rollout happens region by region, beginning with eu-west."', "misquoted"),  # one word
+    ('§1: "The service must answer within 300 ms."', "fabricated"),                    # a number
+    ('§1: "The service should answer within 200 ms."', "fabricated"),                  # a modal
+    ('§1: "The service must not answer within 200 ms."', "fabricated"),                # a negation
+    ('§2: "Deployment is fully automated across every cluster."', "fabricated"),       # nothing close
+])
+def test_class_a_check_statuses(locus, status):
+    from rapier.stages.map.cite import check_locus
+    assert check_locus(locus, SOURCE)["status"] == status
+
+
+def test_misquote_shows_the_nearest_passage():
+    from rapier.stages.map.cite import check_locus
+    v = check_locus('"Rollout happens region by region, beginning with eu-west."', SOURCE)
+    assert v["passage"] == "rollout happens region by region starting with eu-west"
+    assert v["similarity"] >= 0.8
+
+
+def test_misquote_threshold_comes_from_the_manifest():
+    from rapier.stages.map.cite import check_locus
+    loc = '"Rollout happens region by region, beginning with eu-west."'
+    assert check_locus(loc, SOURCE, threshold=0.95)["status"] == "fabricated"
+    cfg = next(s for s in load_preset("map").stages if s.stage == "map_cite").config
+    assert cfg["misquote_threshold"] == 0.8  # in the manifest, so in the method hash
+
+
+def test_ellipsis_fragment_is_judged_on_its_own():
+    from rapier.stages.map.cite import check_locus
+    ok = check_locus('§2: "Rollout happens region by region … starting with eu-west."', SOURCE)
+    mis = check_locus('§2: "Rollout happens … by region, beginning with eu-west."', SOURCE)  # 4 of 5 words
+    fab = check_locus('§2: "Rollout happens region by region … never eu-west."', SOURCE)
+    assert ok["status"] == "found"
+    assert mis["status"] == "misquoted" and mis["quote"] == "by region, beginning with eu-west."
+    assert check_locus('§2: "Rollout happens … beginning with the eu-west."', SOURCE)["status"] == "fabricated"
+    assert fab["status"] == "fabricated"
+
+
+def test_ellipsis_quote_must_be_within_the_cited_section():
+    from rapier.stages.map.cite import check_locus
+    # both fragments are real, in order, but in §1 and §2: cited §2, so it fails
+    v = check_locus('§2: "The service must answer … starting with eu-west"', SOURCE)
+    assert v["status"] == "fabricated"
+
+
+def test_misquoted_item_is_demoted_and_shown_not_failed(run):
+    env = run({F.GENERATE: lambda p, v: {"items": [
+        {"text": "x", "anchor": {"class": "a",
+         "locus": '§2: "Rollout happens region by region, beginning with eu-west."'}}]}})
+    m = _m(env)
+    assert m["gate"]["verdict"] != "FAIL"
+    flat = " ".join(env.meta["report_md"].split())
+    assert "MISQUOTED, demoted to speculative" in flat
+    assert "nearest source passage “rollout happens region by region starting with eu-west”" in flat
+
+
+def test_more_than_ten_percent_misquoted_is_review(run):
+    mis = '§2: "Rollout happens region by region, beginning with eu-west."'
+    good = '§2: "Rollout happens region by region, starting with eu-west."'
+
+    def gen(p, v, loci):
+        return {"items": [{"text": f"t{k}", "anchor": {"class": "a", "locus": loc}}
+                          for k, loc in enumerate(loci)]}
+
+    bad_env = run({F.GENERATE: lambda p, v: gen(p, v, [mis] + [good] * 4)})   # 2 of 10 = 20%
+    ok_env = run({F.GENERATE: lambda p, v: gen(p, v, [mis] + [good] * 9)})    # 2 of 20 = 10%
+    assert any("misquoted" in r for r in _m(bad_env)["gate"]["review"])
+    assert not any("misquoted" in r for r in _m(ok_env)["gate"]["review"])
+
+
+# ── v1.4 frame size, blocks and the call plan ────────────────────────────────
+
+def _regions(n):
+    return [{"name": f"Area {k}", "definition": f"area {k} of the plan"} for k in range(1, n + 1)]
+
+
+def test_supplied_frame_above_the_cap_is_refused_before_any_call(run):
+    env = run(regions=_regions(13))
+    m = _m(env)
+    assert m["calls"] == [] and m["stopped"]["refused"] is True
+    assert map_final_state(m)[0] == "refuse"
+    assert "above the cap of 12" in env.meta["report_md"]
+
+
+def test_control_twelve_regions_run(run):
+    env = run(regions=_regions(12))
+    m = _m(env)
+    assert not m.get("stopped") and len(m["frame"]["units"]) == 12
+
+
+def test_declared_higher_cap_is_stated(run):
+    env = run(regions=_regions(13), map_max_units=13)
+    m = _m(env)
+    assert not m.get("stopped") and m["frame"]["max_units"] == 13
+    assert "Units: 13, cap 13 (declared by the frame)" in env.meta["report_md"]
+
+
+def test_blocked_frame_runs_per_block_and_labels_claim_nothing_per_region(run):
+    regs = _regions(13)
+    blocks = [{"name": "First half", "basis": "section", "members": [f"Area {k}" for k in range(1, 8)]},
+              {"name": "Second half", "basis": "section", "members": [f"R{k}" for k in range(8, 14)]}]
+    env = run(regions=regs, map_blocks=blocks)
+    m = _m(env)
+    units = m["frame"]["units"]
+    assert [u["id"] for u in units] == ["B1", "B2"] and units[1]["members"][0] == "R8"
+    assert sum(1 for c in m["calls"] if c["purpose"] == "generate") == 2
+    assert set(m["gate"]["labels"]) == {"B1", "B2"}
+    flat = " ".join(env.meta["report_md"].split())
+    assert "HELD for a block of 7 regions, attacked together; the attack was not run region by region." in flat
+    assert "R8 Area 8: area 8 of the plan" in flat  # members listed verbatim
+
+
+@pytest.mark.parametrize("blocks,why", [
+    ([{"name": "A", "basis": "section", "members": ["R1"]},
+      {"name": "B", "basis": "lens", "members": ["R2"]}], "mix two seams"),
+    ([{"name": "A", "basis": "section", "members": ["R1"]}], "regions in no block"),
+    ([{"name": "A", "basis": "section", "members": ["R1", "R1", "R2"]}], "more than one block"),
+    ([{"name": "A", "basis": "section", "members": ["R1", "Nope"]}], "not a region"),
+    ([{"name": "A", "members": ["R1", "R2"]}], "needs a basis"),
+])
+def test_invalid_blocks_are_refused(run, blocks, why):
+    env = run(map_blocks=blocks)
+    m = _m(env)
+    assert m["calls"] == [] and why in m["stopped"]["cause"]
+    assert map_final_state(m)[0] == "refuse"
+
+
+def test_drafted_frame_above_the_cap_is_grouped_by_the_framer_not_the_generator(run):
+    def block(p, v):
+        ids = re.findall(r"^(R\d+) ", p, re.M)
+        return {"basis": "lens", "blocks": [{"name": "Odd", "members": ids[0::2]},
+                                            {"name": "Even", "members": ids[1::2]}]}
+
+    env = run({FR.FRAME_DRAFT: lambda p, v: {"regions": _regions(14)},
+               FR.FRAME_BLOCK.format(cap=12): block}, regions=None)
+    m = _m(env)
+    grp = [c for c in m["calls"] if c["purpose"] == "frame-block"]
+    assert len(grp) == 1 and grp[0]["role"] == "framer" and grp[0]["vendor"] == "openai"
+    assert [u["id"] for u in m["frame"]["units"]] == ["B1", "B2"]
+    assert m["frame"]["recorded_at_call"] == 3  # draft, block, attack: all before SPARK
+
+
+def test_frame_attack_addition_past_the_cap_stops_before_generation(run):
+    env = run({FR.FRAME_ATTACK: lambda p, v: {"missing_regions": [
+        {"name": "Security", "definition": "abuse", "reason": "not covered"}]}}, regions=_regions(12))
+    m = _m(env)
+    assert m["stopped"]["refused"] is False and "13 units" in m["stopped"]["cause"]
+    assert not any(c["purpose"] == "generate" for c in m["calls"])
+    g = m["gate"]
+    assert g["verdict"] == "REVIEW" and "incomplete run: stopped before generation" in g["review"]
+    assert map_final_state(m)[0] == "defer"
+
+
+def test_plan_over_the_call_budget_does_not_start(run):
+    env = run(map_max_calls=12)   # 1 frame-attack + 6 per unit x 2 units = 13
+    m = _m(env)
+    assert m["calls"] == [] and m["plan"]["planned_calls"] == 13
+    assert map_final_state(m)[0] == "refuse"
+    assert "over the call budget of 12" in env.meta["report_md"]
+
+
+def test_control_plan_within_the_call_budget_runs_and_reports_planned_and_actual(run):
+    env = run(map_max_calls=13)
+    m = _m(env)
+    assert not m.get("stopped") and len(m["calls"]) <= 13
+    flat = " ".join(env.meta["report_md"].split())
+    assert "Planned: 13 model call(s) at most (6 per unit over 2 unit(s), plus the frame calls), " \
+           "under a call budget of 13" in flat
+    assert f"Actual: {len(m['calls'])} attempted" in flat
+
+
+def test_unit_cut_short_by_the_dollar_cap_names_its_cause(run):
+    from rapier import budget
+
+    def attack(p, v):
+        if "UNIT R2" in p:
+            raise budget.BudgetExceeded("dollar cap $1.00 reached")
+        return {"none_found": True, "searched": "all"}
+
+    env = run({A.ATTACK_CONTRACT: attack})
+    g = _m(env)["gate"]
+    assert any("stopped at the dollar cap" in w for w in g["labels"]["R2"]["why"])
+    assert not any("dollar cap" in w for w in g["labels"]["R1"]["why"])
+    assert any("units cut short: R2" in r for r in g["review"])
+
+
+# ── v1.4 inputs: MCP and CLI carry blocks, a higher cap and a call budget ──────
+
+def test_mcp_map_passes_blocks_cap_and_call_budget(monkeypatch):
+    from rapier.mcp import tools
+
+    seen = {}
+
+    class _Pipe:
+        def run(self, request, **kw):
+            seen.update(kw["seed_meta"])
+            raise RuntimeError("stop here")
+
+    class _Preset:
+        policy = None
+
+        def build(self):
+            return _Pipe()
+
+    monkeypatch.setattr(tools, "preflight_error", lambda: None)
+    monkeypatch.setattr(tools, "load_preset", lambda *a, **k: _Preset())
+    blocks = [{"name": "A", "basis": "lens", "members": ["R1"]}]
+    with pytest.raises(RuntimeError, match="stop here"):
+        tools.run_map("x", regions=["R"], blocks=blocks, max_units=20, max_calls=50)
+    assert seen["map_blocks"] == blocks and seen["map_max_units"] == 20 and seen["map_max_calls"] == 50
+    assert seen["map_regions"] == ["R"]
+
+
+def test_cli_map_reads_a_frame_file(monkeypatch, tmp_path):
+    import rapier.cli as cli
+
+    seen = {}
+    monkeypatch.setattr(cli, "_run", lambda preset, req, ld, seed_meta=None, **k: seen.update(seed_meta) or 0)
+    monkeypatch.setattr("rapier.onboarding.preflight_error", lambda: None)
+    f = tmp_path / "frame.json"
+    f.write_text(json.dumps({"regions": ["A", "B"], "blocks": [
+        {"name": "All", "basis": "section", "members": ["A", "B"]}], "max_units": 14}))
+    assert cli.main(["map", "--frame", str(f), "--max-calls", "40", "--request", "request text"]) == 0
+    assert seen["map_regions"] == ["A", "B"] and seen["map_max_units"] == 14
+    assert seen["map_blocks"][0]["members"] == ["A", "B"] and seen["map_max_calls"] == 40
+
+
+# ── D-100 re-score under v1.4: real loci the checker misread ───────────────────
+
+D100_SOURCE = """## 7. Plan
+1. **`inventory.sh --no-fetch`.** Everything except the `timeout 8 git fetch --all`
+   per clone (`full-worktree-cleanup/scripts/inventory.sh:95`) is local.
+2. `/sync-now` output is **byte-identical** to today's.
+## 9. Cache
+This plan's `finding_id` is the key.
+## 10. Sinks
+       │ loom-audit-sweep │──write──▶│ cache │
+"""
+
+
+@pytest.mark.parametrize("locus", [
+    "P0 Exit 2: '/sync-now output is byte-identical to today's'",          # apostrophe in a quote
+    "Everything except the timeout 8 git fetch --all per clone "
+    "(full-worktree-cleanup/scripts/inventory.sh:95) is local.",            # "( `x`" folding
+    "finding_id",                                                           # a bare identifier
+    '§10: "loom-audit-sweep │──write──▶│ cache"',                            # box drawing folded
+    '§7: "Everything except the" and §9: "is the key"',                     # each quote, its own section
+])
+def test_d100_real_loci_are_found(locus):
+    from rapier.stages.map.cite import check_locus
+    assert check_locus(locus, D100_SOURCE)["status"] == "found"
+
+
+# An ellipsis quote is held to its cited section; a quote with no ellipsis only
+# needs to be in the source (v1.4), so the control for scoping uses an ellipsis.
+@pytest.mark.parametrize("locus", ["cache", "1234567", '§7: "This plan\'s … is the key"'])
+def test_control_weak_or_misplaced_loci_are_not_found(locus):
+    from rapier.stages.map.cite import check_locus
+    assert check_locus(locus, D100_SOURCE)["status"] != "found"

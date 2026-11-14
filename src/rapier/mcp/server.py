@@ -230,18 +230,23 @@ def build_server():
 
     @server.tool()
     async def map(
-        request: str, regions: list | None = None, max_usd: float = 0, timeout_s: float = 0, ctx: Context = None,
+        request: str, regions: list | None = None, blocks: list | None = None, max_units: int = 0,
+        max_calls: int = 0, max_usd: float = 0, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
-        """Map a problem space instead of deciding (SPARRING spec v1.3 §3.7): the
-        field of items, by region, with a coverage rider and a map gate
+        """Map a problem space instead of deciding (SPARRING spec v1.4 §3.7): the
+        field of items, by unit, with a coverage rider and a map gate
         (PASS | REVIEW | FAIL). ``regions`` is the search frame (names, or
-        {name, definition}); without it one is drafted and marked drafted. The
+        {name, definition}); without it one is drafted and marked drafted. At
+        most 12 units (``max_units`` raises it); above that, ``blocks`` groups the
+        regions: [{name, basis: section|lens, members: [region id or name]}].
+        ``max_calls`` > 0 is a call budget: a plan over it does not start. The
         citation check and the per-region completeness attacks always run. No
         ranking and no item budget. ``timeout_s`` > 0 caps the run."""
         return await _run_with_progress(
             tools.run_map, ctx, _stage_total("map"),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
             max_usd=max_usd or None, request=request, regions=regions,
+            blocks=blocks, max_units=max_units or None, max_calls=max_calls or None,
         )
 
     @server.tool()

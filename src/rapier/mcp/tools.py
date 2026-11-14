@@ -66,6 +66,7 @@ def _run(
     frame: dict[str, Any] | None = None,
     regions: list[Any] | None = None,
     max_usd: float | None = None,
+    map_frame: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     err = preflight_error()
     if err:
@@ -101,6 +102,9 @@ def _run(
         seed_meta["frame"] = frame
     if regions:
         seed_meta["map_regions"] = list(regions)
+    for k, v in (map_frame or {}).items():
+        if v not in (None, [], 0):
+            seed_meta[f"map_{k}"] = v
     env = preset.build().run(
         request, ledger_root=ledger_root, log=log or (lambda _m: None),
         cancel=cancel, seed_meta=seed_meta, max_usd=max_usd,
@@ -157,13 +161,20 @@ def run_map(
     cancel: Callable[[], bool] | None = None,
     ledger_root: str | None = None,
     max_usd: float | None = None,
+    blocks: list[Any] | None = None,
+    max_units: int | None = None,
+    max_calls: int | None = None,
 ) -> dict[str, Any]:
-    """Map mode (SPARRING spec v1.3 §3.7): the field itself, with its coverage
+    """Map mode (SPARRING spec v1.4 §3.7): the field itself, with its coverage
     rider and map gate. ``regions`` is the search frame (names, or
     ``{name, definition}``); without it a separate Frame call drafts one and the
-    rider marks it drafted. The citation check and the attacks always run: no
+    rider marks it drafted. Above 12 units (or ``max_units``), ``blocks`` groups
+    the regions: ``[{name, basis: section|lens, members: [region id or name]}]``.
+    ``max_calls`` is the call budget: a plan over it does not start. The citation check and the attacks always run: no
     argument turns them off."""
-    return _run("map", request, 0, "gate", False, log, cancel, ledger_root, regions=regions, max_usd=max_usd)
+    return _run("map", request, 0, "gate", False, log, cancel, ledger_root, regions=regions,
+                max_usd=max_usd,
+                map_frame={"blocks": blocks, "max_units": max_units, "max_calls": max_calls})
 
 
 def run_frame(

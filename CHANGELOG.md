@@ -34,6 +34,42 @@ The cap holds per run and per request:
   preset) call models outside Rapier's model layer, so a capped run refuses
   them and the check reads as not run.
 
+### Changed: map mode follows SPARRING specification v1.4, section 3.7
+
+- **Units and blocks.** A map attacks at most 12 units (a region, or a declared
+  block of regions), unless the frame declares a higher cap (`max_units`).
+  Above the cap, blocks group the regions along one seam (`section` or `lens`).
+  A supplied frame above the cap without blocks, or with invalid blocks, is
+  refused before any call (final state `refuse`). A drafted frame is grouped by
+  the framer, never the Generator. A frame-attack addition that takes the frame
+  past its cap stops the run before generation. Generation, attack and labels
+  run per unit, and a block's label claims nothing about any single region.
+- **Call plan.** Before generation the run computes its planned calls, an upper
+  bound (6 per unit plus the frame calls, 7 with the support check). Over a
+  declared call budget (`--max-calls`, MCP `max_calls`), it does not start. The
+  rider reports planned and actual calls. A unit cut short by the dollar cap
+  names that cause, and the gate is REVIEW (incomplete run).
+- **Labels by claimed class.** A new attack candidate claiming class a or b
+  keeps its unit from HELD, whatever the citation check finds.
+- **Overlap.** The matcher judges each attack's candidates in one call, against
+  the whole field. A new candidate is credited to the attacking unit and tagged
+  with any other unit it fits.
+- **Class a check.** A quote that fails but is at least 0.8 word-level similar
+  to a same-length passage, with no negation, modal or number among the
+  differing words, is *misquoted*: demoted to class c and shown beside the
+  passage. The threshold is in the manifest. Anything else fails as fabricated.
+  An ellipsis quote must match in order within its cited section, and a failed
+  fragment is judged on its own. This replaces the v1.3 build's 300-character
+  gap and three-word minimum for ellipsis quotes.
+- **Gate.** REVIEW when more than 10% of class a anchors are misquoted.
+- **Checker fixes found by re-scoring the D-100 record:** a locus with two
+  sections checks each quote against its own section; box-drawing and arrow
+  characters and literal `\n` fold to spaces; a single-quoted quote may
+  contain an apostrophe; a bare identifier of 6 or more characters found
+  verbatim counts as found.
+- `--frame FILE` (JSON regions, blocks and `max_units`) on `rapier map`; MCP
+  `map` takes `blocks`, `max_units` and `max_calls`.
+
 ### Added: map mode (SPARRING specification v1.3, section 3.7)
 
 Specification: SPARRING v1.3, §3.7 "Terminal divergence: the map", public at

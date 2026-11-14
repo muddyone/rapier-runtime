@@ -1,6 +1,6 @@
 """compose_map: the map and its coverage rider, the map's terminal artifact.
 
-SPARRING spec v1.3 §3.7, "The coverage rider" and "Terminal point". The map is
+SPARRING spec v1.4 §3.7, "The coverage rider" and "Terminal point". The map is
 emitted after Pattern Lock and the completeness attacks; the Cut and the
 Resolver do not run. Raw SPARK output is kept only as a debugging view
 (``map["spark_raw"]``), never rendered as the map.
@@ -26,12 +26,19 @@ UNMEASURED_SENTENCE = "The completeness attack's recovery rate is unmeasured."
 CAPTURE_LINE = ("estimate of how thoroughly the reachable space was sampled; says nothing "
                 "about the unreachable one.")
 
+BLOCK_SENTENCE = ("{label} for a block of {n} regions, attacked together; the attack was not "
+                  "run region by region.")
+
 _CLASS_ORDER = {"a": 0, "b": 1, "c": 2}
 _ORIGIN_ORDER = {"spark": 0, "frame-attack": 1, "completeness-attack": 2}
 
 
+def _units(m: dict) -> list[dict]:
+    return list((m.get("frame") or {}).get("units") or [])
+
+
 def ordered_items(m: dict) -> list[dict]:
-    order = {r["id"]: i for i, r in enumerate(C.region_list(m))}
+    order = {r["id"]: i for i, r in enumerate(_units(m))}
     return sorted(m.get("items") or [], key=lambda it: (
         min((order.get(r, 999) for r in it["regions"]), default=999),
         _CLASS_ORDER.get(it["anchor"].get("class"), 3),
@@ -44,6 +51,9 @@ def map_final_state(m: dict) -> tuple[str, str]:
     a control that decided (the gate's FAIL) is credited; a control that did not
     run defers; otherwise the gate's REVIEW escalates and PASS acts."""
     g = m.get("gate") or evaluate(m)
+    st = m.get("stopped") or {}
+    if st.get("refused"):
+        return "refuse", f"The map did not start: {st['cause']}. No model call was made."
     if g["verdict"] == "FAIL":
         return "block", "Do not rely on this map as it stands: " + "; ".join(g["fail"]) + "."
     if g["did_not_run"]:
@@ -84,7 +94,12 @@ def _item_line(it: dict) -> str:
     if a.get("class") == "a":
         anc = f"cited source: {a.get('locus')}"
         if a.get("citation_check") == "fabricated":
-            anc += " (FABRICATED: not found in the source)"
+            fb = a.get("fabricated") or {}
+            anc += " (FABRICATED: not found in the source" + (f"; {fb['why']}" if fb.get("why") else "") + ")"
+    elif a.get("misquoted"):
+        anc = (f"MISQUOTED, demoted to speculative: cited {a.get('locus')}; the quote "
+               f"“{a.get('quote')}” is not in the source; nearest source passage "
+               f"“{a.get('nearest_passage')}” (word-level similarity {a.get('similarity')})")
     elif a.get("class") == "b":
         anc = f"cited ground: {a.get('title')}, {a.get('entry_id')}"
     else:
@@ -93,7 +108,9 @@ def _item_line(it: dict) -> str:
             anc += f" ({a['note']})"
     extra = [f"from {it['origin']}, {it['role']} on {it['vendor']}"]
     if len(it["regions"]) > 1:
-        extra.append("regions " + ", ".join(it["regions"]))
+        extra.append("units " + ", ".join(it["regions"]))
+    if it.get("also_fits"):
+        extra.append("also fits " + ", ".join(it["also_fits"]))
     if it.get("merged_ids"):
         extra.append("merged " + ", ".join(it["merged_ids"]))
     if it.get("support"):
@@ -113,7 +130,9 @@ def render_map(env: Envelope) -> str:
               _para(f"Final state: {state.upper()}. {nxt}\n\nMap gate: {g['verdict']}. "
                     f"Overall coverage label: {g['overall']}."))
 
-    regions = C.region_list(m)
+    regions = _units(m)
+    all_regions = C.region_list(m)
+    by_rid = {r["id"]: r for r in all_regions}
     body = []
     items = ordered_items(m)
     for r in regions:
@@ -121,7 +140,7 @@ def render_map(env: Envelope) -> str:
         mine = [i for i in items if (i["regions"] or [None])[0] == r["id"]]
         body.append(_bullets([_item_line(i) for i in mine]) if mine else "  (no items)")
         body.append("")
-    L += _sec("THE MAP", "The field, by region; within a region by anchor class, then origin. "
+    L += _sec("THE MAP", "The field, by unit; within a unit by anchor class, then origin. "
                          "Not ranked: which items matter is yours to judge.",
               "\n".join(body).rstrip() or "(no items)")
 
@@ -130,8 +149,22 @@ def render_map(env: Envelope) -> str:
     fa = m.get("frame_attack") or {}
     p1 = [f"Search frame ({f.get('source', 'none')}" + (f", drafted on {f.get('drafted_by')}" if f.get("drafted_by") else "")
           + f"), hash {str(f.get('hash', ''))[:19]}:"]
-    p1 += [f"  {r['id']} {r['name']}: {r['definition']}" + ("  (added by the frame-attack: "
-           + (r['added'].get('reason') or 'no reason given') + ")" if r.get("added") else "") for r in regions]
+    for u in regions:
+        if u.get("kind") == "block":
+            p1.append(f"  {u['id']} block ({u['basis']}): {u['name']}, {len(u['members'])} regions:")
+            p1 += [f"      {rid} {by_rid[rid]['name']}: {by_rid[rid]['definition']}"
+                   for rid in u["members"] if rid in by_rid]
+        else:
+            r = by_rid.get(u["id"], u)
+            p1.append(f"  {r['id']} {r['name']}: {r['definition']}" + (
+                "  (added by the frame-attack: " + (r['added'].get('reason') or 'no reason given') + ")"
+                if r.get("added") else ""))
+    if f.get("units") is not None:
+        p1.append(f"Units: {len(regions)}, cap {f.get('max_units')}"
+                  + (" (declared by the frame)" if f.get("max_units") not in (None, 12) else "") + ".")
+    st = m.get("stopped")
+    if st:
+        p1 += ["", f"STOPPED before generation: {st['cause']}."]
     p1 += ["", f"Frame-attack: {fa.get('status', 'not run')}" + (f" on {fa.get('vendor')}" if fa.get("vendor") else "")
            + ("" if fa.get("independent", False) else " (not independent: same vendor as the Generator)")
            + (f". {fa.get('note')}" if fa.get("note") else "")
@@ -144,15 +177,20 @@ def render_map(env: Envelope) -> str:
         lab = g["labels"].get(r["id"], {})
         n_items = sum(1 for i in items if r["id"] in i["regions"])
         p2.append(f"{r['id']}: {lab.get('label')}" + (f" ({'; '.join(lab.get('why'))})" if lab.get("why") else "")
-                  + ("; this region yielded no items" if n_items == 0 and lab.get("label") != "UNPROBED" else ""))
+                  + ("; this unit yielded no items" if n_items == 0 and lab.get("label") != "UNPROBED" else ""))
+        if r.get("kind") == "block" and lab.get("label"):
+            p2.append("  " + BLOCK_SENTENCE.format(label=lab["label"], n=len(r["members"])))
         for c in (attacks.get(r["id"]) or {}).get("candidates", []):
             if not c.get("new"):
                 p2.append(f"  not new: “{c['text']}” matched to {c.get('matched')}")
             elif c.get("matcher_note"):
                 p2.append(f"  counted as new: “{c['text']}” ({c['matcher_note']})")
+            if c.get("new") and c.get("also_fits"):
+                p2.append(f"  credited to {r['id']}, also fits {', '.join(c['also_fits'])}: “{c['text']}”")
     p2.append(f"Overall: {g['overall']}. HELD means only that this Challenger, under this "
               "contract, found nothing more; it does not mean exhaustive, even relative to the frame.")
-    L += _sec("2. REGION LABELS", "Probed, attacked and held, region by region.", "\n".join(p2))
+    L += _sec("2. REGION LABELS", "Probed, attacked and held, unit by unit (a unit is a region "
+                                  "or a declared block).", "\n".join(p2))
 
     claim = ("PASS says every region's attack held, every cited source locus exists, and every "
              "named ground is named specifically. It does not say the map is complete, that a "
@@ -167,8 +205,14 @@ def render_map(env: Envelope) -> str:
     cls = {k: sum(1 for i in items if i["anchor"].get("class") == k) for k in ("a", "b", "c")}
     org = {k: sum(1 for i in items if i.get("origin") == k) for k in _ORIGIN_ORDER}
     sc = m.get("support_check") or {}
+    n_mis = sum(1 for i in items if i["anchor"].get("misquoted"))
+    claimed_a = cls["a"] + n_mis
     p4 = [f"Anchor classes: a (cited source) {cls['a']} ({cls['a'] / n:.0%}), b (cited ground) "
           f"{cls['b']} ({cls['b'] / n:.0%}), c (speculative) {cls['c']} ({cls['c'] / n:.0%}).",
+          f"Misquoted class a anchors, demoted to c: {n_mis}"
+          + (f" of {claimed_a} claimed ({n_mis / claimed_a:.0%})" if claimed_a else "")
+          + f"; threshold {(m.get('citation_check') or {}).get('misquote_threshold', 0.8)} "
+            "word-level similarity, no negation, modal or number among the differing words.",
           "Support check: " + (f"ran on {sc.get('vendor')}: {sc.get('counts')} (a model judgment)"
                                if sc.get("status") == "ran" else
                                "did not run" + (f" ({sc.get('reason')})" if sc.get("reason") else "")
@@ -182,7 +226,7 @@ def render_map(env: Envelope) -> str:
                f"in {pl.get('merge_calls', 0)} merge call(s) "
                f"{'attempted' if pl.get('status') in ('did-not-run', 'partial') else 'made'}, "
                f"{pl.get('scope', 'over the whole field')}"
-               + ("; duplicates across regions are not merged" if pl.get("scope") == "within each region" else "")
+               + ("; duplicates across units are not merged" if pl.get("scope") == "within each unit" else "")
                + (f"; merges undone by the Challenger: {', '.join(pl['unmerged'])}" if pl.get("unmerged") else "")
                + (f". Pattern Lock did not run for: {pl.get('reason')}" if pl.get("status") in ("did-not-run", "partial") else "")
                + ".") if pl else "Pattern Lock did not run.")
@@ -195,6 +239,17 @@ def render_map(env: Envelope) -> str:
 
     L += _sec("7. LIMITS", "Fixed sentences; they appear on every map.",
               _para(LIMIT_SENTENCE + " " + UNMEASURED_SENTENCE))
+
+    plan = m.get("plan") or {}
+    calls = m.get("calls") or []
+    L += _sec("CALLS", "Planned before generation, and what ran.",
+              _para(f"Planned: {plan.get('planned_calls', 'not computed')} model call(s) at most"
+                    + (f" ({plan.get('per_unit_calls')} per unit over {plan.get('units')} unit(s), plus "
+                       "the frame calls)" if plan.get("units") else "")
+                    + (f", under a call budget of {plan['max_calls']}" if plan.get("max_calls") is not None
+                       else ", no call budget declared")
+                    + f". Actual: {len(calls)} attempted, {sum(1 for c in calls if c.get('ok'))} "
+                      f"answered, {sum(1 for c in calls if c.get('stopped_by'))} refused at the dollar cap."))
 
     stage_lines = declared_vs_ran(env)
     if stage_lines:

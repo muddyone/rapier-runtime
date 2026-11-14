@@ -4,6 +4,6 @@ from . import frame  # noqa: F401  (registers the front-door "frame" stage)
 from . import resolver  # noqa: F401  (registers the five Resolver stages)
 from . import proposer  # noqa: F401  (registers spark / pattern_lock / cut)
 from . import reconcile  # noqa: F401  (registers the arithmetic "reconcile" stage)
-from . import map  # noqa: F401  (registers the map-mode stages, spec v1.3 §3.7)
+from . import map  # noqa: F401  (registers the map-mode stages, spec v1.4 §3.7)
 
 __all__ = ["echo", "frame", "resolver", "proposer", "reconcile", "map"]

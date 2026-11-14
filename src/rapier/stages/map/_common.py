@@ -1,4 +1,4 @@
-"""Shared plumbing for map mode (SPARRING spec v1.3 §3.7).
+"""Shared plumbing for map mode (SPARRING spec v1.4 §3.7).
 
 Map mode runs SPARK and Pattern Lock and emits the field itself, with its own
 checks. Everything a check decides is decided in code from the run's own
@@ -7,6 +7,10 @@ record; models only generate, attack and judge "new?".
 State lives in ``env.meta["map"]``. Model calls go through :func:`call`, which
 records each call (role, vendor, region) in ``map["calls"]``: the "probed"
 label is read from that record, never from what a model says about itself.
+
+Generation, attack and labels run per **unit**: a region, or a block of regions
+declared with the frame (v1.4, "Frame size and blocks"). ``unit_list`` is what
+the stages iterate; items carry unit ids in ``regions``.
 """
 from __future__ import annotations
 
@@ -54,13 +58,39 @@ def call(env: Envelope, *, role: str, vendor: str, purpose: str, system: str, pr
          region: str | None = None) -> Any:
     """One model call, recorded before its result is used. Returns parsed JSON,
     or raises; callers decide what a failure means for their check."""
+    from ... import budget
+
     m = state(env)
     rec = {"role": role, "vendor": vendor, "purpose": purpose, "region": region, "ok": False}
     m["calls"].append(rec)
-    text = client_for(vendor).complete(system, prompt).text
+    try:
+        text = client_for(vendor).complete(system, prompt).text
+    except budget.BudgetExceeded as exc:
+        rec.update(error=str(exc)[:200], stopped_by="dollar cap")
+        raise
+    except Exception as exc:  # noqa: BLE001
+        rec["error"] = str(exc)[:200]
+        raise
     rec["ok"] = True
     return parse_json_lenient(text)
 
 
 def region_list(m: dict) -> list[dict]:
     return list(((m.get("frame") or {}).get("regions")) or [])
+
+
+def unit_list(m: dict) -> list[dict]:
+    """The units a map attacks: the frame's blocks, or each region on its own.
+    Empty when the run stopped before generation."""
+    if m.get("stopped"):
+        return []
+    f = m.get("frame") or {}
+    return list(f.get("units") or [])
+
+
+def unit_text(u: dict, regions_by_id: dict[str, dict]) -> str:
+    if u.get("kind") == "block":
+        members = "\n".join(f"  - {rid} {regions_by_id[rid]['name']}: {regions_by_id[rid]['definition']}"
+                            for rid in u["members"] if rid in regions_by_id)
+        return f"UNIT {u['id']} (a block of {len(u['members'])} regions, {u['basis']}): {u['name']}\n{members}"
+    return f"UNIT {u['id']}: {u['name']} — {u['definition']}"
