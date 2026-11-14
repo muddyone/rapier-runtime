@@ -205,3 +205,36 @@ def test_cli_run_author_only_manifest_refused(policy, tmp_path, capsys):
     policy("gate")
     assert cli.main(["run", "--manifest", path, "--request", "x", "--no-save"]) == 2
     assert "below the operator minimum" in capsys.readouterr().err
+
+
+# ── verifier R3-2b: at run time too, a gate before the writer never checked the answer ──
+
+@register_stage("_test_citing_author")
+class _CitingAuthor(TransformStage):
+    writes_answer = True
+
+    def run(self, env, ctx):
+        env.recommendation = "Patch CVE-2021-44228 first; see RFC 9110."
+        env.add_trace("_test_citing_author", self.kind, "wrote")
+        return env
+
+
+def test_gate_before_writer_is_did_not_run_not_nothing_to_check(monkeypatch):
+    from rapier.stages.resolver.compose import citation_outcome, correctness_outcome
+
+    env = _run(["citation_gate", "definitiveness_gate", "_test_citing_author", "compose"])
+    c = citation_outcome(env)
+    assert c[0] == "did-not-run" and "before the final answer" in c[1]
+    assert correctness_outcome(env)[0] == "did-not-run"
+    assert "cited nothing externally checkable" not in env.meta["report_md"]
+
+
+def test_control_gate_after_writer_checks_the_answer(monkeypatch):
+    from rapier.stages.resolver.compose import citation_outcome
+    from rapier.verify import service
+
+    monkeypatch.setattr(service, "verify_artifacts", lambda arts, **k: (
+        [{"artifact_ref": a.get("artifact_ref"), "status": "verified"} for a in arts],
+        {"gate": "PASS", "grounding_rate": 1.0}))
+    env = _run(["_test_citing_author", "citation_gate", "compose"])
+    assert citation_outcome(env) == ("ran", "")

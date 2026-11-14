@@ -49,6 +49,23 @@ def _last(env: Envelope, stage: str):
     return traces[-1] if traces else None
 
 
+def _answer_rewritten_after(env: Envelope, trace) -> bool:
+    """Did a stage that writes the answer run (successfully) after this trace?
+    Then the gate checked an earlier draft, or nothing, not the final answer."""
+    from ...pipeline import writes_answer
+
+    try:
+        at = next(i for i, t in enumerate(env.trace) if t is trace)
+    except StopIteration:
+        return False
+    return any(writes_answer(t.stage) and t.kind != "control"
+               and not (t.data or {}).get("error") and "skipped" not in (t.summary or "")
+               for t in env.trace[at + 1:])
+
+
+_BEFORE_ANSWER = "it ran before the final answer was written, so it never checked it"
+
+
 def correctness_outcome(env: Envelope) -> tuple[str, str]:
     """What happened to the correctness (definitiveness) check, as ``(status, reason)``.
 
@@ -69,6 +86,8 @@ def correctness_outcome(env: Envelope) -> tuple[str, str]:
         pass  # a result with no trace (supplied by the caller): judge the result itself
     elif (last.data or {}).get("error"):
         return "did-not-run", f"the check crashed: {str(last.data['error'])[:200]}"
+    elif _answer_rewritten_after(env, last):
+        return "did-not-run", _BEFORE_ANSWER
     elif "skipped" in (last.summary or ""):
         return "did-not-run", "there was no recommendation to check"
     gate = env.meta.get("definitiveness")
@@ -108,6 +127,8 @@ def citation_outcome(env: Envelope) -> tuple[str, str]:
         return "did-not-run", "the check is not part of this pipeline"
     if (last.data or {}).get("error"):
         return "did-not-run", f"the check crashed: {str(last.data['error'])[:200]}"
+    if _answer_rewritten_after(env, last):
+        return "did-not-run", _BEFORE_ANSWER
     if "skipped" in (last.summary or ""):
         return "nothing-to-check", "the answer cites nothing externally checkable"
     if env.meta.get("citation_verdicts"):
