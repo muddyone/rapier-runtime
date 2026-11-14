@@ -133,8 +133,33 @@ class MapSparkStage(TransformStage):
         return env
 
 
+def _valid_groups(raw: Any, ids: set[str], used: set[str]) -> list[dict]:
+    """Mechanically valid merge groups only: real ids, no item in two groups.
+    An invalid group is ignored, never guessed at."""
+    groups = []
+    for g in raw or []:
+        if not isinstance(g, dict):
+            continue
+        keep = str(g.get("keep", ""))
+        merged = [str(x) for x in (g.get("merged") or []) if str(x) in ids and str(x) != keep]
+        if keep not in ids or keep in used or not merged or any(x in used for x in merged):
+            continue
+        used.update([keep, *merged])
+        groups.append({"keep": keep, "merged": merged})
+    return groups
+
+
 @register_stage("map_pattern_lock")
 class MapPatternLockStage(TransformStage):
+    """Pattern Lock, one region at a time.
+
+    One merge call over the whole field fails quietly on a real map: on the
+    D-100 live run (1,135 items, ~370k characters) the model answered "no
+    groups", which is on-contract and read as "no duplicates". So the field is
+    de-duplicated per region (items by their first region), each call small
+    enough to work through, and the record says how many merge calls ran and
+    that merges are within a region only."""
+
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         m = C.state(env)
         items = m.get("items") or []
@@ -143,56 +168,62 @@ class MapPatternLockStage(TransformStage):
             return env
         v = C.vendors(env, ctx)
         gen, chal = v["generator"], v["challenger"] or v["generator"]
-        ids = {i["id"] for i in items}
-        listing = "\n".join(f"{i['id']}: {i['text']}" for i in items)
-        pl: dict[str, Any] = {"status": "ran", "groups": [], "unmerged": []}
-        try:
-            reply = C.call(env, role="generator", vendor=gen, purpose="merge",
-                           system=ctx.config.get("merge_prompt", MERGE),
-                           prompt=f"REQUEST:\n{env.request}\n\nFIELD:\n{listing}")
-            raw = reply.get("groups") if isinstance(reply, dict) else None
-            if not isinstance(raw, list):
-                raise ValueError("off-contract merge reply")
-        except Exception as exc:  # noqa: BLE001
-            pl.update(status="did-not-run", reason=str(exc)[:200])
-            raw = []
-        used: set[str] = set()
-        groups = []
-        for g in raw:
-            if not isinstance(g, dict):
-                continue
-            keep = str(g.get("keep", ""))
-            merged = [str(x) for x in (g.get("merged") or []) if str(x) in ids and str(x) != keep]
-            if keep not in ids or keep in used or not merged or any(x in used for x in merged):
-                continue  # mechanically invalid group: ignored, never guessed
-            used.update([keep, *merged])
-            groups.append({"keep": keep, "merged": merged})
-        if groups:
-            try:
-                reply = C.call(env, role="challenger", vendor=chal, purpose="filter",
-                               system=ctx.config.get("filter_prompt", FILTER),
-                               prompt=(f"FIELD:\n{listing}\n\nPROPOSED MERGES:\n"
-                                       + "\n".join(f"{g['keep']} <- {g['merged']}" for g in groups)))
-                wrong = set(map(str, (reply or {}).get("wrong_merges") or [])) if isinstance(reply, dict) else set()
-            except Exception as exc:  # noqa: BLE001
-                wrong = set()
-                pl["filter"] = f"did-not-run: {str(exc)[:200]}"
-            pl["unmerged"] = sorted(g["keep"] for g in groups if g["keep"] in wrong)
-            groups = [g for g in groups if g["keep"] not in wrong]
         by_id = {i["id"]: i for i in items}
+        batches: list[dict] = []
+        groups_all: list[dict] = []
+        unmerged: list[str] = []
+        used: set[str] = set()
+        for r in C.region_list(m):
+            batch = [i for i in items if (i["regions"] or [None])[0] == r["id"]]
+            if len(batch) < 2:
+                continue
+            ids = {i["id"] for i in batch}
+            listing = "\n".join(f"{i['id']}: {i['text']}" for i in batch)
+            rec: dict[str, Any] = {"region": r["id"], "items": len(batch)}
+            try:
+                reply = C.call(env, role="generator", vendor=gen, purpose="merge", region=r["id"],
+                               system=ctx.config.get("merge_prompt", MERGE),
+                               prompt=f"REQUEST:\n{env.request}\n\nFIELD (one region):\n{listing}")
+                raw = reply.get("groups") if isinstance(reply, dict) else None
+                if not isinstance(raw, list):
+                    raise ValueError("off-contract merge reply")
+                rec["status"] = "ran"
+            except Exception as exc:  # noqa: BLE001
+                rec.update(status="did-not-run", reason=str(exc)[:200])
+                raw = []
+            groups = _valid_groups(raw, ids, used)
+            if groups:
+                try:
+                    reply = C.call(env, role="challenger", vendor=chal, purpose="filter", region=r["id"],
+                                   system=ctx.config.get("filter_prompt", FILTER),
+                                   prompt=(f"FIELD (one region):\n{listing}\n\nPROPOSED MERGES:\n"
+                                           + "\n".join(f"{g['keep']} <- {g['merged']}" for g in groups)))
+                    wrong = set(map(str, (reply or {}).get("wrong_merges") or [])) if isinstance(reply, dict) else set()
+                except Exception as exc:  # noqa: BLE001
+                    wrong = set()
+                    rec["filter"] = f"did-not-run: {str(exc)[:200]}"
+                unmerged += sorted(g["keep"] for g in groups if g["keep"] in wrong)
+                groups = [g for g in groups if g["keep"] not in wrong]
+            rec["groups"] = len(groups)
+            batches.append(rec)
+            groups_all += groups
         drop: set[str] = set()
-        for g in groups:
+        for g in groups_all:
             k = by_id[g["keep"]]
             for x in g["merged"]:
-                src = by_id[x]
                 k["merged_ids"].append(x)
-                k["regions"] = sorted(set(k["regions"]) | set(src["regions"]))
+                k["regions"] = sorted(set(k["regions"]) | set(by_id[x]["regions"]))
                 drop.add(x)
         m["items"] = [i for i in items if i["id"] not in drop]
-        pl["groups"] = groups
-        pl["merged_count"] = len(drop)
-        pl["merged_share"] = round(len(drop) / len(items), 3) if items else 0.0
+        failed = [b for b in batches if b.get("status") != "ran"]
+        status = ("ran" if not failed else "did-not-run" if len(failed) == len(batches) else "partial")
+        pl: dict[str, Any] = {"status": status, "scope": "within each region", "groups": groups_all,
+                              "unmerged": unmerged, "batches": batches, "merge_calls": len(batches),
+                              "merged_count": len(drop),
+                              "merged_share": round(len(drop) / len(items), 3) if items else 0.0}
+        if failed:
+            pl["reason"] = "; ".join(f"{b['region']}: {b.get('reason')}" for b in failed)[:400]
         m["pattern_lock"] = pl
         env.add_trace("map_pattern_lock", self.kind,
-                      f"merged={len(drop)} of {len(items)} status={pl['status']}")
+                      f"merged={len(drop)} of {len(items)} calls={len(batches)} status={status}")
         return env

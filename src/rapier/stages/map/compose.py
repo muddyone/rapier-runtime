@@ -175,9 +175,11 @@ def render_map(env: Envelope) -> str:
 
     pl = m.get("pattern_lock") or {}
     L += _sec("5. PATTERN LOCK MERGES", "Reported, not gated.",
-              (f"{pl.get('merged_count', 0)} item(s) merged ({pl.get('merged_share', 0):.0%} of the SPARK field)"
+              (f"{pl.get('merged_count', 0)} item(s) merged ({pl.get('merged_share', 0):.0%} of the SPARK field), "
+               f"in {pl.get('merge_calls', 0)} merge call(s), {pl.get('scope', 'over the whole field')}"
+               + ("; duplicates across regions are not merged" if pl.get("scope") == "within each region" else "")
                + (f"; merges undone by the Challenger: {', '.join(pl['unmerged'])}" if pl.get("unmerged") else "")
-               + (f". Pattern Lock did not run: {pl.get('reason')}" if pl.get("status") == "did-not-run" else "")
+               + (f". Pattern Lock did not run for: {pl.get('reason')}" if pl.get("status") in ("did-not-run", "partial") else "")
                + ".") if pl else "Pattern Lock did not run.")
 
     cr = capture_recapture(m)

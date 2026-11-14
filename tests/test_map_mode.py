@@ -475,3 +475,35 @@ def test_real_loci_are_found(locus):
 def test_misquotes_and_missing_sections_are_fabricated(locus):
     from rapier.stages.map.cite import locus_exists
     assert not locus_exists(locus, LIVE_SOURCE)
+
+
+# ── Pattern Lock per region (sparring-2's D-100 finding: 0 merges over 1,135 items) ──
+
+def test_pattern_lock_runs_per_region_and_says_so(run):
+    seen = []
+
+    def merge(p, v):
+        seen.append(p)
+        ids = re.findall(r"^(I\d+):", p, re.M)
+        return {"groups": [{"keep": ids[0], "merged": [ids[1]]}]} if len(ids) >= 2 else {"groups": []}
+
+    env = run({F.MERGE: merge})
+    m = _m(env)
+    pl = m["pattern_lock"]
+    assert pl["merge_calls"] == 2 and len(seen) == 2          # one per region
+    assert all("FIELD (one region)" in p for p in seen)
+    assert pl["merged_count"] == 2 and pl["scope"] == "within each region"
+    flat = " ".join(env.meta["report_md"].split())
+    assert "in 2 merge call(s), within each region; duplicates across regions are not merged" in flat
+
+
+def test_one_region_merge_failing_is_partial_and_disclosed(run):
+    def merge(p, v):
+        if "I1:" in p:
+            raise RuntimeError("timeout")
+        return {"groups": []}
+
+    env = run({F.MERGE: merge})
+    pl = _m(env)["pattern_lock"]
+    assert pl["status"] == "partial" and "timeout" in pl["reason"]
+    assert "Pattern Lock did not run for:" in " ".join(env.meta["report_md"].split())
