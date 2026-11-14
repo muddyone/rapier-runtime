@@ -40,9 +40,11 @@ switch the citation check off. The operator can now set a floor:
 
 - **`/etc/rapier/policy.json`** (`%PROGRAMDATA%\rapier\policy.json` on
   Windows), `{"min_verify": "gate"}`. The path is fixed, not taken from the
-  environment, so a caller cannot point Rapier at a different file. Make the
-  file and its folder read-only to the user that runs Rapier: only then does
-  the report call the minimum out of the calling agent's reach.
+  environment, so a caller cannot point Rapier at a different file. The report
+  calls the minimum out of the calling agent's reach only when Rapier is not
+  running as root and neither owns nor can write the file or any folder above
+  it (for example, owned by root, readable by the user that runs Rapier). A
+  file that can't be checked, read or parsed fails closed.
 - **`RAPIER_MIN_VERIFY`** also sets a floor, but whoever launches the process
   controls its environment, so the report always calls it within the caller's
   reach.

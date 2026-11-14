@@ -15,10 +15,11 @@ it:
   Windows ``%PROGRAMDATA%\\rapier\\policy.json``). The path is deliberately NOT
   configurable by environment variable: a path the caller can redirect is a
   floor the caller can remove. The file counts as out of the caller's reach
-  only when this process can write neither the file nor its directory (for
-  example, root-owned and read-only to the user that runs Rapier). If it can,
-  the minimum still applies, but the report says it was within the caller's
-  reach.
+  only when this process is not root and neither owns nor can write the file
+  or any directory above it (for example, root-owned and read-only to the user
+  that runs Rapier). Otherwise the minimum still applies, but the report says
+  it was within the caller's reach. A file that exists but can't be checked,
+  read or parsed fails closed.
 * **``RAPIER_MIN_VERIFY``** environment variable. Applied as a minimum too, but
   always reported as within the caller's reach: whoever launches the process
   sets its environment.
@@ -87,15 +88,47 @@ def _check_level(level, where: str) -> str:
     return level
 
 
-def _writable_by_me(path: str) -> bool:
-    d = os.path.dirname(os.path.abspath(path)) or "."
-    return os.access(path, os.W_OK) or os.access(d, os.W_OK)
+def _out_of_my_reach(path: str) -> bool:
+    """True only if this process has no authority over the policy file.
+
+    File modes alone are not enough: the owner of a file or of any directory
+    above it can chmod it back, or rename the directory and put another file in
+    its place. So the file and every directory up to the root must be neither
+    owned by this process's user nor writable by it, and the process must not be
+    root. Where ownership can't be checked (no ``geteuid``, e.g. Windows), the
+    answer is False: a control is not reported as external unless it is shown
+    to be."""
+    geteuid = getattr(os, "geteuid", None)
+    if geteuid is None:
+        return False
+    me = geteuid()
+    if me == 0:
+        return False
+    cur = os.path.abspath(path)
+    while True:
+        try:
+            st = os.stat(cur)
+        except OSError:
+            return False
+        if st.st_uid == me or os.access(cur, os.W_OK):
+            return False
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            return True
+        cur = parent
 
 
 def _file_minimum() -> tuple[str, str, bool] | None:
     path = POLICY_PATH
-    if not os.path.exists(path):
-        return None
+    try:
+        os.stat(path)
+    except FileNotFoundError:
+        return None  # the only case that means "no policy": the file is not there
+    except OSError as exc:
+        # Can't tell whether a policy exists (e.g. its directory can't be searched).
+        # An operator who locked the directory down meant a policy to apply: fail closed.
+        raise PolicyError(f"operator policy file {path} could not be checked ({exc}); "
+                          "refusing to run without the minimum it may set") from exc
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
@@ -106,7 +139,7 @@ def _file_minimum() -> tuple[str, str, bool] | None:
         raise PolicyError(f"operator policy file {path} has no \"min_verify\" key; "
                           "refusing to run without the minimum it sets")
     level = _check_level(data["min_verify"], f"file {path}")
-    return level, path, not _writable_by_me(path)
+    return level, path, _out_of_my_reach(path)
 
 
 def _env_minimum() -> tuple[str, str, bool] | None:

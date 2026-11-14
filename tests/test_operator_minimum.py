@@ -134,22 +134,90 @@ def test_writable_policy_file_is_not_external(policy):
     assert operator_minimum()[2] is False
 
 
-def test_read_only_policy_file_and_dir_is_external(policy):
-    if hasattr(os, "geteuid") and os.geteuid() == 0:
-        pytest.skip("root can write anything; nothing is external to it")
+def test_read_only_file_i_own_is_not_external(policy):
+    """Verifier R1-2: modes are not authority. A 0444 file in a 0555 directory,
+    both owned by this process, can be chmodded back and rewritten, so it is
+    within reach."""
     path = policy("gate")
     os.chmod(path, 0o444)
     os.chmod(path.parent, 0o555)
     try:
-        if os.access(path, os.W_OK) or os.access(path.parent, os.W_OK):
-            pytest.skip("this filesystem ignores chmod")
-        level, source, external = operator_minimum()
-        assert (level, external) == ("gate", True)
-        with pytest.raises(PolicyError, match="out of the caller's reach"):
+        assert operator_minimum()[2] is False
+        with pytest.raises(PolicyError, match="within the caller's reach"):
             decide_verify("off", "caller")
     finally:
         os.chmod(path.parent, 0o755)
         os.chmod(path, 0o644)
+
+
+def test_external_when_nothing_on_the_path_is_mine(policy, monkeypatch):
+    """The positive case can't be set up unprivileged (it needs a file owned by
+    another user, e.g. root), so ownership and writability are simulated here
+    by patching os.stat's st_uid and os.access."""
+    path = policy("gate")
+    real_stat = os.stat
+    me = os.geteuid()
+
+    class _St:
+        def __init__(self, st):
+            self._st = st
+            self.st_uid = me + 1  # someone else owns every component
+
+        def __getattr__(self, name):
+            return getattr(self._st, name)
+
+    monkeypatch.setattr(OP.os, "stat", lambda p, *a, **k: _St(real_stat(p, *a, **k)))
+    monkeypatch.setattr(OP.os, "access", lambda p, mode: mode != os.W_OK)
+    level, _src, external = operator_minimum()
+    assert (level, external) == ("gate", True)
+    with pytest.raises(PolicyError, match="out of the caller's reach"):
+        decide_verify("off", "caller")
+
+
+def test_one_owned_ancestor_is_enough_to_be_in_reach(policy, monkeypatch):
+    path = policy("gate")
+    real_stat = os.stat
+    me = os.geteuid()
+    mine = str(path.parent.parent)
+
+    class _St:
+        def __init__(self, p, st):
+            self._st = st
+            self.st_uid = me if os.path.abspath(p) == mine else me + 1
+
+        def __getattr__(self, name):
+            return getattr(self._st, name)
+
+    monkeypatch.setattr(OP.os, "stat", lambda p, *a, **k: _St(p, real_stat(p, *a, **k)))
+    monkeypatch.setattr(OP.os, "access", lambda p, mode: mode != os.W_OK)
+    assert operator_minimum()[2] is False
+
+
+def test_root_is_never_external(policy, monkeypatch):
+    policy("gate")
+    monkeypatch.setattr(OP.os, "geteuid", lambda: 0)
+    assert operator_minimum()[2] is False
+
+
+def test_unsearchable_policy_dir_fails_closed(policy, mcp_stubbed):
+    """Verifier R1-1: os.path.exists() is False on EACCES too, so a locked
+    directory used to read as 'no policy' and the run went ahead unfloored."""
+    if hasattr(os, "geteuid") and os.geteuid() == 0:
+        pytest.skip("root can search any directory")
+    with pytest.raises(_Reached):  # control: no file at all is allowed
+        tools.run_spar("ship it?", verify="off")
+    path = policy("gate")
+    os.chmod(path.parent, 0o000)
+    try:
+        if os.access(path.parent, os.X_OK):
+            pytest.skip("this filesystem ignores chmod")
+        out = tools.run_spar("ship it?", verify="off")
+        assert out["ok"] is False and out["refused_by"] == "operator_minimum"
+        assert "could not be checked" in out["error"]
+        with pytest.raises(PolicyError):
+            decide_verify("gate", "caller")  # can't know the floor: refuse every run
+    finally:
+        os.chmod(path.parent, 0o755)
 
 
 @pytest.mark.parametrize("body", ["not json", "{}", '{"min_verify": "loud"}'])

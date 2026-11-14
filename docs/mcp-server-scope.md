@@ -48,7 +48,10 @@ client can render prose or branch on the result:
 An operator minimum (`/etc/rapier/policy.json` `{"min_verify": "gate"}`, or
 `RAPIER_MIN_VERIFY`) refuses a `verify` argument below it with
 `{"ok": false, "refused_by": "operator_minimum"}`. No tool argument can change
-the minimum or the file's path; see `src/rapier/operator_policy.py`.
+the minimum or the file's path; see `src/rapier/operator_policy.py`. It binds callers
+that reach Rapier through its MCP tools or CLI. Code that imports Rapier and
+builds a `Pipeline` directly in its own process is not held to it, and Rapier
+cannot prevent that: keep the policy for agents that only get the tools.
 
 All outputs pass through `secrets.redact_obj` (already the ledger's discipline)
 before leaving the process.
