@@ -1,6 +1,6 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode on a branch, 482 tests)._ A running "where we are /
+_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode v1.4 on a branch, 588 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
@@ -210,17 +210,31 @@ what's next" so a new session can continue without reconstructing from git log.
   `coming-soon.html` is retired. See `site/README.md`.
 
 ## Next (priority order)
-0. **Map mode (SPARRING v1.3 §3.7): built and reviewed, NOT released.** On branch
-   `worktree-demeter-rapier-runtime-2` (not on main; D-101 merges it only together with
-   its release, after a live run passes). `rapier map`, the `map` preset and MCP tool,
-   every check passed by the verifier. First live run (D-100, $20.85) FAILED: a
-   drafted 47-region frame hit the 120-call cap, and the citation check misread real
-   loci (fixed: 871/948 now found). Since then: per-region Pattern Lock, a hard
-   dollar cap (`--max-usd`, `RAPIER_MAX_USD`, never exceeded), matcher scoped to its
-   region. **Waiting on Bart's D-115** (about $8 path: build the v1.4 rules — 12-unit
-   frame cap, misquoted demotion, pre-run budget check — then one capped run of
-   Loom plan 19). Cost lesson: the whole field resent on every attack and matcher
-   call (~90k tokens each) was the bill, not the source.
+0. **Map mode (SPARRING v1.4 §3.7, private at sparring-framework 6036a31b): built
+   and passed by the verifier, NOT released.** On branch
+   `worktree-demeter-rapier-runtime-2` (not on main; D-101, amended by D-115, merges
+   it only with its release, on "plan 19 on-contract"). First live run (D-100,
+   $20.85) FAILED: a drafted 47-region frame hit the 120-call cap, and the citation
+   check misread real loci. Bart chose D-115 a: $0 work first, then ONE run of Loom
+   plan 19, supplied frame, Haiku 5.5 Generator, GPT-5.5 attacker, hard cap $8.
+   - **Dollar cap: passed** (rr-1, fe7b0113). Per-run budget (contextvar),
+     non-finite caps refused, every retry reserved and settled, spend written on
+     every exit, price overrides can't lower a price, incomplete usage charged in
+     full, MCP `max_usd=0` is $0, vendored direct callers refuse under a cap. The
+     D-120 cross-vendor /spar ($1.10) found S-1..S-6; all fixed. A second
+     cross-vendor pass is filed to Bart by rr-1.
+   - **v1.4 rules: passed** (rr-1, 4faa3777 + 1976e28a + 1e2b4d4d). 12-unit cap and
+     blocks, pre-run call plan (`--max-calls`), labels by claimed class, matcher over
+     the whole field (one call per unit), misquoted demotion at 0.8, REVIEW at >10%
+     misquoted; absence claims anchor to a section.
+   - **Blocked on v1.5 (sparring W-24).** A $0 re-score of the D-100 record under
+     v1.4: 890 found, 40 misquoted (4.2%), 18 fabricated, so plan 19 (same source)
+     would likely FAIL. Most of the 18 quote across a box diagram's cells or omit a
+     table column; sparring-2 proposes a v1.5 rule (separators in a table/diagram
+     act like an ellipsis) plus string-escape folding. Not built until v1.5 is
+     decided. Plan 19 frame: 10 supplied regions under the default cap of 12.
+   - Cost lesson: the whole field resent on every call (~90k tokens) was the bill,
+     not the source.
 1. ~~**Confirm the MCP server on Claude Desktop.**~~ **DONE (2026-07-18) — end to
    end.** Desktop (Windows, MSIX-packaged build) launches the `rapier` server (`py
    -m rapier.cli mcp`, `serverInfo 0.3.1`, 7 tools) AND a **live `spar` tool call
