@@ -1,9 +1,26 @@
 # Rapier — dev status
 
-_Last updated: 2026-10-16 (tag v0.6.1, 264 tests)._ A running "where we are /
+_Last updated: 2026-11-14 (tag v0.6.2, 382 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
+- **RELEASED (2026-11-14) — `rapier-runtime` 0.6.2 on PyPI. The six Accountable
+  Agents changes** (from Thomas Gessler's two concept papers,
+  doi:10.5281/zenodo.20687710 and doi:10.5281/zenodo.21850919). Git tag `v0.6.2`
+  (1020a765); https://pypi.org/project/rapier-runtime/0.6.2/. Built by
+  rapier-runtime-2 and passed item by item by the rapier-runtime-1 verifier in
+  the first multi-project team test (D-61); Bart chose 0.6.2 (D-69). In short:
+  an operator minimum for the citation check that a caller can't lower
+  (`/etc/rapier/policy.json`, reported as out of reach only when Rapier neither
+  owns nor can write it), and `require_independent` there; every check reports
+  `ran` / `nothing-to-check` / `did-not-run: <reason>`, judged on its last run;
+  a WHAT RAN section and pre-run manifest checks (`rapier doctor --manifest`);
+  a final state in the papers' six names, with a labelled NON-DECISION (D-67 a);
+  and a method hash (declared and as-run, including vendor bindings and the
+  package code). Full list in `CHANGELOG.md`. Verified from PyPI: a clean
+  install reports 0.6.2 and `rapier doctor` shows the operator minimum and the
+  per-ceremony checks. Follow-up, not blocking: key the "gate before the answer"
+  rule on the pipeline's stage order rather than writers' own traces.
 - **RELEASED (2026-10-16) — `rapier-runtime` 0.6.1 on PyPI. The arithmetic
   check ("WHETHER THE NUMBERS ADD UP") stops flagging correct formulas.** Git
   tag `v0.6.1`; https://pypi.org/project/rapier-runtime/0.6.1/. Reported by
