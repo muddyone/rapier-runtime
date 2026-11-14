@@ -53,6 +53,11 @@ that reach Rapier through its MCP tools or CLI. Code that imports Rapier and
 builds a `Pipeline` directly in its own process is not held to it, and Rapier
 cannot prevent that: keep the policy for agents that only get the tools.
 
+The `map` tool (SPARRING specification v1.3, section 3.7) returns the same shape
+with `verdict` set to the map gate (`PASS | REVIEW | FAIL`) and `coverage` set to
+the overall label (`HELD | YIELDING | UNPROBED`). Its citation check and
+completeness attacks always run; no argument turns them off.
+
 All outputs pass through `secrets.redact_obj` (already the ledger's discipline)
 before leaving the process.
 

@@ -4,6 +4,37 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## Unreleased
+
+### Added: map mode (SPARRING specification v1.3, section 3.7)
+
+`rapier map`, the `map` preset and the MCP `map` tool map a problem space
+instead of deciding: the Proposer's field is the product, with its own checks.
+The Cut and the Resolver do not run.
+
+- **A search frame first.** Supplied with `--region` / `regions`, or drafted by
+  a separate Frame call (never the Generator) and marked drafted. A Challenger
+  on another vendor attacks the frame before any generation; the frame is then
+  recorded with a hash.
+- **Per region:** a scoped generation call (probe), the Challenger's expand
+  pass, and after Pattern Lock one completeness attack under a fixed, hashed
+  contract. A fixed, hashed matcher decides "new?"; ties, and a matcher that
+  fails, count as new. Labels HELD / YIELDING / UNPROBED are read from the
+  run's own record.
+- **Per item:** region(s), anchor class (a cited source, b cited ground, c
+  speculative), origin, role and vendor, merged ids. A class a locus must exist
+  in the source (a miss is a fabricated anchor); a class b anchor needs a title
+  and an entry identifier, or drops to c. An optional support check.
+- **The map gate** (PASS / REVIEW / FAIL) and a **coverage rider** with the
+  frame, region labels, what the gate claims, anchor and origin counts, merges,
+  a coverage estimate only when there are enough trials, and the fixed limit
+  sentences. No item budget and no ranking.
+- **Final states:** FAIL gives block; a check that did not run gives defer; any
+  other REVIEW gives escalate; PASS gives act. With one vendor the attacks run
+  but are not independent, so regions are YIELDING. The operator minimum and
+  `require_independent` apply; a custom map manifest without its checks is
+  refused under a minimum.
+
 ## 0.6.3 — 2026-11-14
 
 ### Fixed: an unreadable policy file is no longer reported as the minimum refusing the run

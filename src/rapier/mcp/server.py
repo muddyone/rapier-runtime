@@ -229,6 +229,22 @@ def build_server():
         )
 
     @server.tool()
+    async def map(
+        request: str, regions: list | None = None, timeout_s: float = 0, ctx: Context = None,
+    ) -> dict:
+        """Map a problem space instead of deciding (SPARRING spec v1.3 §3.7): the
+        field of items, by region, with a coverage rider and a map gate
+        (PASS | REVIEW | FAIL). ``regions`` is the search frame (names, or
+        {name, definition}); without it one is drafted and marked drafted. The
+        citation check and the per-region completeness attacks always run. No
+        ranking and no item budget. ``timeout_s`` > 0 caps the run."""
+        return await _run_with_progress(
+            tools.run_map, ctx, _stage_total("map"),
+            timeout_s=timeout_s or None, ledger_root=ledger_root,
+            request=request, regions=regions,
+        )
+
+    @server.tool()
     async def frame(
         request: str, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:

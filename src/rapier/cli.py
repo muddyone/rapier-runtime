@@ -289,6 +289,18 @@ def main(argv: list[str] | None = None) -> int:
                 help="also surface the Proposer report (the committed option + its standing objections) above the Resolver report",
             )
 
+    mp = sub.add_parser(
+        "map",
+        help="map a problem space instead of deciding (SPARRING v1.3 §3.7): the field by region, "
+             "with a coverage rider and a map gate",
+    )
+    add_common(mp)
+    mp.add_argument(
+        "--region", action="append", metavar="NAME[: DEFINITION]", default=None,
+        help="a region of the search frame (repeatable). Without any, a separate Frame call "
+             "drafts the frame and the rider marks it drafted",
+    )
+
     fr = sub.add_parser(
         "frame",
         help="classify an input (question | proposition | hybrid) and recommend a route — the front-door Presentation",
@@ -369,6 +381,29 @@ def main(argv: list[str] | None = None) -> int:
             print(err, file=sys.stderr)
             return 2
         return _run_frame(request, args.ledger_dir, no_save=getattr(args, "no_save", False))
+
+    if args.cmd == "map":
+        from .onboarding import preflight_error
+        from .operator_policy import PolicyError, decide_independence, decide_verify, stop_message
+
+        err = preflight_error()
+        if err:
+            print(err, file=sys.stderr)
+            return 2
+        try:
+            decision = decide_verify("gate", "fixed by the map command")
+            preset = load_preset("map")
+            decide_independence(getattr(preset, "policy", None))
+        except PolicyError as exc:
+            print(stop_message(exc), file=sys.stderr)
+            return 2
+        regions = []
+        for r in getattr(args, "region", None) or []:
+            name, _, definition = r.partition(":")
+            regions.append({"name": name.strip(), "definition": (definition or name).strip()})
+        seed_meta = {**decision.meta(), **({"map_regions": regions} if regions else {})}
+        return _run(preset, request, args.ledger_dir, seed_meta=seed_meta,
+                    no_save=getattr(args, "no_save", False))
 
     if args.cmd in ("spar", "sparring", "proposer"):
         from .onboarding import preflight_error

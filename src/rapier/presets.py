@@ -120,6 +120,28 @@ def _resolver(settle: int = 0, verify: str = "gate", reconcile: str = "gate") ->
     return stages
 
 
+def _map(support: bool = False) -> list[dict]:
+    """Map mode (SPARRING spec v1.3 §3.7). Every prompt the method relies on is
+    carried here in the manifest config, so the method hash covers the frame
+    prompts, the attack contract and the matcher."""
+    from .stages.map import attack, cite, field, frame
+
+    stages = [
+        {"stage": "map_frame", "config": {"draft_prompt": frame.FRAME_DRAFT,
+                                          "frame_attack_prompt": frame.FRAME_ATTACK}},
+        {"stage": "map_spark", "config": {"generate_prompt": field.GENERATE,
+                                          "expand_prompt": field.EXPAND}},
+        {"stage": "map_pattern_lock", "config": {"merge_prompt": field.MERGE,
+                                                 "filter_prompt": field.FILTER}},
+        {"stage": "map_attack", "config": {"attack_contract": attack.ATTACK_CONTRACT,
+                                           "matcher_prompt": attack.MATCHER}},
+        {"stage": "map_cite", "config": {}},
+    ]
+    if support:
+        stages.append({"stage": "map_support", "config": {"support_prompt": cite.SUPPORT}})
+    return stages + [{"stage": "map_gate", "config": {}}, {"stage": "compose_map", "config": {}}]
+
+
 def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None,
            depth: str = "standard", reconcile: str = "gate") -> dict:
     if name == "spar":  # Resolver-only — no SPARK, so seed/depth are no-ops
@@ -132,14 +154,16 @@ def _build(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | N
         }
     if name == "proposer":  # settle is resolver-only; verify now gates the Proposer too
         return {"name": "proposer", "pipeline": _proposer(seed, depth, verify)}
+    if name == "map":  # SPARRING v1.3 §3.7 — the field is the product; no Cut, no Resolver
+        return {"name": "map", "policy": {"independence": "preferred"}, "pipeline": _map()}
     if name == "frame":  # front-door classifier only — settle/verify/seed/depth are no-ops
         return {"name": "frame", "pipeline": [{"stage": "frame", "roles": {"framer": _FRAMER}}]}
-    raise KeyError(f"unknown preset '{name}'; known: ['frame', 'proposer', 'spar', 'sparring']")
+    raise KeyError(f"unknown preset '{name}'; known: ['frame', 'map', 'proposer', 'spar', 'sparring']")
 
 
 # The canonical default manifests (settle=0, verify=gate) — these mirror
 # `manifests/*.yaml`. Kept as a dict so callers can enumerate the preset names.
-PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", "proposer", "frame")}
+PRESETS: dict[str, dict] = {name: _build(name) for name in ("spar", "sparring", "proposer", "frame", "map")}
 
 
 def load_preset(name: str, settle: int = 0, verify: str = "gate", seed: list[str] | None = None,

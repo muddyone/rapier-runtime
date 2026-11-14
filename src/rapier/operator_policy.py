@@ -230,7 +230,13 @@ def decide_manifest(stages) -> VerifyDecision:
     from .pipeline import manifest_declares, writes_answer
 
     names = [s.stage for s in stages]
-    if not any(writes_answer(n) for n in names):
+    if "compose_map" in names:
+        # A map's citation check and completeness attacks are its verify level: a
+        # map manifest missing either, or ordering them wrong, runs them "off".
+        from .pipeline import map_manifest_warnings
+
+        mode = "off" if map_manifest_warnings(names) else "gate"
+    elif not any(writes_answer(n) for n in names):
         mode = "gate"
     elif not manifest_declares(stages, "citation_gate"):
         mode = "off"

@@ -92,6 +92,8 @@ def manifest_warnings(stages: list[StageSpec]) -> list[str]:
     answer and before the output is fixed. A gate before that stage checks an
     earlier draft (or nothing); a gate after compose never reaches the report."""
     names = [s.stage for s in stages]
+    if "compose_map" in names:
+        return map_manifest_warnings(names)
     last_writer, end = _window(names)
     if last_writer is None:
         return []
@@ -114,6 +116,30 @@ def manifest_warnings(stages: list[StageSpec]) -> list[str]:
             out.append(f"{n} runs only before {names[last_writer]}, so it checks an earlier "
                        "draft, not the answer")
     return list(dict.fromkeys(out))
+
+
+# Map mode (spec v1.3 §3.7): each check must run, in this order, before compose_map.
+MAP_REQUIRED = ("map_frame", "map_spark", "map_attack", "map_cite", "map_gate")
+
+
+def map_manifest_warnings(names: list[str]) -> list[str]:
+    """A map pipeline must frame before generating, attack after generating, check
+    citations after the attacks (attack candidates carry anchors too), and gate
+    before compose_map. The field is never shipped without the gate."""
+    out: list[str] = []
+    end = names.index("compose_map")
+    pos = {n: i for i, n in enumerate(names[:end])}
+    for n in MAP_REQUIRED:
+        if n not in pos:
+            out.append(f"map mode declares no {n} before compose_map, so the map ships without "
+                       "that check")
+    order = [n for n in MAP_REQUIRED if n in pos]
+    if [pos[n] for n in order] != sorted(pos[n] for n in order):
+        out.append("map stages are out of order (needed: " + " -> ".join(MAP_REQUIRED) + ")")
+    for n in ("cut", "author", "cross_review", "anchored_fix", "definitiveness_gate"):
+        if n in names:
+            out.append(f"{n} runs in a map pipeline; in map mode the Cut and the Resolver do not run")
+    return out
 
 
 def manifest_declares(stages: list[StageSpec], stage: str) -> bool:
@@ -140,7 +166,8 @@ def _canon(obj: Any) -> Any:
 
 # Stages that bind vendors at run time (stages/resolver/_binding.py) rather than
 # through roles, with the config key that carries their second-vendor preference.
-_BINDING_STAGES = {"cross_review": "reviewer_vendor", "definitiveness_gate": "second_vendor"}
+_BINDING_STAGES = {"cross_review": "reviewer_vendor", "definitiveness_gate": "second_vendor",
+                   "map_frame": "challenger_vendor"}  # map mode fixes its vendors at map_frame
 
 
 def _code_digest() -> str:

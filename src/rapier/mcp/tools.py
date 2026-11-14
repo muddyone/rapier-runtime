@@ -35,6 +35,7 @@ def _result(env, report_all: bool) -> dict[str, Any]:
         "correctness_check": (env.trust_rider or {}).get("correctness_check"),
         "citation_check": (env.trust_rider or {}).get("citation_check"),
         "final_state": (env.trust_rider or {}).get("final_state"),
+        "coverage": (env.trust_rider or {}).get("coverage"),
         "grounding": (
             {
                 "gate": gate.get("gate"),
@@ -63,6 +64,7 @@ def _run(
     seed: list[str] | None = None,
     depth: str = "standard",
     frame: dict[str, Any] | None = None,
+    regions: list[Any] | None = None,
 ) -> dict[str, Any]:
     err = preflight_error()
     if err:
@@ -72,6 +74,7 @@ def _run(
     from ..operator_policy import PolicyError, decide_independence, decide_verify, stop_result
 
     set_by = ("fixed by the proposer tool" if name == "proposer"
+              else "fixed by the map tool" if name == "map"
               else "caller (MCP tool argument)")
     try:
         decision = decide_verify(verify, set_by)
@@ -87,6 +90,8 @@ def _run(
     seed_meta: dict[str, Any] = {"settle": settle, **decision.meta()}
     if isinstance(frame, dict) and frame.get("input_type"):
         seed_meta["frame"] = frame
+    if regions:
+        seed_meta["map_regions"] = list(regions)
     env = preset.build().run(
         request, ledger_root=ledger_root, log=log or (lambda _m: None),
         cancel=cancel, seed_meta=seed_meta,
@@ -130,6 +135,20 @@ def run_proposer(
         "proposer", request, 0, "gate", False, log, cancel, ledger_root,
         seed=seed, depth=depth,
     )
+
+
+def run_map(
+    request: str, regions: list[Any] | None = None,
+    log: Callable[[str], None] | None = None,
+    cancel: Callable[[], bool] | None = None,
+    ledger_root: str | None = None,
+) -> dict[str, Any]:
+    """Map mode (SPARRING spec v1.3 §3.7): the field itself, with its coverage
+    rider and map gate. ``regions`` is the search frame (names, or
+    ``{name, definition}``); without it a separate Frame call drafts one and the
+    rider marks it drafted. The citation check and the attacks always run: no
+    argument turns them off."""
+    return _run("map", request, 0, "gate", False, log, cancel, ledger_root, regions=regions)
 
 
 def run_frame(
