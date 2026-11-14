@@ -6,6 +6,17 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: the operator can require an independent review
+
+`"require_independent": true` in the operator policy file refuses any review
+ceremony (spar, sparring, proposer, or a custom manifest with a review or
+Proposer stage) when no second vendor is available. Without it, a single-vendor
+run goes ahead and the report says the review was not independent, as before.
+Only the operator can set this: there is no tool argument or environment
+variable for it. The refusal names the policy file and whether it is out of the
+caller's reach (MCP: `refused_by: "operator_require_independent"`; CLI: exit 2).
+`rapier doctor` shows the setting and warns when only one vendor is configured.
+
 ### Added: a hash of the method that ran
 
 `ceremony.json` gains `method_hash` and `method_resolved_hash` (plus

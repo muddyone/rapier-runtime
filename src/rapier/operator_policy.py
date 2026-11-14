@@ -118,7 +118,12 @@ def _out_of_my_reach(path: str) -> bool:
         cur = parent
 
 
-def _file_minimum() -> tuple[str, str, bool] | None:
+_POLICY_KEYS = ("min_verify", "require_independent")
+
+
+def _read_policy_file() -> tuple[dict, str, bool] | None:
+    """The operator policy file as ``(data, path, external)``, or None when absent.
+    Fails closed on anything that isn't a clean, readable policy."""
     path = POLICY_PATH
     try:
         os.stat(path)
@@ -135,11 +140,21 @@ def _file_minimum() -> tuple[str, str, bool] | None:
     except (OSError, ValueError) as exc:
         raise PolicyError(f"operator policy file {path} could not be read ({exc}); "
                           "refusing to run without the minimum it sets") from exc
-    if not isinstance(data, dict) or "min_verify" not in data:
-        raise PolicyError(f"operator policy file {path} has no \"min_verify\" key; "
-                          "refusing to run without the minimum it sets")
-    level = _check_level(data["min_verify"], f"file {path}")
-    return level, path, _out_of_my_reach(path)
+    if not isinstance(data, dict) or not any(k in data for k in _POLICY_KEYS):
+        raise PolicyError(f"operator policy file {path} sets none of {list(_POLICY_KEYS)}; "
+                          "refusing to run without the minimum it was meant to set")
+    if "require_independent" in data and not isinstance(data["require_independent"], bool):
+        raise PolicyError(f"operator policy file {path}: require_independent must be "
+                          "true or false; refusing to run")
+    return data, path, _out_of_my_reach(path)
+
+
+def _file_minimum() -> tuple[str, str, bool] | None:
+    got = _read_policy_file()
+    if got is None or "min_verify" not in got[0]:
+        return None
+    data, path, external = got
+    return _check_level(data["min_verify"], f"file {path}"), path, external
 
 
 def _env_minimum() -> tuple[str, str, bool] | None:
@@ -194,3 +209,36 @@ def decide_manifest(stages) -> VerifyDecision:
     else:
         mode = "round" if names.count("citation_gate") > 1 else "gate"
     return decide_verify(mode, "custom manifest")
+
+
+def require_independent() -> tuple[bool, str, bool]:
+    """``(required, source, external)``: does the operator require an independent,
+    second-vendor review? Set only in the policy file (D-68: operator-settable
+    only; there is no tool argument or environment variable for it)."""
+    got = _read_policy_file()
+    if got is None or not got[0].get("require_independent"):
+        return False, "", False
+    _data, path, external = got
+    return True, path, external
+
+
+def decide_independence(policy=None, available: list[str] | None = None) -> None:
+    """Refuse the run when the operator requires an independent review and no
+    second vendor is available to give one. Raises :class:`PolicyError`."""
+    from .models import Policy, available_vendors
+
+    required, source, external = require_independent()
+    if not required:
+        return
+    avail = list(available if available is not None else available_vendors())
+    try:
+        _primary, second = (policy or Policy()).resolve(avail)
+    except Exception:  # noqa: BLE001 — e.g. no vendors at all
+        second = None
+    if second is None:
+        reach = "out of the caller's reach" if external else "within the caller's reach"
+        raise PolicyError(
+            "the operator requires an independent review from a second vendor "
+            f"({source}, {reach}), but only one vendor is available "
+            f"({', '.join(v for v in avail if v != 'mock') or 'none'}). Add a second "
+            "vendor's key, or have the operator change the policy. Nothing was run.")

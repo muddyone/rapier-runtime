@@ -101,6 +101,18 @@ def method_report(manifest_path: str | None = None) -> tuple[str, bool]:
         lines.append(f"  ✓ at least '{level}', from {source} ({reach})")
     elif not lines[-1].startswith("  ✗"):
         lines.append("  · none set — the caller chooses whether the citation check runs")
+    from .operator_policy import require_independent
+
+    try:
+        req, rsrc, rext = require_independent()
+    except PolicyError:
+        req, rsrc, rext = False, "", False
+    if req:
+        reach = ("out of the calling agent's reach" if rext
+                 else "within the calling agent's reach — not an independent control")
+        lines.append(f"  ✓ independent second-vendor review required, from {rsrc} ({reach})")
+        if len(configured_vendors()) < 2:
+            lines.append("  ✗ only one vendor is configured, so every review ceremony will be refused")
     lines += ["", "What each ceremony declares", ""]
     for name in sorted(PRESETS):
         warns = manifest_warnings(load_preset(name).stages)

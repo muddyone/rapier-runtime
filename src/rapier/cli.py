@@ -377,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         if err:  # no vendor keys — fail loudly, not silently
             print(err, file=sys.stderr)
             return 2
-        from .operator_policy import PolicyError, decide_verify
+        from .operator_policy import PolicyError, decide_independence, decide_verify
 
         try:
             decision = decide_verify(
@@ -395,6 +395,11 @@ def main(argv: list[str] | None = None) -> int:
             seed=getattr(args, "seed", None), depth=getattr(args, "depth", "standard"),
             reconcile=getattr(args, "reconcile", "gate"),
         )
+        try:
+            decide_independence(getattr(preset, "policy", None))
+        except PolicyError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
         # Carry context the pipeline can't observe onto the envelope for the
         # ceremony-ledger row: the resolver knobs, and the front-door Frame
         # classification (from a separate call) via --frame.
@@ -417,11 +422,14 @@ def main(argv: list[str] | None = None) -> int:
                     report_all=getattr(args, "report_all", False), seed_meta=seed_meta,
                     no_save=getattr(args, "no_save", False))
     if args.cmd == "run":
-        from .operator_policy import PolicyError, decide_manifest
+        from .operator_policy import PolicyError, decide_independence, decide_manifest
 
         manifest = Manifest.load(args.manifest)
         try:
             decision = decide_manifest(manifest.stages)
+            if any(s.stage in ("cross_review", "spark", "pattern_lock", "cut")
+                   for s in manifest.stages):
+                decide_independence(manifest.policy)
         except PolicyError as exc:
             print(f"refused: {exc}", file=sys.stderr)
             return 2
