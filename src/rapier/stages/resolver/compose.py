@@ -82,7 +82,8 @@ def citation_outcome(env: Envelope) -> tuple[str, str]:
     if traces:
         return "did-not-run", "the check produced no result"
     if str(env.meta.get("verify") or "") == "off":
-        return "did-not-run", "switched off (verify=off)"
+        by = env.meta.get("verify_set_by")
+        return "did-not-run", f"switched off by {by} (verify=off)" if by else "switched off (verify=off)"
     return "did-not-run", "the check is not part of this pipeline"
 
 
@@ -115,6 +116,31 @@ def _verdict_sentence(verdict, gate, outcome: tuple[str, str] | None = None) -> 
                 "ambiguously between fact and estimate — see STILL YOURS TO CHECK below.")
     return ("The correctness check did NOT run. Nothing was checked, so this is not a pass: "
             "treat every stated specific as unverified.")
+
+
+def _checks_policy_sentence(env: Envelope) -> str:
+    """Who set the citation check's level, and whether an operator minimum stood
+    behind it that the caller could not lower."""
+    mode = env.meta.get("verify")
+    if not mode:
+        return ""
+    by = env.meta.get("verify_set_by") or "the caller"
+    if mode == "off":
+        s = f"The citation check was switched off, by {by}."
+    else:
+        s = f"The citation check ran at level '{mode}', set by {by}."
+    minimum = env.meta.get("verify_minimum")
+    if minimum:
+        src = env.meta.get("verify_minimum_source") or "operator policy"
+        if env.meta.get("verify_minimum_external"):
+            s += (f" The operator requires at least '{minimum}' ({src}), a setting the "
+                  "calling agent cannot change.")
+        else:
+            s += (f" The operator requires at least '{minimum}' ({src}), but that setting "
+                  "is within the calling agent's reach, so it is not an independent control.")
+    else:
+        s += " No operator minimum was set, so the caller chose which checks ran."
+    return s
 
 
 def _challenge_phrase(review) -> str:
@@ -460,6 +486,7 @@ def _render_report(env: Envelope) -> str:
               "How independent the challenge really was — and the limits no model "
               "here can see past.",
               _para(_reviewer_sentence(review)
+                    + ("\n\n" + _checks_policy_sentence(env) if _checks_policy_sentence(env) else "")
                     + "\n\nWhat this cannot know: your real constraints, costs, and priorities — "
                     "the load-bearing call stays yours."))
 
@@ -602,6 +629,10 @@ def _ceremony_row(env: Envelope) -> dict:
         "citation_check": citation_outcome(env)[0],
         "citation_check_reason": citation_outcome(env)[1],
         "verify_mode": str(env.meta.get("verify") or ""),
+        "verify_set_by": env.meta.get("verify_set_by") or "",
+        "verify_minimum": env.meta.get("verify_minimum"),
+        "verify_minimum_source": env.meta.get("verify_minimum_source") or "",
+        "verify_minimum_external": bool(env.meta.get("verify_minimum_external")),
         "gate": citation.get("gate", ""),
         "grounding_rate": citation.get("grounding_rate"),
         "theater_flags": citation.get("theater_flags", 0),

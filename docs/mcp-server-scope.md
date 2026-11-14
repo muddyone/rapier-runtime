@@ -45,6 +45,11 @@ client can render prose or branch on the result:
   degradation is visible, not hidden).
 - `standing_objections` — forwarded Proposer dissent, when present.
 
+An operator minimum (`/etc/rapier/policy.json` `{"min_verify": "gate"}`, or
+`RAPIER_MIN_VERIFY`) refuses a `verify` argument below it with
+`{"ok": false, "refused_by": "operator_minimum"}`. No tool argument can change
+the minimum or the file's path; see `src/rapier/operator_policy.py`.
+
 All outputs pass through `secrets.redact_obj` (already the ledger's discipline)
 before leaving the process.
 

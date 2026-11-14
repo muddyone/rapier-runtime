@@ -373,8 +373,21 @@ def main(argv: list[str] | None = None) -> int:
         if err:  # no vendor keys — fail loudly, not silently
             print(err, file=sys.stderr)
             return 2
+        from .operator_policy import PolicyError, decide_verify
+
+        try:
+            decision = decide_verify(
+                getattr(args, "verify", "gate"),
+                "command-line flag --verify"
+                if any(a == "--verify" or a.startswith("--verify=")
+                       for a in (argv if argv is not None else sys.argv[1:]))
+                else "default",
+            )
+        except PolicyError as exc:
+            print(f"refused: {exc}", file=sys.stderr)
+            return 2
         preset = load_preset(
-            args.cmd, settle=getattr(args, "settle", 0), verify=getattr(args, "verify", "gate"),
+            args.cmd, settle=getattr(args, "settle", 0), verify=decision.mode,
             seed=getattr(args, "seed", None), depth=getattr(args, "depth", "standard"),
             reconcile=getattr(args, "reconcile", "gate"),
         )
@@ -383,8 +396,8 @@ def main(argv: list[str] | None = None) -> int:
         # classification (from a separate call) via --frame.
         seed_meta: dict = {
             "settle": getattr(args, "settle", 0),
-            "verify": getattr(args, "verify", "gate"),
             "reconcile": getattr(args, "reconcile", "gate"),
+            **decision.meta(),
         }
         frame_path = getattr(args, "frame", None)
         if frame_path:

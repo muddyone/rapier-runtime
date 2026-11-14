@@ -6,6 +6,28 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: an operator minimum for the checks, which the caller cannot lower
+
+Over MCP the agent whose answer is being checked chose `verify`, so it could
+switch the citation check off. The operator can now set a floor:
+
+- **`/etc/rapier/policy.json`** (`%PROGRAMDATA%\rapier\policy.json` on
+  Windows), `{"min_verify": "gate"}`. The path is fixed, not taken from the
+  environment, so a caller cannot point Rapier at a different file. Make the
+  file and its folder read-only to the user that runs Rapier: only then does
+  the report call the minimum out of the calling agent's reach.
+- **`RAPIER_MIN_VERIFY`** also sets a floor, but whoever launches the process
+  controls its environment, so the report always calls it within the caller's
+  reach.
+- A request below the floor is **refused**, with an error naming the floor and
+  its source (MCP: `ok: false`, `refused_by: "operator_minimum"`; CLI: exit 2).
+  A policy file that can't be read fails closed. Levels: `off` < `gate` ≤
+  `round`.
+- **The report says who set the level:** "switched off, by caller (MCP tool
+  argument)", the default or the `--verify` flag, and whether an operator
+  minimum stood behind it. `ceremony.json` gains `verify_set_by`,
+  `verify_minimum`, `verify_minimum_source` and `verify_minimum_external`.
+
 ### Fixed: a check that did not run no longer reads like one that found nothing
 
 The report used one sentence for "the correctness check found no specifics" and

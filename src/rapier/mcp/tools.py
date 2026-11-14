@@ -66,10 +66,20 @@ def _run(
     err = preflight_error()
     if err:
         return {"ok": False, "error": err}
-    preset = load_preset(name, settle=settle, verify=verify, seed=seed, depth=depth)
+    # The operator minimum is applied here, before anything runs. Its sources are
+    # a fixed system file and the process environment; no tool argument reaches it.
+    from ..operator_policy import PolicyError, decide_verify
+
+    set_by = ("fixed by the proposer tool" if name == "proposer"
+              else "caller (MCP tool argument)")
+    try:
+        decision = decide_verify(verify, set_by)
+    except PolicyError as exc:
+        return {"ok": False, "error": str(exc), "refused_by": "operator_minimum"}
+    preset = load_preset(name, settle=settle, verify=decision.mode, seed=seed, depth=depth)
     # Carry context the pipeline can't observe onto the envelope for the ceremony-ledger
     # row: the resolver knobs and the front-door Frame classification (a separate call).
-    seed_meta: dict[str, Any] = {"settle": settle, "verify": verify}
+    seed_meta: dict[str, Any] = {"settle": settle, **decision.meta()}
     if isinstance(frame, dict) and frame.get("input_type"):
         seed_meta["frame"] = frame
     env = preset.build().run(
