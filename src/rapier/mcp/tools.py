@@ -69,21 +69,19 @@ def _run(
         return {"ok": False, "error": err}
     # The operator minimum is applied here, before anything runs. Its sources are
     # a fixed system file and the process environment; no tool argument reaches it.
-    from ..operator_policy import PolicyError, decide_independence, decide_verify
+    from ..operator_policy import PolicyError, decide_independence, decide_verify, stop_result
 
     set_by = ("fixed by the proposer tool" if name == "proposer"
               else "caller (MCP tool argument)")
     try:
         decision = decide_verify(verify, set_by)
     except PolicyError as exc:
-        return {"ok": False, "error": str(exc), "refused_by": "operator_minimum",
-                "final_state": "refuse"}
+        return stop_result(exc, "operator_minimum")
     preset = load_preset(name, settle=settle, verify=decision.mode, seed=seed, depth=depth)
     try:
         decide_independence(getattr(preset, "policy", None))
     except PolicyError as exc:
-        return {"ok": False, "error": str(exc), "refused_by": "operator_require_independent",
-                "final_state": "refuse"}
+        return stop_result(exc, "operator_require_independent")
     # Carry context the pipeline can't observe onto the envelope for the ceremony-ledger
     # row: the resolver knobs and the front-door Frame classification (a separate call).
     seed_meta: dict[str, Any] = {"settle": settle, **decision.meta()}

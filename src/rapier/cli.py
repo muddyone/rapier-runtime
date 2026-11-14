@@ -377,7 +377,7 @@ def main(argv: list[str] | None = None) -> int:
         if err:  # no vendor keys — fail loudly, not silently
             print(err, file=sys.stderr)
             return 2
-        from .operator_policy import PolicyError, decide_independence, decide_verify
+        from .operator_policy import PolicyError, decide_independence, decide_verify, stop_message
 
         try:
             decision = decide_verify(
@@ -388,7 +388,7 @@ def main(argv: list[str] | None = None) -> int:
                 else "default",
             )
         except PolicyError as exc:
-            print(f"refused: {exc}", file=sys.stderr)
+            print(stop_message(exc), file=sys.stderr)
             return 2
         preset = load_preset(
             args.cmd, settle=getattr(args, "settle", 0), verify=decision.mode,
@@ -398,7 +398,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             decide_independence(getattr(preset, "policy", None))
         except PolicyError as exc:
-            print(f"refused: {exc}", file=sys.stderr)
+            print(stop_message(exc), file=sys.stderr)
             return 2
         # Carry context the pipeline can't observe onto the envelope for the
         # ceremony-ledger row: the resolver knobs, and the front-door Frame
@@ -422,7 +422,7 @@ def main(argv: list[str] | None = None) -> int:
                     report_all=getattr(args, "report_all", False), seed_meta=seed_meta,
                     no_save=getattr(args, "no_save", False))
     if args.cmd == "run":
-        from .operator_policy import PolicyError, decide_independence, decide_manifest
+        from .operator_policy import PolicyError, decide_independence, decide_manifest, stop_message
 
         manifest = Manifest.load(args.manifest)
         try:
@@ -431,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
                    for s in manifest.stages):
                 decide_independence(manifest.policy)
         except PolicyError as exc:
-            print(f"refused: {exc}", file=sys.stderr)
+            print(stop_message(exc), file=sys.stderr)
             return 2
         return _run(manifest, request, args.ledger_dir, seed_meta=decision.meta(),
                     no_save=getattr(args, "no_save", False))

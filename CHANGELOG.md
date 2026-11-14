@@ -4,6 +4,19 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## Unreleased
+
+### Fixed: an unreadable policy file is no longer reported as the minimum refusing the run
+
+When the operator policy file could not be read or checked (bad JSON, an
+unknown level, a non-boolean `require_independent`, a folder Rapier can't
+search), 0.6.2 stopped the run, correctly, but credited the stop to the
+operator minimum (`refused_by: "operator_minimum"`, `final_state: "refuse"`).
+The minimum was never read, so it decided nothing. The run still stops (MCP
+`ok: false`, CLI exit 2), now with `final_state: "defer"`, no `refused_by`, and
+`operator_policy: "did-not-run: <reason>"`. A readable policy that refuses a
+request is unchanged: `refuse`, credited to the control that decided.
+
 ## 0.6.2 — 2026-11-14
 
 ### Added: every run names its final state

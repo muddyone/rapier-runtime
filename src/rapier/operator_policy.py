@@ -59,8 +59,31 @@ POLICY_PATH = _default_policy_path()
 
 
 class PolicyError(Exception):
-    """The run is refused: a caller asked for less than the operator minimum,
-    or the operator's policy file is unreadable (fail closed)."""
+    """The run is refused: the operator's policy DECIDED against it (a caller
+    asked for less than the minimum, or no independent review is possible)."""
+
+
+class PolicyUnreadable(PolicyError):
+    """The run is stopped because the operator's policy could not be read or
+    checked (fail closed). The control did not run, so it decided nothing: the
+    stop holds, but it is never credited to the minimum, and the final state is
+    ``defer``, not ``refuse``. Subclasses PolicyError so a caller that only
+    wants "stopped or not" still catches both."""
+
+
+def stop_result(exc: PolicyError, refused_by: str) -> dict:
+    """The MCP result for a policy stop, attributing it only where a control decided."""
+    if isinstance(exc, PolicyUnreadable):
+        return {"ok": False, "error": str(exc), "final_state": "defer",
+                "operator_policy": f"did-not-run: {exc}"}
+    return {"ok": False, "error": str(exc), "refused_by": refused_by, "final_state": "refuse"}
+
+
+def stop_message(exc: PolicyError) -> str:
+    """The CLI's stderr line for a policy stop (exit code 2 either way)."""
+    if isinstance(exc, PolicyUnreadable):
+        return f"stopped (operator policy did not run, final state defer): {exc}"
+    return f"refused: {exc}"
 
 
 @dataclass(frozen=True)
@@ -87,7 +110,7 @@ class VerifyDecision:
 
 def _check_level(level, where: str) -> str:
     if level not in VERIFY_RANK:
-        raise PolicyError(f"operator policy {where}: unknown verify level {level!r}; "
+        raise PolicyUnreadable(f"operator policy {where}: unknown verify level {level!r}; "
                           f"known: {sorted(VERIFY_RANK)}")
     return level
 
@@ -136,19 +159,19 @@ def _read_policy_file() -> tuple[dict, str, bool] | None:
     except OSError as exc:
         # Can't tell whether a policy exists (e.g. its directory can't be searched).
         # An operator who locked the directory down meant a policy to apply: fail closed.
-        raise PolicyError(f"operator policy file {path} could not be checked ({exc}); "
+        raise PolicyUnreadable(f"operator policy file {path} could not be checked ({exc}); "
                           "refusing to run without the minimum it may set") from exc
     try:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
     except (OSError, ValueError) as exc:
-        raise PolicyError(f"operator policy file {path} could not be read ({exc}); "
+        raise PolicyUnreadable(f"operator policy file {path} could not be read ({exc}); "
                           "refusing to run without the minimum it sets") from exc
     if not isinstance(data, dict) or not any(k in data for k in _POLICY_KEYS):
-        raise PolicyError(f"operator policy file {path} sets none of {list(_POLICY_KEYS)}; "
+        raise PolicyUnreadable(f"operator policy file {path} sets none of {list(_POLICY_KEYS)}; "
                           "refusing to run without the minimum it was meant to set")
     if "require_independent" in data and not isinstance(data["require_independent"], bool):
-        raise PolicyError(f"operator policy file {path}: require_independent must be "
+        raise PolicyUnreadable(f"operator policy file {path}: require_independent must be "
                           "true or false; refusing to run")
     return data, path, _out_of_my_reach(path)
 

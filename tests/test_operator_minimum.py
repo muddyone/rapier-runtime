@@ -212,7 +212,9 @@ def test_unsearchable_policy_dir_fails_closed(policy, mcp_stubbed):
         if os.access(path.parent, os.X_OK):
             pytest.skip("this filesystem ignores chmod")
         out = tools.run_spar("ship it?", verify="off")
-        assert out["ok"] is False and out["refused_by"] == "operator_minimum"
+        # R4-3: the minimum was never read, so the stop holds but is not credited to it
+        assert out["ok"] is False and out["final_state"] == "defer"
+        assert "refused_by" not in out and out["operator_policy"].startswith("did-not-run: ")
         assert "could not be checked" in out["error"]
         with pytest.raises(PolicyError):
             decide_verify("gate", "caller")  # can't know the floor: refuse every run
@@ -226,7 +228,9 @@ def test_bad_policy_file_fails_closed(policy, mcp_stubbed, body):
 
     pathlib.Path(OP.POLICY_PATH).write_text(body)
     out = tools.run_spar("ship it?", verify="gate")
-    assert out["ok"] is False and out["refused_by"] == "operator_minimum"
+    # R4-3: the minimum was never read, so the stop holds but is not credited to it
+    assert out["ok"] is False and out["final_state"] == "defer"
+    assert "refused_by" not in out and out["operator_policy"].startswith("did-not-run: ")
 
 
 # ── the report says who set the level, and whether the minimum is external ──
@@ -262,3 +266,41 @@ def test_report_says_an_in_reach_minimum_is_not_independent():
     env = _env(verify="gate", verify_set_by="default", verify_minimum="gate",
                verify_minimum_source="RAPIER_MIN_VERIFY", verify_minimum_external=False)
     assert "not an independent control" in " ".join(_render_report(env).split())
+
+
+# ── R4-3: a stop is credited to a control only when that control decided ────
+
+@pytest.mark.parametrize("body", ['{"min_verify":', '{"min_verify": "loud"}', "{}",
+                                  '{"require_independent": "yes"}'])
+def test_unreadable_policy_stops_as_defer_not_refuse(policy, mcp_stubbed, body):
+    import pathlib
+
+    pathlib.Path(OP.POLICY_PATH).write_text(body)
+    out = tools.run_spar("decide X", verify="gate")
+    assert out["ok"] is False
+    assert out["final_state"] == "defer"
+    assert "refused_by" not in out
+    assert out["operator_policy"].startswith("did-not-run: ")
+
+
+def test_control_readable_minimum_refuses_and_is_credited(policy, mcp_stubbed):
+    policy("gate")
+    out = tools.run_spar("decide X", verify="off")
+    assert out["final_state"] == "refuse" and out["refused_by"] == "operator_minimum"
+    assert "operator_policy" not in out
+
+
+def test_cli_unreadable_policy_says_defer(policy, monkeypatch, capsys):
+    import pathlib
+
+    from rapier import cli, onboarding
+
+    monkeypatch.setattr(onboarding, "preflight_error", lambda: None)
+    pathlib.Path(OP.POLICY_PATH).write_text('{"min_verify":')
+    assert cli.main(["spar", "--request", "x"]) == 2
+    err = capsys.readouterr().err
+    assert "operator policy did not run, final state defer" in err and "refused:" not in err
+
+
+def test_unreadable_policy_is_a_policy_error_subclass():
+    assert issubclass(OP.PolicyUnreadable, OP.PolicyError)
