@@ -4,7 +4,7 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
-## Unreleased
+## 0.6.3 — 2026-11-14
 
 ### Fixed: an unreadable policy file is no longer reported as the minimum refusing the run
 
