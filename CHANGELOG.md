@@ -8,6 +8,9 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ### Added: map mode (SPARRING specification v1.3, section 3.7)
 
+Specification: SPARRING v1.3, §3.7 "Terminal divergence: the map", public at
+[sparring-publicaccess `framework/sparring-specification.md`](https://github.com/muddyone/sparring-publicaccess/blob/21752d0d/framework/sparring-specification.md).
+
 `rapier map`, the `map` preset and the MCP `map` tool map a problem space
 instead of deciding: the Proposer's field is the product, with its own checks.
 The Cut and the Resolver do not run.
