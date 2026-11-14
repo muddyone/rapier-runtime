@@ -884,3 +884,14 @@ def test_d100_real_loci_are_found(locus):
 def test_control_weak_or_misplaced_loci_are_not_found(locus):
     from rapier.stages.map.cite import check_locus
     assert check_locus(locus, D100_SOURCE)["status"] != "found"
+
+
+def test_anchor_rule_sends_absence_claims_to_a_section_locus():
+    """sparring-2 on the D-100 re-score: an absence claim quoting the absent
+    thing is mis-anchored. The contract says to anchor it to the section; that
+    locus passes the check, and the quoted-absent form still fails."""
+    from rapier.stages.map.cite import check_locus
+    for prompt in (F.GENERATE, F.EXPAND, A.ATTACK_CONTRACT):
+        assert "ABSENT" in prompt and "section where it would be" in prompt
+    assert check_locus("§9", D100_SOURCE)["status"] == "found"
+    assert check_locus("§9: no `summary` field", D100_SOURCE)["status"] == "fabricated"

@@ -21,7 +21,10 @@ ANCHOR_RULE = (
     '(cited source); {"class": "b", "title": "<a named taxonomy, checklist, incident '
     'record or stated constraint>", "entry_id": "<the specific entry within it>"} (cited '
     'ground); or {"class": "c", "basis": "<your reasoning>"} (speculative). Never present '
-    "a speculative item as cited."
+    "a speculative item as cited. A class a quote must be text that is in the source. If "
+    "the item says something is ABSENT (a missing field, step or case), do not quote the "
+    "absent thing: anchor it to the section where it would be, as the locus (for example "
+    '"§9"), with no quote.'
 )
 
 GENERATE = (
