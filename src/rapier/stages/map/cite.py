@@ -46,17 +46,24 @@ def _fold(s: str) -> str:
 
 
 _QUOTE = re.compile(r"[\"\u201c]([^\"\u201d]+)[\"\u201d]|(?<![A-Za-z0-9])['\u2018`]([^'\u2019`]+)['\u2019`](?![A-Za-z])")
+# Backtick spans are checked like quotes: an identifier the locus names must be in
+# the source, or an invented one under a real section would pass.
 _SECTION_ANY = re.compile(r"(?:§\s*|\bsection\s+|\bsec\.?\s*)(\d+(?:\.\d+)*)|^(\d+(?:\.\d+)+)(?=[\s.:,)]|$)",
                           re.I)
 
 
-def _pieces(text: str) -> list[str]:
-    """Split quoted text at ellipses, keeping pieces long enough to mean
-    something (two words or 12 characters)."""
+def _pieces(text: str, min_evidence: bool = False) -> list[str]:
+    """Split text at ellipses. For a QUOTE every non-empty piece is kept,
+    however short: a quoted word that isn't in the source is strong evidence
+    of fabrication (verifier C-1: "instantly", "eu-east", an invented "never").
+    ``min_evidence`` keeps only pieces long enough to count as evidence (two
+    words or 12 characters); it is for unquoted text only."""
     out = []
     for piece in re.split(r"\s*(?:\.\.\.|\u2026)\s*", text):
         piece = piece.strip(" ,;:")
-        if len(piece.split()) >= 2 or len(piece) >= 12:
+        if not piece:
+            continue
+        if not min_evidence or len(piece.split()) >= 2 or len(piece) >= 12:
             out.append(piece)
     return out
 
@@ -94,7 +101,7 @@ def locus_exists(locus: str, source: str) -> bool:
         return all(_fold(q) in _fold(source) for q in quotes)
     bare = loc.strip('"\u201c\u201d\'').strip()
     text = _LEAD_REF.sub("", bare)  # "§11: Lockfile at ..." -> "Lockfile at ..."
-    pieces = _pieces(text)
+    pieces = _pieces(text, min_evidence=True)
     if pieces and all(_fold(p) in _fold(source) for p in pieces):
         return True
     refs = [m.group(1) or m.group(2) for m in _SECTION_ANY.finditer(bare)]

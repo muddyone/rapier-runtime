@@ -449,6 +449,7 @@ Every /sync-now step sorts cleanly into one of two buckets. There is no spectrum
 
 - **`ran_at` per check** — every rendered advisory line carries its age.
 ## 9. Cache
+The cache stores `launched_at` and `finding_id` for each check.
 """
 
 
@@ -507,3 +508,23 @@ def test_one_region_merge_failing_is_partial_and_disclosed(run):
     pl = _m(env)["pattern_lock"]
     assert pl["status"] == "partial" and "timeout" in pl["reason"]
     assert "Pattern Lock did not run for:" in " ".join(env.meta["report_md"].split())
+
+
+# ── verifier C-1: a short invented quote must not pass ─────────────────────
+
+@pytest.mark.parametrize("bad,good", [
+    ('§2 "instantly"', '§2 "eu-west"'),
+    ('§2: "eu-east"', '§2: "eu-west"'),
+    ('"Rollout happens region by region ... instantly"', '"Rollout happens region by region ... eu-west"'),
+    ('"The service must answer ... never"', '"The service must answer ... 200 ms"'),
+])
+def test_short_invented_quote_is_fabricated_and_real_control_found(bad, good):
+    from rapier.stages.map.cite import locus_exists
+    assert not locus_exists(bad, SOURCE)
+    assert locus_exists(good, SOURCE)
+
+
+def test_invented_backtick_identifier_is_fabricated():
+    from rapier.stages.map.cite import locus_exists
+    assert not locus_exists("\u00a72: `fake_identifier`", LIVE_SOURCE)
+    assert locus_exists("\u00a79: `finding_id`", LIVE_SOURCE)
