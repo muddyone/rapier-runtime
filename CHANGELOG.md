@@ -4,6 +4,24 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
+## Unreleased
+
+### Fixed: a check that did not run no longer reads like one that found nothing
+
+The report used one sentence for "the correctness check found no specifics" and
+"the checker was unavailable". With `verify=off` the registry section said the
+answer "cited nothing externally checkable", though nothing had been looked up.
+
+- **Three outcomes, kept apart**, for both the correctness check and the
+  citation check: `ran`, `nothing-to-check`, and `did-not-run: <reason>`. A
+  crash (caught fail-soft), a missing key, `verify=off`, and a check left out of
+  the pipeline are all `did-not-run`, and the report says it is not a pass.
+- **A run with no hard specifics** now says the check found nothing to check,
+  instead of "every hard specific it states traces to a fact you gave".
+- **Recorded everywhere the reader or a tool looks:** the report, the trust
+  rider (`correctness_check`, `citation_check`), `ceremony.json`
+  (`*_check` and `*_check_reason`) and the MCP result.
+
 ## 0.6.1 — 2026-10-16
 
 ### Fixed: "WHETHER THE NUMBERS ADD UP" no longer flags correct formulas

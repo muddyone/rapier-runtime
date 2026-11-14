@@ -30,10 +30,79 @@ def _texts(objs) -> list[str]:
     return [o.get("text", "") for o in (objs or []) if isinstance(o, dict)]
 
 
-def _verdict_sentence(verdict, gate) -> str:
+GATE_STAGE = "definitiveness_gate"
+
+
+def correctness_outcome(env: Envelope) -> tuple[str, str]:
+    """What happened to the correctness (definitiveness) check, as ``(status, reason)``.
+
+    ``status`` is one of:
+      ``ran``              the check ran and returned PASS / REVIEW / FAIL over >= 1 specific
+      ``nothing-to-check`` the check ran and found no hard specifics to judge
+      ``did-not-run``          the check never produced a verdict; ``reason`` says why
+
+    A check that never ran must never read like one that ran and found nothing:
+    they call for opposite reactions from the reader."""
+    gate_traces = [t for t in env.trace if t.stage == GATE_STAGE]
+    errored = [t for t in gate_traces if (t.data or {}).get("error")]
+    if errored:
+        return "did-not-run", f"the check crashed: {str(errored[-1].data['error'])[:200]}"
+    gate = env.meta.get("definitiveness")
+    if not gate:
+        if any("skipped" in (t.summary or "") for t in gate_traces):
+            return "did-not-run", "there was no recommendation to check"
+        if not gate_traces:
+            return "did-not-run", "the check is not part of this pipeline"
+        return "did-not-run", "the check produced no result"
+    v = (env.verdict or gate.get("answer_verdict") or "unchecked").upper()
+    if v not in ("PASS", "REVIEW", "FAIL"):
+        return "did-not-run", (gate.get("degraded") or "the checker was unavailable")
+    if v == "PASS" and not gate.get("n_specifics") and not gate.get("rows"):
+        return "nothing-to-check", "the answer states no hard specifics"
+    return "ran", ""
+
+
+CITATION_STAGE = "citation_gate"
+
+
+def citation_outcome(env: Envelope) -> tuple[str, str]:
+    """What happened to the external-canon citation check, as ``(status, reason)``.
+
+    Same three statuses as :func:`correctness_outcome`. ``nothing-to-check``
+    means the gate ran and the answer cited nothing checkable; a gate that was
+    switched off, crashed or was never in the pipeline is ``did-not-run``."""
+    traces = [t for t in env.trace if t.stage == CITATION_STAGE and t.kind != "reconcile"]
+    errored = [t for t in traces if (t.data or {}).get("error")]
+    if errored:
+        return "did-not-run", f"the check crashed: {str(errored[-1].data['error'])[:200]}"
+    if env.meta.get("citation_verdicts"):
+        return "ran", ""
+    if any("skipped" in (t.summary or "") for t in traces):
+        return "nothing-to-check", "the answer cites nothing externally checkable"
+    if traces:
+        return "did-not-run", "the check produced no result"
+    if str(env.meta.get("verify") or "") == "off":
+        return "did-not-run", "switched off (verify=off)"
+    return "did-not-run", "the check is not part of this pipeline"
+
+
+def correctness_label(status: str, reason: str) -> str:
+    """One-token form for the trust rider and ceremony.json: ``did-not-run: <reason>``."""
+    return f"did-not-run: {reason}" if status == "did-not-run" else status
+
+
+def _verdict_sentence(verdict, gate, outcome: tuple[str, str] | None = None) -> str:
     """The correctness (definitiveness) gate verdict in plain words — no shorthand."""
     fails = len(gate.get("failures") or [])
     v = (verdict or "unchecked").upper()
+    status, reason = outcome or ("", "")
+    if status == "did-not-run" or (not status and v not in ("PASS", "FAIL", "REVIEW")):
+        why = f" ({reason})" if reason else ""
+        return ("The correctness check did NOT run" + why + ". Nothing was checked, so this is "
+                "not a pass: treat every stated specific as unverified.")
+    if status == "nothing-to-check":
+        return ("The correctness check ran and found no hard specifics to check: the answer "
+                "states no figures, dates or named facts that could trace to your givens.")
     if v == "PASS":
         return ("It passed the correctness check: every hard specific it states either traces "
                 "to a fact you gave or is flagged as an estimate to verify.")
@@ -44,8 +113,8 @@ def _verdict_sentence(verdict, gate) -> str:
     if v == "REVIEW":
         return ("It needs your call on the correctness check: at least one stated specific reads "
                 "ambiguously between fact and estimate — see STILL YOURS TO CHECK below.")
-    return ("The correctness check could not return a verdict here (there were no hard specifics "
-            "to check, or the checker was unavailable), so treat the stated specifics as unverified.")
+    return ("The correctness check did NOT run. Nothing was checked, so this is not a pass: "
+            "treat every stated specific as unverified.")
 
 
 def _challenge_phrase(review) -> str:
@@ -213,6 +282,11 @@ def _grounding_body(env: Envelope) -> str:
     'confirmed against public registries, no model in the loop' property. Was
     computed and discarded before; now it is shown."""
     verdicts = env.meta.get("citation_verdicts") or []
+    status, reason = citation_outcome(env)
+    if status == "did-not-run":
+        return ("This check did NOT run (" + reason + "). No reference in the "
+                "recommendation was looked up, so this is not a clean result: treat any "
+                "CVE, CWE, RFC, DOI or URL it cites as unconfirmed.")
     if not verdicts:
         return ("The recommendation cited nothing externally checkable — no CVE, CWE, "
                 "RFC, DOI, or URL — so there was nothing to confirm against a public "
@@ -331,7 +405,7 @@ def _render_report(env: Envelope) -> str:
 
     L += _sec("BOTTOM LINE",
               "How far to trust this, in one breath.",
-              _para(_verdict_sentence(env.verdict, gate)
+              _para(_verdict_sentence(env.verdict, gate, correctness_outcome(env))
                     + " The full advice is under THE RECOMMENDATION below."))
 
     L += _sec("THE RECOMMENDATION",
@@ -523,6 +597,10 @@ def _ceremony_row(env: Envelope) -> dict:
         "strongest_quote": (_texts(objections)[0] if objections else "")[:400],
         "verdict": "MATTERED" if load_bearing else "DID_NOT_MATTER",
         "answer_verdict": env.verdict or "unchecked",
+        "correctness_check": correctness_outcome(env)[0],
+        "correctness_check_reason": correctness_outcome(env)[1],
+        "citation_check": citation_outcome(env)[0],
+        "citation_check_reason": citation_outcome(env)[1],
         "verify_mode": str(env.meta.get("verify") or ""),
         "gate": citation.get("gate", ""),
         "grounding_rate": citation.get("grounding_rate"),
@@ -553,6 +631,8 @@ class ComposeStage(TransformStage):
             rider["proposer_dissent_forwarded"] = _texts(standing)
         rider["specifics_traceability"] = env.verdict
         rider["overall_confidence"] = env.verdict  # deprecated alias; remove after 0.6.x
+        rider["correctness_check"] = correctness_label(*correctness_outcome(env))
+        rider["citation_check"] = correctness_label(*citation_outcome(env))
         env.trust_rider = rider
 
         env.meta["report"] = {

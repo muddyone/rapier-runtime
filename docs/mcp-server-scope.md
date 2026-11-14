@@ -35,6 +35,10 @@ Return **both** a human-readable markdown report *and* a structured payload, so 
 client can render prose or branch on the result:
 - `report_md` — the composed two-part report (what the CLI prints).
 - `verdict` — `PASS | REVIEW | FAIL | unchecked` (the definitiveness gate).
+- `correctness_check` / `citation_check` — what happened to each check: `ran`,
+  `nothing-to-check` (it ran and there was nothing to judge), or
+  `did-not-run: <reason>` (switched off, crashed, no key, or not in the pipeline).
+  A check that did not run is never reported as one that found nothing.
 - `grounding` — `{gate, grounding_rate, verified, refuted, unverifiable}` from the
   now-live citation gate (the external-canon check).
 - `cross_vendor` — bool, plus `author_vendor` / `reviewer_vendor` (honest
