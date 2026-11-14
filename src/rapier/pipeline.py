@@ -255,8 +255,13 @@ class Pipeline:
         log: Callable[[str], None] = lambda _m: None,
         cancel: Callable[[], bool] | None = None,
         seed_meta: dict[str, Any] | None = None,
+        max_usd: float | None = None,
     ) -> Envelope:
+        from . import budget
+
         env = Envelope(request=request)
+        cap = budget.effective_cap(max_usd)
+        budget.set_budget(cap)
         # Caller-supplied envelope metadata, merged before any stage runs. Used to
         # carry context the pipeline itself can't observe — e.g. the front-door
         # Frame classification (from a separate `rapier frame` call) and the
@@ -270,9 +275,16 @@ class Pipeline:
             set_transcript_sink(ledger.record_transcript)
 
         try:
-            return self._run_stages(env, ledger, log, cancel)
+            env = self._run_stages(env, ledger, log, cancel)
+            snap = budget.snapshot()
+            if snap is not None:
+                env.meta["budget"] = snap
+                if ledger:
+                    ledger.write_json("budget.json", snap)
+            return env
         finally:
             set_transcript_sink(None)
+            budget.set_budget(None)
 
     def _run_stages(self, env: Envelope, ledger, log, cancel=None) -> Envelope:
         import os

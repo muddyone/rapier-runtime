@@ -545,3 +545,18 @@ def test_control_real_elided_quote_within_one_section_is_found():
     from rapier.stages.map.cite import locus_exists
     assert locus_exists('"Every /sync-now step sorts cleanly … There is no spectrum."', LIVE_SOURCE)
     assert locus_exists('"eu-west"', SOURCE)  # an unelided short quote is still checked whole
+
+
+def test_matcher_sees_only_its_region(run):
+    seen = []
+
+    def matcher(p, v):
+        seen.append(p)
+        return {"new": True}
+
+    run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
+         {"text": "c", "anchor": {"class": "c", "basis": "x"}}]},
+         A.MATCHER: matcher})
+    r1 = seen[0]
+    assert "FIELD (this region)" in r1
+    assert "R1 cited risk" in r1 and "R2 cited risk" not in r1

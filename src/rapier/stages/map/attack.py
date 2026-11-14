@@ -13,6 +13,8 @@ The matcher judges each candidate on its own call. Ties go to *new*, and so does
 a matcher call that crashes or replies off-contract: the rider then says the
 matcher did not run for that candidate. A false "not new" is the error that
 produces a false HELD, so every "not new" is shown beside the item it matched.
+The matcher is shown only the attacked region's items, so a cross-region
+duplicate counts as new.
 """
 from __future__ import annotations
 
@@ -103,12 +105,18 @@ class MapAttackStage(TransformStage):
             except Exception as exc:  # noqa: BLE001
                 status, cands, note = "error", [], f"the attack crashed: {str(exc)[:200]}"
             rec.update(status=status, note=note)
-            ids = {i["id"] for i in field}
+            # The matcher sees only this region's items (cost: on the D-100 live run
+            # every matcher call carried the whole ~370k-character field). A duplicate
+            # in another region is then missed and counts as new: cautious, never a
+            # false "not new".
+            own = [i for i in field if r["id"] in i["regions"]]
+            ids = {i["id"] for i in own}
+            own_listing = "\n".join(f"{i['id']}: {i['text']}" for i in own) or "(no items yet)"
             for c in cands:
                 try:
                     reply = C.call(env, role="matcher", vendor=matcher_v, purpose="match",
                                    region=r["id"], system=matcher,
-                                   prompt=f"FIELD:\n{listing}\n\nCANDIDATE:\n{c['text']}")
+                                   prompt=f"FIELD (this region):\n{own_listing}\n\nCANDIDATE:\n{c['text']}")
                     is_new, matched, mnote = parse_match(reply, ids)
                 except Exception as exc:  # noqa: BLE001
                     is_new, matched, mnote = True, None, (

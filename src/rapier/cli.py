@@ -130,7 +130,7 @@ class _Progress:
 
 
 def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False,
-         seed_meta: dict | None = None, no_save: bool = False) -> int:
+         seed_meta: dict | None = None, no_save: bool = False, max_usd: float | None = None) -> int:
     # Governance default: every run leaves a durable, re-readable record. Without
     # an explicit --ledger-dir it lands under ~/.rapier/runs (RAPIER_RUNS_DIR
     # overrides). --no-save / RAPIER_NO_PERSIST is the only way off, and the
@@ -140,7 +140,8 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     pipe = manifest.build()
     progress = _Progress(total=len(pipe.stages))
     try:
-        env = pipe.run(request, ledger_root=root, log=progress.log, seed_meta=seed_meta)
+        env = pipe.run(request, ledger_root=root, log=progress.log, seed_meta=seed_meta,
+                       max_usd=max_usd)
     finally:
         progress.done()
     # Prefer the composed report if the pipeline produced one.
@@ -161,7 +162,8 @@ def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: b
     return 0
 
 
-def _run_frame(request: str, ledger_dir: str | None, no_save: bool = False) -> int:
+def _run_frame(request: str, ledger_dir: str | None, no_save: bool = False,
+               max_usd: float | None = None) -> int:
     """Run the front-door classifier and print the classification.
 
     stdout carries machine-readable JSON — the SPARRING skill parses it to pick
@@ -177,7 +179,7 @@ def _run_frame(request: str, ledger_dir: str | None, no_save: bool = False) -> i
     pipe = load_preset("frame").build()
     progress = _Progress(total=len(pipe.stages))
     try:
-        env = pipe.run(request, ledger_root=root, log=progress.log)
+        env = pipe.run(request, ledger_root=root, log=progress.log, max_usd=max_usd)
     finally:
         progress.done()
 
@@ -235,6 +237,10 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--ledger-dir", default=None,
                        help="write the run's records here (default: ~/.rapier/runs, override with "
                             "RAPIER_RUNS_DIR); every run is recorded unless --no-save")
+        p.add_argument("--max-usd", type=float, default=None, metavar="DOLLARS",
+                       help="hard dollar cap for this run's model calls, at list prices; a call that "
+                            "could pass it is refused and its check reads as not run "
+                            "(RAPIER_MAX_USD sets a ceiling no flag can raise)")
         p.add_argument("--no-save", action="store_true",
                        help="do NOT write a durable record for this run — for a sensitive one-off. "
                             "Persistence is on by default (governance); this is the only way off "
@@ -380,7 +386,8 @@ def main(argv: list[str] | None = None) -> int:
         if err:  # no vendor keys — fail loudly, not silently
             print(err, file=sys.stderr)
             return 2
-        return _run_frame(request, args.ledger_dir, no_save=getattr(args, "no_save", False))
+        return _run_frame(request, args.ledger_dir, no_save=getattr(args, "no_save", False),
+                    max_usd=getattr(args, "max_usd", None))
 
     if args.cmd == "map":
         from .onboarding import preflight_error
@@ -403,7 +410,8 @@ def main(argv: list[str] | None = None) -> int:
             regions.append({"name": name.strip(), "definition": (definition or name).strip()})
         seed_meta = {**decision.meta(), **({"map_regions": regions} if regions else {})}
         return _run(preset, request, args.ledger_dir, seed_meta=seed_meta,
-                    no_save=getattr(args, "no_save", False))
+                    no_save=getattr(args, "no_save", False),
+                    max_usd=getattr(args, "max_usd", None))
 
     if args.cmd in ("spar", "sparring", "proposer"):
         from .onboarding import preflight_error
@@ -455,7 +463,8 @@ def main(argv: list[str] | None = None) -> int:
                 pass  # fail-soft: a missing/garbled frame file just omits the classification
         return _run(preset, request, args.ledger_dir,
                     report_all=getattr(args, "report_all", False), seed_meta=seed_meta,
-                    no_save=getattr(args, "no_save", False))
+                    no_save=getattr(args, "no_save", False),
+                    max_usd=getattr(args, "max_usd", None))
     if args.cmd == "run":
         from .operator_policy import PolicyError, decide_independence, decide_manifest, stop_message
 
@@ -469,7 +478,8 @@ def main(argv: list[str] | None = None) -> int:
             print(stop_message(exc), file=sys.stderr)
             return 2
         return _run(manifest, request, args.ledger_dir, seed_meta=decision.meta(),
-                    no_save=getattr(args, "no_save", False))
+                    no_save=getattr(args, "no_save", False),
+                    max_usd=getattr(args, "max_usd", None))
     return 1  # pragma: no cover
 
 

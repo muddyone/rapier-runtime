@@ -178,7 +178,7 @@ def build_server():
     @server.tool()
     async def spar(
         request: str, settle: int = 0, verify: str = "gate",
-        frame: dict | None = None, timeout_s: float = 0, ctx: Context = None,
+        frame: dict | None = None, max_usd: float = 0, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the SPARRING Resolver on a decision: one grounded, cross-vendor
         challenge plus a definitiveness gate. Returns a recommendation, a trust
@@ -189,14 +189,14 @@ def build_server():
         return await _run_with_progress(
             tools.run_spar, ctx, _stage_total("spar", settle, verify),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
-            request=request, settle=settle, verify=verify, frame=frame,
+            max_usd=max_usd or None, request=request, settle=settle, verify=verify, frame=frame,
         )
 
     @server.tool()
     async def sparring(
         request: str, settle: int = 0, verify: str = "gate",
         report_all: bool = False, seed: list | None = None, depth: str = "standard",
-        frame: dict | None = None, timeout_s: float = 0, ctx: Context = None,
+        frame: dict | None = None, max_usd: float = 0, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the full SPARRING ceremony (Proposer, then Resolver) on a decision.
         ``report_all`` also returns the Proposer handoff (the committed option and
@@ -208,14 +208,14 @@ def build_server():
             tools.run_sparring, ctx,
             _stage_total("sparring", settle, verify, seed=seed, depth=depth),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
-            request=request, settle=settle, verify=verify, report_all=report_all,
+            max_usd=max_usd or None, request=request, settle=settle, verify=verify, report_all=report_all,
             seed=seed, depth=depth, frame=frame,
         )
 
     @server.tool()
     async def proposer(
         request: str, seed: list | None = None, depth: str = "standard",
-        timeout_s: float = 0, ctx: Context = None,
+        max_usd: float = 0, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Run the SPARRING Proposer only (SPARK → Pattern Lock → the Cut): generate
         and converge on a committed proposition with standing objections — no
@@ -225,12 +225,12 @@ def build_server():
         return await _run_with_progress(
             tools.run_proposer, ctx, _stage_total("proposer", depth=depth),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
-            request=request, seed=seed, depth=depth,
+            max_usd=max_usd or None, request=request, seed=seed, depth=depth,
         )
 
     @server.tool()
     async def map(
-        request: str, regions: list | None = None, timeout_s: float = 0, ctx: Context = None,
+        request: str, regions: list | None = None, max_usd: float = 0, timeout_s: float = 0, ctx: Context = None,
     ) -> dict:
         """Map a problem space instead of deciding (SPARRING spec v1.3 §3.7): the
         field of items, by region, with a coverage rider and a map gate
@@ -241,7 +241,7 @@ def build_server():
         return await _run_with_progress(
             tools.run_map, ctx, _stage_total("map"),
             timeout_s=timeout_s or None, ledger_root=ledger_root,
-            request=request, regions=regions,
+            max_usd=max_usd or None, request=request, regions=regions,
         )
 
     @server.tool()

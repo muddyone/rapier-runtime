@@ -200,6 +200,15 @@ def render_map(env: Envelope) -> str:
     if stage_lines:
         L += _sec("WHAT RAN", "Every stage the method declared, and what happened to it.",
                   _bullets(stage_lines))
+    from ... import budget as _budget
+
+    b = _budget.snapshot()
+    if b is not None:
+        L += _sec("SPEND", "The run's dollar cap and what it spent, at list prices.",
+                  _para(f"${b['spent_usd']:.2f} spent of a ${b['cap_usd']:.2f} cap over {b['calls']} model "
+                        "call(s)." + (f" The run STOPPED at the cap: {b['refused']} call(s) were refused, "
+                                      "and every check they belonged to reads as not run."
+                                      if b["stopped"] else "")))
     run_dir = env.meta.get("run_dir")
     L += _sec("THE RECORD", "Where this run is on disk.",
               _para(f"Saved for audit to:\n\n  {run_dir}" if run_dir else
@@ -215,6 +224,11 @@ class ComposeMapStage(TransformStage):
         if "gate" not in m:
             m["gate"] = evaluate(m)
             env.verdict = m["gate"]["verdict"]
+        from ... import budget as _budget
+
+        b = _budget.snapshot()
+        if b and b.get("stopped"):
+            m["budget_stopped"] = {"cap_usd": b["cap_usd"], "spent_usd": b["spent_usd"]}
         state, nxt = map_final_state(m)
         env.trust_rider = {"final_state": state, "map_gate": m["gate"]["verdict"],
                            "coverage": m["gate"]["overall"],
@@ -236,7 +250,8 @@ class ComposeMapStage(TransformStage):
                "method_hash": method.get("hash", ""), "method_resolved_hash": method.get("resolved_hash", ""),
                "rapier_version": method.get("rapier_version", ""),
                "verify_set_by": env.meta.get("verify_set_by") or "",
-               "require_independent": bool(env.meta.get("require_independent"))}
+               "require_independent": bool(env.meta.get("require_independent")),
+               "budget": b}
         env.meta["ceremony_row"] = row
         if ctx.ledger is not None:
             ctx.ledger.write_text("report.md", report)

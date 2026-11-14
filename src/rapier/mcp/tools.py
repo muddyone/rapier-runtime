@@ -65,6 +65,7 @@ def _run(
     depth: str = "standard",
     frame: dict[str, Any] | None = None,
     regions: list[Any] | None = None,
+    max_usd: float | None = None,
 ) -> dict[str, Any]:
     err = preflight_error()
     if err:
@@ -94,7 +95,7 @@ def _run(
         seed_meta["map_regions"] = list(regions)
     env = preset.build().run(
         request, ledger_root=ledger_root, log=log or (lambda _m: None),
-        cancel=cancel, seed_meta=seed_meta,
+        cancel=cancel, seed_meta=seed_meta, max_usd=max_usd,
     )
     return _result(env, report_all)
 
@@ -105,8 +106,9 @@ def run_spar(
     log: Callable[[str], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     ledger_root: str | None = None,
+    max_usd: float | None = None,
 ) -> dict[str, Any]:
-    return _run("spar", request, settle, verify, False, log, cancel, ledger_root, frame=frame)
+    return _run("spar", request, settle, verify, False, log, cancel, ledger_root, frame=frame, max_usd=max_usd)
 
 
 def run_sparring(
@@ -116,10 +118,12 @@ def run_sparring(
     log: Callable[[str], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     ledger_root: str | None = None,
+    max_usd: float | None = None,
 ) -> dict[str, Any]:
     return _run(
         "sparring", request, settle, verify, report_all, log, cancel, ledger_root,
         seed=seed, depth=depth, frame=frame,
+        max_usd=max_usd,
     )
 
 
@@ -128,12 +132,14 @@ def run_proposer(
     log: Callable[[str], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     ledger_root: str | None = None,
+    max_usd: float | None = None,
 ) -> dict[str, Any]:
     """Proposer only (SPARK → Pattern Lock → the Cut): a committed proposition with
     standing objections, no Resolver pass. ``settle``/``verify`` don't apply."""
     return _run(
         "proposer", request, 0, "gate", False, log, cancel, ledger_root,
         seed=seed, depth=depth,
+        max_usd=max_usd,
     )
 
 
@@ -142,13 +148,14 @@ def run_map(
     log: Callable[[str], None] | None = None,
     cancel: Callable[[], bool] | None = None,
     ledger_root: str | None = None,
+    max_usd: float | None = None,
 ) -> dict[str, Any]:
     """Map mode (SPARRING spec v1.3 §3.7): the field itself, with its coverage
     rider and map gate. ``regions`` is the search frame (names, or
     ``{name, definition}``); without it a separate Frame call drafts one and the
     rider marks it drafted. The citation check and the attacks always run: no
     argument turns them off."""
-    return _run("map", request, 0, "gate", False, log, cancel, ledger_root, regions=regions)
+    return _run("map", request, 0, "gate", False, log, cancel, ledger_root, regions=regions, max_usd=max_usd)
 
 
 def run_frame(

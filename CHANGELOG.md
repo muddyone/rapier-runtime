@@ -6,6 +6,17 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: a hard dollar cap on a run
+
+`--max-usd` on every ceremony command, `max_usd` on the MCP tools, and
+`RAPIER_MAX_USD` as a ceiling no flag or argument can raise. Before each model
+call the run reserves that call's worst case (its input plus its full output
+limit, at the model's list price) and refuses the call if it could pass the cap,
+so a run can stop short of the cap but never exceed it. A refused call's check
+reads as not run; a map stopped at the cap is REVIEW, "incomplete run", final
+state `defer`. With a cap set, a model with no listed price is refused. Spend
+by model is in `budget.json` and the report.
+
 ### Added: map mode (SPARRING specification v1.3, section 3.7)
 
 Specification: SPARRING v1.3, §3.7 "Terminal divergence: the map", public at

@@ -116,6 +116,11 @@ def evaluate(m: dict) -> dict:
     if items and (m.get("citation_check") or {}).get("status") != "ran":
         review.append("the citation check did not run")
         did_not_run.append("citation check")
+    stop = m.get("budget_stopped")
+    if stop:
+        did_not_run.append(f"the run stopped at its ${stop['cap_usd']:.2f} dollar cap "
+                           f"(${stop['spent_usd']:.2f} spent)")
+        review.append("incomplete run: stopped at the dollar cap")
     verdict = "FAIL" if fail else ("REVIEW" if review else "PASS")
     return {"verdict": verdict, "fail": fail, "review": review, "labels": labels,
             "overall": overall, "did_not_run": did_not_run}

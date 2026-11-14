@@ -578,13 +578,20 @@ def _record_body(env: Envelope) -> str:
     persisted, name the full path; when it was opted out, say so plainly so a
     missing trail is never mistaken for a lost one.
     """
+    from ... import budget as _budget
+
+    b = _budget.snapshot()
+    spend = (f"\n\nSpend: ${b['spent_usd']:.2f} of a ${b['cap_usd']:.2f} cap over {b['calls']} model "
+             "call(s), at list prices." + (f" The run STOPPED at the cap ({b['refused']} call(s) "
+                                           "refused); checks they belonged to read as not run."
+                                           if b["stopped"] else "")) if b else ""
     m = env.meta.get("method") or {}
     method = (f"\n\nMethod: Rapier {m.get('rapier_version')}, method "
               f"{str(m.get('hash'))[:19]} (as run, with these vendors: "
               f"{str(m.get('resolved_hash'))[:19]}). The full hashes are in ceremony.json; "
               "the same inputs under the same method hash should give comparable results."
               ) if m.get("hash") else ""
-    return _record_core(env) + method
+    return _record_core(env) + spend + method
 
 
 def _record_core(env: Envelope) -> str:

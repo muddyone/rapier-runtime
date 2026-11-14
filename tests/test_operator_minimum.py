@@ -93,7 +93,8 @@ def test_cli_verify_off_refused_and_control(policy, monkeypatch, capsys):
 # ── the minimum's source is out of the caller's reach ───────────────────────
 
 _ALLOWED_TOOL_PARAMS = {"request", "settle", "verify", "report_all", "seed", "depth",
-                        "frame", "log", "cancel", "ledger_root"}
+                        "frame", "log", "cancel", "ledger_root",
+                        "max_usd"}  # a spending cap: it can only lower spend; RAPIER_MAX_USD is a ceiling
 
 
 def test_no_mcp_tool_argument_reaches_the_policy():

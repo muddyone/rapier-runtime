@@ -82,7 +82,8 @@ def test_no_save_flag_flows_to_run(monkeypatch):
     monkeypatch.setattr("rapier.onboarding.preflight_error", lambda: None)
     captured = {}
 
-    def fake_run(manifest, request, ledger_dir, report_all=False, seed_meta=None, no_save=False):
+    def fake_run(manifest, request, ledger_dir, report_all=False, seed_meta=None, no_save=False,
+                 max_usd=None):
         captured["no_save"] = no_save
         return 0
 
@@ -97,7 +98,8 @@ def test_persistence_on_by_default_from_cli(monkeypatch):
     monkeypatch.setattr("rapier.onboarding.preflight_error", lambda: None)
     captured = {}
 
-    def fake_run(manifest, request, ledger_dir, report_all=False, seed_meta=None, no_save=False):
+    def fake_run(manifest, request, ledger_dir, report_all=False, seed_meta=None, no_save=False,
+                 max_usd=None):
         captured["no_save"] = no_save
         return 0
 

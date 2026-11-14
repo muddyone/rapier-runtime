@@ -59,6 +59,24 @@ def _record(vendor: str, model: str, system: str, prompt: str, response: str) ->
 
 
 def _post_with_retry(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
+    """POST JSON with exponential backoff on 429/5xx, held to the run's dollar cap.
+
+    The budget (``rapier.budget``) reserves the call's worst case before it is
+    sent and refuses it if it could pass the cap. A call that fails without a
+    response is charged its full reservation, since it may still have been billed."""
+    from . import budget
+
+    reserved = budget.reserve(payload)
+    try:
+        data = _post_with_retry_raw(url, headers, payload, timeout)
+    except Exception:
+        budget.settle(payload, None, reserved)
+        raise
+    budget.settle(payload, data, reserved)
+    return data
+
+
+def _post_with_retry_raw(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
     """POST JSON with exponential backoff on 429/5xx (respects Retry-After)."""
     import time
 
