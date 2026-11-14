@@ -129,6 +129,18 @@ class _Progress:
         self._finish()
 
 
+def _usd(text: str) -> float:
+    """argparse type for --max-usd: a finite number of dollars, 0 or more."""
+    import argparse
+
+    from .budget import InvalidCap, check_cap
+
+    try:
+        return check_cap(text)
+    except InvalidCap as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
+
+
 def _run(manifest: Manifest, request: str, ledger_dir: str | None, report_all: bool = False,
          seed_meta: dict | None = None, no_save: bool = False, max_usd: float | None = None) -> int:
     # Governance default: every run leaves a durable, re-readable record. Without
@@ -237,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
         p.add_argument("--ledger-dir", default=None,
                        help="write the run's records here (default: ~/.rapier/runs, override with "
                             "RAPIER_RUNS_DIR); every run is recorded unless --no-save")
-        p.add_argument("--max-usd", type=float, default=None, metavar="DOLLARS",
+        p.add_argument("--max-usd", type=_usd, default=None, metavar="DOLLARS",
                        help="hard dollar cap for this run's model calls, at list prices; a call that "
                             "could pass it is refused and its check reads as not run "
                             "(RAPIER_MAX_USD sets a ceiling no flag can raise)")

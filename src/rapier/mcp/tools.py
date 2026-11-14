@@ -70,6 +70,14 @@ def _run(
     err = preflight_error()
     if err:
         return {"ok": False, "error": err}
+    # A cap the guard can't compare against (NaN, infinity, negative) is refused
+    # before anything runs, never treated as no cap.
+    from ..budget import InvalidCap, check_cap
+
+    try:
+        max_usd = check_cap(max_usd)
+    except InvalidCap as exc:
+        return {"ok": False, "error": str(exc), "refused_by": "max_usd", "final_state": "refuse"}
     # The operator minimum is applied here, before anything runs. Its sources are
     # a fixed system file and the process environment; no tool argument reaches it.
     from ..operator_policy import PolicyError, decide_independence, decide_verify, stop_result

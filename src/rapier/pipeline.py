@@ -260,8 +260,8 @@ class Pipeline:
         from . import budget
 
         env = Envelope(request=request)
-        cap = budget.effective_cap(max_usd)
-        budget.set_budget(cap)
+        cap = budget.effective_cap(max_usd)  # raises InvalidCap before anything runs
+        budget_token = budget.set_budget(cap)
         # Caller-supplied envelope metadata, merged before any stage runs. Used to
         # carry context the pipeline itself can't observe — e.g. the front-door
         # Frame classification (from a separate `rapier frame` call) and the
@@ -284,7 +284,7 @@ class Pipeline:
             return env
         finally:
             set_transcript_sink(None)
-            budget.set_budget(None)
+            budget.reset_budget(budget_token)
 
     def _run_stages(self, env: Envelope, ledger, log, cancel=None) -> Envelope:
         import os

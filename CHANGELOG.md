@@ -17,6 +17,23 @@ reads as not run; a map stopped at the cap is REVIEW, "incomplete run", final
 state `defer`. With a cap set, a model with no listed price is refused. Spend
 by model is in `budget.json` and the report.
 
+The cap holds per run and per request:
+- Each run has its own budget, so two runs in one process (concurrent MCP
+  calls, or a run abandoned on timeout that is still finishing) can't share or
+  clear each other's cap.
+- A cap that isn't a finite number of dollars, 0 or more (NaN, infinity,
+  negative) is refused before the run: CLI usage error, MCP `ok: false`,
+  `final_state: "refuse"`, `refused_by: "max_usd"`. A `RAPIER_MAX_USD` like that
+  fails closed to 0.
+- Every request is reserved and settled, retries included. A 429/5xx, or an
+  error before anything was sent, is released; a timeout, a connection dropped
+  after sending, a 4xx or an unreadable body is charged in full.
+- The input estimate is the payload's UTF-8 byte length plus a per-message
+  allowance, an upper bound on its tokens.
+- The grounding judge and claim mapper (`judge`, `map_claims`; off in every
+  preset) call models outside Rapier's model layer, so a capped run refuses
+  them and the check reads as not run.
+
 ### Added: map mode (SPARRING specification v1.3, section 3.7)
 
 Specification: SPARRING v1.3, §3.7 "Terminal divergence: the map", public at

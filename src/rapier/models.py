@@ -61,46 +61,84 @@ def _record(vendor: str, model: str, system: str, prompt: str, response: str) ->
 def _post_with_retry(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
     """POST JSON with exponential backoff on 429/5xx, held to the run's dollar cap.
 
-    The budget (``rapier.budget``) reserves the call's worst case before it is
-    sent and refuses it if it could pass the cap. A call that fails without a
-    response is charged its full reservation, since it may still have been billed."""
-    from . import budget
+    The budget (``rapier.budget``) is asked before EVERY request this sends,
+    retries included, for that request's worst case, and refuses it if it could
+    pass the cap. After each request:
 
-    reserved = budget.reserve(payload)
-    try:
-        data = _post_with_retry_raw(url, headers, payload, timeout)
-    except Exception:
-        budget.settle(payload, None, reserved)
-        raise
-    budget.settle(payload, data, reserved)
-    return data
-
-
-def _post_with_retry_raw(url: str, headers: dict, payload: dict, timeout: int = 120) -> dict:
-    """POST JSON with exponential backoff on 429/5xx (respects Retry-After)."""
+    - a usable response is charged what its usage says;
+    - a 429 or 5xx response, or an error raised before anything was sent (no
+      connection made, a malformed URL), releases the reservation: not billed;
+    - anything else (a read timeout, a dropped connection after sending, a 4xx,
+      an unreadable body) is charged the full reservation, since it may still
+      have been billed.
+    """
     import time
 
     import requests
 
+    from . import budget
+
     delay, last = 2.0, None
     for _ in range(6):
+        reserved = budget.reserve(payload)
         try:
-            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            resp = _send_once(url, headers, payload, timeout)
         except requests.RequestException as exc:
+            if _never_sent(exc):
+                budget.release(reserved)
+            else:
+                budget.settle(payload, None, reserved)
             last = str(exc)
             time.sleep(delay)
             delay = min(delay * 2, 30)
             continue
+        except BaseException:
+            budget.settle(payload, None, reserved)
+            raise
         if resp.status_code == 429 or resp.status_code >= 500:
+            budget.release(reserved)
             retry_after = resp.headers.get("Retry-After")
             wait = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else delay
             last = f"HTTP {resp.status_code}"
             time.sleep(min(wait, 30))
             delay = min(delay * 2, 30)
             continue
-        resp.raise_for_status()
-        return resp.json()
+        try:
+            resp.raise_for_status()
+            data = resp.json()
+        except BaseException:
+            budget.settle(payload, None, reserved)
+            raise
+        budget.settle(payload, data if isinstance(data, dict) else None, reserved)
+        return data
     raise RuntimeError(f"request to {url} failed after retries: {last}")
+
+
+def _send_once(url: str, headers: dict, payload: dict, timeout: int):
+    """One HTTP request (no retry, no budget). Tests replace this."""
+    import requests
+
+    return requests.post(url, headers=headers, json=payload, timeout=timeout)
+
+
+def _never_sent(exc: BaseException) -> bool:
+    """True only when the request certainly never reached the provider."""
+    import requests
+
+    if isinstance(exc, (requests.exceptions.ConnectTimeout, requests.exceptions.InvalidURL,
+                        requests.exceptions.MissingSchema, requests.exceptions.InvalidSchema,
+                        requests.exceptions.InvalidHeader)):
+        return True
+    if isinstance(exc, requests.exceptions.ConnectionError) and not isinstance(
+            exc, requests.exceptions.Timeout):
+        try:
+            from urllib3.exceptions import NewConnectionError
+        except ImportError:  # pragma: no cover
+            return False
+        inner = exc.args[0] if exc.args else None
+        reason = getattr(inner, "reason", inner)
+        return isinstance(reason, NewConnectionError)
+    return False
 
 
 class ModelClient(ABC):
