@@ -43,6 +43,39 @@ sys.modules["lib_llm"] = _llm_shim
 spar_cross_review = importlib.import_module("spar_cross_review")
 spar_definitiveness_gate = importlib.import_module("spar_definitiveness_gate")
 
+# The vendored stack also has vendor callers that do NOT go through Rapier's
+# model layer: cite_check's call_anthropic/call_openai (used by the grounding
+# judge, the claim mapper and cite_check's own extraction) and the original
+# lib_llm's clients. Their spend can't be held to a dollar cap, so under a cap
+# every one of them refuses (rr-1 S-6). Patched on the module objects, so calls
+# made from inside the module (by global name) are guarded too.
+def _refuse_when_capped(name, fn):
+    import functools
+
+    @functools.wraps(fn)
+    def guarded(*a, **k):
+        from .. import budget
+
+        if budget.active():
+            raise budget.BudgetExceeded(
+                f"{name} calls a model outside Rapier's model layer, so a capped run can't use it")
+        return fn(*a, **k)
+    guarded._rapier_capped_guard = True
+    return guarded
+
+
+_CC = getattr(verify_grounding, "CC", None)
+for _mod, _names in ((_CC, ("call_anthropic", "call_openai")),
+                     (_orig_lib_llm, ("call_claude", "call_gpt", "claude_json", "gpt_json"))):
+    if _mod is None:
+        continue
+    for _n in _names:
+        _f = getattr(_mod, _n, None)
+        if callable(_f) and not getattr(_f, "_rapier_capped_guard", False):
+            setattr(_mod, _n, _refuse_when_capped(f"{getattr(_mod, '__name__', 'vendored')}.{_n}", _f))
+if _CC is not None and isinstance(getattr(_CC, "SUBSTRATES", None), dict):
+    _CC.SUBSTRATES = {k: getattr(_CC, v.__name__, v) for k, v in _CC.SUBSTRATES.items()}
+
 # Library entry points used by the Resolver stages.
 lib_llm = _llm_shim
 review = spar_cross_review.review                 # (problem, recommendation, prev, vendor) -> dict

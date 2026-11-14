@@ -276,13 +276,18 @@ class Pipeline:
 
         try:
             env = self._run_stages(env, ledger, log, cancel)
-            snap = budget.snapshot()
-            if snap is not None:
-                env.meta["budget"] = snap
-                if ledger:
-                    ledger.write_json("budget.json", snap)
             return env
         finally:
+            # Written on every exit, a crash or an interrupt included, so spend is
+            # never lost (rr-1 S-1). Best-effort: it must not hide the original error.
+            try:
+                snap = budget.snapshot()
+                if snap is not None:
+                    env.meta["budget"] = snap
+                    if ledger:
+                        ledger.write_json("budget.json", snap)
+            except Exception:  # noqa: BLE001
+                pass
             set_transcript_sink(None)
             budget.reset_budget(budget_token)
 

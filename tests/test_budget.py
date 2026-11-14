@@ -439,3 +439,171 @@ def test_grounding_judge_is_refused_under_a_cap():
         service.verify_artifacts([{"x": 1}], judge=True)
     with pytest.raises(budget.BudgetExceeded):
         service.verify_one({"x": 1}, map_claims=True)
+
+
+# --- D-120 /spar findings (rr-1 S-1 .. S-6) ------------------------------------
+
+def test_s1_spend_is_written_when_a_run_exits_abnormally(monkeypatch, tmp_path):
+    """A stage settles a call, then raises something that isn't fail-soft: the
+    spend still reaches budget.json and the envelope."""
+    import os
+
+    from rapier.pipeline import Pipeline, StageSpec
+    from rapier.stage import _REGISTRY, TransformStage
+
+    class SpendThenRaise(TransformStage):
+        name = "_spend_then_raise"
+
+        def run(self, env, ctx):
+            models._post_with_retry("u", {}, _payload())
+            raise KeyboardInterrupt  # not an Exception: escapes fail-soft
+
+    monkeypatch.setitem(_REGISTRY, "_spend_then_raise", SpendThenRaise)
+    _fake_send(monkeypatch, lambda *a, **k: _Resp())
+    with pytest.raises(KeyboardInterrupt):
+        Pipeline([StageSpec("_spend_then_raise")], name="t").run("x", ledger_root=str(tmp_path), max_usd=1.0)
+    found = [os.path.join(r, f) for r, _, fs in os.walk(tmp_path) for f in fs if f == "budget.json"]
+    assert found
+    import json
+    snap = json.load(open(found[0]))
+    assert snap["calls"] == 1 and snap["spent_usd"] > 0
+
+
+@pytest.mark.parametrize("override", [{"gpt-5.5": [0, 0]}, {"gpt-5.5": [0.01, 0.01]},
+                                      {"gpt-5.5": [-1, 30]}, {"gpt-5.5": ["nan", 30]}])
+def test_s2_prices_override_can_never_lower_a_built_in_price(monkeypatch, override):
+    import json
+    monkeypatch.setenv("RAPIER_PRICES", json.dumps(override))
+    assert budget._prices()["gpt-5.5"] == budget.PRICES["gpt-5.5"]
+
+
+def test_s2_zero_price_override_cannot_open_the_cap(monkeypatch):
+    import json
+    monkeypatch.setenv("RAPIER_PRICES", json.dumps({"gpt-5.5": [0, 0]}))
+    _fake_send(monkeypatch, lambda *a, **k: _Resp(
+        body={"usage": {"prompt_tokens": 100, "completion_tokens": 1000}}))
+    budget.set_budget(1.0)
+    sent = 0
+    for _ in range(50):
+        try:
+            models._post_with_retry("u", {}, _payload("gpt-5.5"))
+            sent += 1
+        except budget.BudgetExceeded:
+            break
+    snap = budget.snapshot()
+    assert sent < 50 and 0 < snap["spent_usd"] <= 1.0 and snap["refused"] == 1
+
+
+def test_s2_control_override_may_add_a_model_or_raise_a_price(monkeypatch):
+    import json
+    monkeypatch.setenv("RAPIER_PRICES", json.dumps({"new-model": [1, 2], "gpt-5.5": [6, 40],
+                                                    "zero-model": [0, 0]}))
+    t = budget._prices()
+    assert t["new-model"] == (1.0, 2.0) and t["gpt-5.5"] == (6.0, 40.0)
+    assert "zero-model" not in t  # a zero price is invalid: still unpriced, still refused
+
+
+@pytest.mark.parametrize("usage", [{"total_tokens": 1100}, {"prompt_tokens": 100},
+                                   {"completion_tokens": 1000}, {"input_tokens": "x", "output_tokens": 1},
+                                   {"input_tokens": -5, "output_tokens": 1}, {}])
+def test_s3_usage_without_both_token_counts_is_charged_the_reservation(monkeypatch, usage):
+    _fake_send(monkeypatch, lambda *a, **k: _Resp(body={"usage": usage}))
+    budget.set_budget(1.0)
+    models._post_with_retry("u", {}, _payload("gpt-5.5"))
+    assert budget.snapshot()["spent_usd"] == pytest.approx(budget.worst_case_usd(_payload("gpt-5.5")))
+
+
+def test_s3_anthropic_cache_tokens_are_charged(monkeypatch):
+    _fake_send(monkeypatch, lambda *a, **k: _Resp(body={"usage": {
+        "input_tokens": 100, "output_tokens": 100,
+        "cache_creation_input_tokens": 10000, "cache_read_input_tokens": 20000}}))
+    budget.set_budget(1.0)
+    models._post_with_retry("u", {}, _payload("claude-haiku-5-5"))
+    # (100 + 10000*1.25 + 20000*0.1) * $0.10/M + 100 * $0.50/M
+    assert budget.snapshot()["spent_usd"] == pytest.approx((100 + 12500 + 2000) * 0.10 / 1e6 + 100 * 0.50 / 1e6)
+
+
+def test_s3_the_worst_case_covers_a_full_cache_write():
+    p = _payload("claude-haiku-5-5", max_tokens=0, chars=4000)
+    in_tokens = len(__import__("json").dumps(p, ensure_ascii=False).encode()) + 64
+    assert budget.worst_case_usd(p) >= in_tokens * 0.10 * 1.25 / 1e6 * 0.999
+
+
+def test_s3_rapier_never_asks_for_prompt_caching():
+    """Shown, not assumed: no payload Rapier builds carries cache_control."""
+    import pathlib
+    src = pathlib.Path(models.__file__).parent
+    hits = [str(f) for f in src.rglob("*.py") if "cache_control" in f.read_text(encoding="utf-8")]
+    assert hits == []
+
+
+def test_s4_mcp_max_usd_zero_is_a_zero_cap_not_no_cap(monkeypatch):
+    """server.py passed `max_usd or None`, so an explicit 0 meant uncapped."""
+    import inspect
+
+    from rapier.mcp import server, tools
+    src = inspect.getsource(server)
+    assert "max_usd or None" not in src and "max_usd: float = 0" not in src
+    seen = {}
+    monkeypatch.setattr(tools, "preflight_error", lambda: None)
+
+    class _Pipe:
+        def run(self, request, **kw):
+            seen["max_usd"] = kw["max_usd"]
+            raise RuntimeError("stop")
+
+    class _Preset:
+        policy = None
+
+        def build(self):
+            return _Pipe()
+
+    monkeypatch.setattr(tools, "load_preset", lambda *a, **k: _Preset())
+    with pytest.raises(RuntimeError):
+        tools.run_spar("x", max_usd=0)
+    assert seen["max_usd"] == 0.0
+    assert budget.effective_cap(0) == 0.0
+
+
+def test_s5_settle_charges_at_the_reserve_time_price(monkeypatch):
+    import json
+    monkeypatch.setenv("RAPIER_PRICES", json.dumps({"temp-model": [1, 1]}))
+    budget.set_budget(1.0)
+    p = _payload("temp-model")
+    r = budget.reserve(p)
+    monkeypatch.delenv("RAPIER_PRICES")          # the price disappears before settle
+    budget.settle(p, {"usage": {"input_tokens": 1000, "output_tokens": 1000}}, r)
+    assert budget.snapshot()["spent_usd"] == pytest.approx(2000 * 1.0 / 1e6)
+
+
+def test_s6_vendored_direct_callers_refuse_under_a_cap(monkeypatch):
+    """Every vendored path that calls a vendor outside models.py refuses when a
+    budget is active."""
+    from rapier.verify import _bootstrap as B
+    cc = B.verify_grounding.CC
+    targets = [(cc, "call_anthropic"), (cc, "call_openai"), (B._orig_lib_llm, "call_claude"),
+               (B._orig_lib_llm, "call_gpt"), (B._orig_lib_llm, "claude_json"),
+               (B._orig_lib_llm, "gpt_json")]
+    for mod, name in targets:
+        f = getattr(mod, name)
+        assert getattr(f, "_rapier_capped_guard", False), name
+    assert all(getattr(cc, v.__name__) is v for v in cc.SUBSTRATES.values())
+    budget.set_budget(5.0)
+    for mod, name in targets:
+        with pytest.raises(budget.BudgetExceeded, match="outside Rapier's model layer"):
+            getattr(mod, name)("s", "u")
+    # cite_check's own extraction calls call_anthropic by global name: guarded too
+    with pytest.raises(budget.BudgetExceeded):
+        cc._extract_chunk("   1| text")
+
+
+def test_s6_every_vendor_http_call_is_in_models_or_guarded():
+    """Static audit: outside models.py, vendor endpoints appear only in the
+    vendored callers that the guard wraps."""
+    import pathlib
+    import re as _re
+    root = pathlib.Path(models.__file__).parent
+    pat = _re.compile(r"api\.anthropic\.com|api\.openai\.com|generativelanguage|/chat/completions")
+    hits = sorted(str(f.relative_to(root)) for f in root.rglob("*.py")
+                  if f.name != "models.py" and pat.search(f.read_text(encoding="utf-8")))
+    assert hits == ["verify/_vendor/cite_check.py", "verify/_vendor/lib_llm.py"]

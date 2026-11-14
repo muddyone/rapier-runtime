@@ -30,9 +30,19 @@ The cap holds per run and per request:
   after sending, a 4xx or an unreadable body is charged in full.
 - The input estimate is the payload's UTF-8 byte length plus a per-message
   allowance, an upper bound on its tokens.
-- The grounding judge and claim mapper (`judge`, `map_claims`; off in every
-  preset) call models outside Rapier's model layer, so a capped run refuses
-  them and the check reads as not run.
+- Every vendored caller that reaches a vendor outside Rapier's model layer
+  (the grounding judge, the claim mapper, cite_check's extraction, the original
+  reviewer clients) refuses under a cap, and the check reads as not run.
+- The spend record (`budget.json` and the envelope) is written on every exit,
+  a crash or an interrupt included.
+- `RAPIER_PRICES` may add a model or raise a price, never lower one; a price
+  must be above 0.
+- Usage that doesn't name both input and output tokens is charged the full
+  reservation. Anthropic cache-write and cache-read tokens are charged (1.25x
+  and 0.1x input), and the worst case assumes a full cache write. Rapier sends
+  no `cache_control`.
+- A call is settled at the price it was reserved at.
+- MCP `max_usd=0` is a cap of $0. Left out, there is no cap.
 
 ### Changed: map mode follows SPARRING specification v1.4, section 3.7
 
