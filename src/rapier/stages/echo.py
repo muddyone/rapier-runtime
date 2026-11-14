@@ -14,6 +14,8 @@ from ..stage import StageContext, TransformStage, register_stage
 
 @register_stage("echo")
 class EchoStage(TransformStage):
+    writes_answer = True  # gates must run after this stage to check the answer
+
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         note = ctx.config.get("note", "echo")
         client = ctx.clients.get("author")

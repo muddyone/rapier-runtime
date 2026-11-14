@@ -19,6 +19,8 @@ immaterial, stating why briefly. Return the full revised recommendation only."""
 
 @register_stage("anchored_fix")
 class AnchoredFixStage(TransformStage):
+    writes_answer = True  # gates must run after this stage to check the answer
+
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         client = ctx.clients.get("author")
         review = env.meta.get("review") or {}

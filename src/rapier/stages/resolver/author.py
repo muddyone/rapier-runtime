@@ -22,6 +22,8 @@ Return the recommendation only."""
 
 @register_stage("author")
 class AuthorStage(TransformStage):
+    writes_answer = True  # gates must run after this stage to check the answer
+
     def run(self, env: Envelope, ctx: StageContext) -> Envelope:
         client = ctx.clients.get("author")
         if client is None:

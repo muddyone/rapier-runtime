@@ -26,6 +26,8 @@ class _Boom(TransformStage):
 
 @register_stage("_test_rec")
 class _Rec(TransformStage):
+    writes_answer = True
+
     def run(self, env, ctx):
         env.recommendation = "Prefer the simpler option."
         return env
@@ -150,3 +152,56 @@ def test_doctor_reports_operator_minimum_and_presets(policy, capsys):
     out = capsys.readouterr().out
     assert "at least 'gate'" in out and "within the calling agent's reach" in out
     assert "✓ spar" in out
+
+
+# ── verifier R3-1 / R3-2: a gate counts only after the last answer-writing stage ──
+
+_NEGATIVE = {
+    # R3-1: no compose, so the bare recommendation is what the caller gets
+    "author-only": (["author"],
+                    ["author", "definitiveness_gate", "citation_gate", "compose"]),
+    # R3-2: a citation gate before the author never sees the answer
+    "gate-before-author": (["citation_gate", "author", "definitiveness_gate", "compose"],
+                           ["author", "definitiveness_gate", "citation_gate", "compose"]),
+    # the correctness gate before the last rewrite checks an earlier draft
+    "defin-before-fix": (["author", "definitiveness_gate", "anchored_fix", "citation_gate", "compose"],
+                         ["author", "anchored_fix", "definitiveness_gate", "citation_gate", "compose"]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(_NEGATIVE))
+def test_negative_manifest_warns_and_its_fix_does_not(case):
+    bad, fixed = _NEGATIVE[case]
+    assert manifest_warnings([StageSpec(stage=s) for s in bad])
+    assert manifest_warnings([StageSpec(stage=s) for s in fixed]) == []
+
+
+@pytest.mark.parametrize("case", ["author-only", "gate-before-author"])
+def test_negative_manifest_refused_under_minimum_and_fix_allowed(policy, case):
+    bad, fixed = _NEGATIVE[case]
+    policy("gate")
+    with pytest.raises(OP.PolicyError, match="custom manifest"):
+        OP.decide_manifest([StageSpec(stage=s) for s in bad])
+    assert OP.decide_manifest([StageSpec(stage=s) for s in fixed]).mode == "gate"
+
+
+def test_manifest_that_writes_no_answer_is_exempt(policy):
+    policy("gate")
+    assert OP.decide_manifest([StageSpec(stage="frame")]).mode == "gate"
+    assert OP.decide_manifest([StageSpec(stage="spark"), StageSpec(stage="cut")]).mode == "gate"
+
+
+def test_unknown_stage_counts_as_writing_the_answer(policy):
+    policy("gate")
+    with pytest.raises(OP.PolicyError):
+        OP.decide_manifest([StageSpec(stage="author"), StageSpec(stage="citation_gate"),
+                            StageSpec(stage="mystery_rewriter"), StageSpec(stage="compose")])
+
+
+def test_cli_run_author_only_manifest_refused(policy, tmp_path, capsys):
+    from rapier import cli
+
+    path = _manifest(tmp_path, ["author"])
+    policy("gate")
+    assert cli.main(["run", "--manifest", path, "--request", "x", "--no-save"]) == 2
+    assert "below the operator minimum" in capsys.readouterr().err

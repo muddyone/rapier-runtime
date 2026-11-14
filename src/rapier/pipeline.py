@@ -63,31 +63,67 @@ def _resolve_role_spec(
 GATE_STAGES = ("definitiveness_gate", "citation_gate", "reconcile", "traceability_gate")
 
 
+def writes_answer(stage: str) -> bool:
+    """Does this stage write or rewrite the answer (env.recommendation)? Declared
+    by the stage class (``writes_answer = True``). A stage name that isn't
+    registered counts as a writer: an unknown stage could change the answer, so a
+    gate before it must not be trusted to have checked the answer."""
+    try:
+        cls = get_stage(stage)
+    except Exception:  # noqa: BLE001 — unknown stage: assume the worst
+        return True
+    return bool(getattr(cls, "writes_answer", False))
+
+
+def _window(names: list[str]) -> tuple[int | None, int]:
+    """(index of the last answer-writing stage, index where output is fixed).
+    Output is fixed at compose, or at the end when there is no compose: then
+    the bare recommendation is what the caller gets."""
+    writers = [i for i, n in enumerate(names) if writes_answer(n)]
+    end = names.index("compose") if "compose" in names else len(names)
+    return (writers[-1] if writers else None), end
+
+
 def manifest_warnings(stages: list[StageSpec]) -> list[str]:
     """Check what a pipeline declares before it runs.
 
-    Only pipelines that compose a report are held to this: the Frame and
-    Proposer-only presets end before a verdict exists, by design. Warns when no
-    correctness gate is declared, or when a gate sits after ``compose``, where
-    its result can never reach the verdict or the report."""
+    A pipeline that writes no answer (Frame, Proposer-only) is not held to this.
+    Any other must run a correctness gate after the last stage that writes the
+    answer and before the output is fixed. A gate before that stage checks an
+    earlier draft (or nothing); a gate after compose never reaches the report."""
     names = [s.stage for s in stages]
-    if "compose" not in names:
+    last_writer, end = _window(names)
+    if last_writer is None:
         return []
     out: list[str] = []
-    compose_at = names.index("compose")
-    if "definitiveness_gate" not in names[:compose_at]:
-        out.append("declares no correctness gate (definitiveness_gate) before compose, so "
-                   "the report's verdict is never checked")
+    if "compose" not in names:
+        out.append("writes no report (no compose stage), so the answer is returned bare, "
+                   "without its verdict or trust rider")
+    if not manifest_declares(stages, "definitiveness_gate"):
+        out.append("declares no correctness gate (definitiveness_gate) between the last "
+                   f"stage that writes the answer ({names[last_writer]}) and the report, so "
+                   "the answer is never checked")
     for i, n in enumerate(names):
-        if n in GATE_STAGES and i > compose_at:
+        if n not in GATE_STAGES or n == "traceability_gate":
+            continue
+        if i > end and "compose" in names:
             out.append(f"{n} runs after compose, so its result never reaches the verdict "
                        "or the report")
-    return out
+        elif i < last_writer and not any(
+                names[j] == n for j in range(last_writer + 1, end)):
+            out.append(f"{n} runs only before {names[last_writer]}, so it checks an earlier "
+                       "draft, not the answer")
+    return list(dict.fromkeys(out))
 
 
 def manifest_declares(stages: list[StageSpec], stage: str) -> bool:
+    """Is ``stage`` declared where it checks the answer the caller gets: after the
+    last answer-writing stage and before the output is fixed?"""
     names = [s.stage for s in stages]
-    return stage in names and ("compose" not in names or names.index(stage) < names.index("compose"))
+    last_writer, end = _window(names)
+    if last_writer is None:
+        return stage in names
+    return any(names[i] == stage for i in range(last_writer + 1, end))
 
 
 def _canon(obj: Any) -> Any:
@@ -102,31 +138,75 @@ def _canon(obj: Any) -> Any:
     return obj
 
 
+# Stages that bind vendors at run time (stages/resolver/_binding.py) rather than
+# through roles, with the config key that carries their second-vendor preference.
+_BINDING_STAGES = {"cross_review": "reviewer_vendor", "definitiveness_gate": "second_vendor"}
+
+
+def _code_digest() -> str:
+    """sha256 over every .py file in the installed package, vendored code included.
+    Prompts live in stage code, so an edit under an unchanged version still shows."""
+    import hashlib
+    import os
+
+    root = os.path.dirname(os.path.abspath(__file__))
+    h = hashlib.sha256()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d != "__pycache__")
+        for fn in sorted(filenames):
+            if fn.endswith(".py"):
+                full = os.path.join(dirpath, fn)
+                h.update(os.path.relpath(full, root).replace(os.sep, "/").encode())
+                h.update(b"\0")
+                with open(full, "rb") as fh:
+                    h.update(fh.read())
+                h.update(b"\0")
+    return "sha256:" + h.hexdigest()
+
+
 def method_fingerprint(stages: list[StageSpec], policy, available: list[str]) -> dict[str, Any]:
     """Identify the method that runs (Accountable Agents item 5).
 
-    ``hash`` covers what was declared: the Rapier version (stage code and its
-    prompts ship in the package), the stages in order with their config and
-    roles, and the vendor policy. ``resolved_hash`` covers what actually ran:
-    the same, with each role after vendor substitution for the keys present.
-    Equal inputs under an equal ``hash`` should give comparable results; a
-    different ``resolved_hash`` under the same ``hash`` means the vendors moved."""
+    ``hash`` covers what was declared: the Rapier version and a digest of the
+    package's code (stage code and its prompts, vendored gates included), the
+    stages in order with their config and roles, and the vendor policy.
+    ``resolved_hash`` covers what actually ran: the same, with each role after
+    vendor substitution for the keys present, and, for the stages that bind
+    vendors at run time (cross-review, the correctness gate), the primary and
+    second vendor they will bind. Losing the second vendor, and with it the
+    independent review, moves ``resolved_hash``."""
     import hashlib
     import json
 
     from . import __version__
 
+    code = _code_digest()
+
     def digest(stage_list):
-        body = {"rapier_version": __version__, "policy": _canon(policy), "stages": stage_list}
+        body = {"rapier_version": __version__, "code": code, "policy": _canon(policy),
+                "stages": stage_list}
         raw = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
         return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
     declared = [_canon({"stage": s.stage, "config": s.config, "roles": s.roles}) for s in stages]
-    resolved = [_canon({"stage": s.stage, "config": s.config,
-                        "roles": {r: _resolve_role_spec(ms, policy, available)[0]
-                                  for r, ms in s.roles.items()}}) for s in stages]
+    resolved = []
+    author_vendor = None
+    for s in stages:
+        roles = {r: _resolve_role_spec(ms, policy, available)[0] for r, ms in s.roles.items()}
+        if "author" in roles:
+            author_vendor = roles["author"].vendor
+        entry: dict[str, Any] = {"stage": s.stage, "config": s.config, "roles": roles}
+        if s.stage in _BINDING_STAGES:
+            try:
+                pair = (policy or Policy()).resolve(
+                    available, primary_pref=author_vendor,
+                    secondary_pref=s.config.get(_BINDING_STAGES[s.stage]))
+                entry["binds"] = {"primary": pair[0], "second": pair[1]}
+            except Exception as exc:  # noqa: BLE001 — record, don't fail the run here
+                entry["binds"] = {"error": type(exc).__name__}
+        resolved.append(_canon(entry))
     return {"hash": digest(declared), "resolved_hash": digest(resolved),
-            "rapier_version": __version__, "stages": len(stages)}
+            "rapier_version": __version__, "code_hash": code, "stages": len(stages)}
 
 
 class Pipeline:

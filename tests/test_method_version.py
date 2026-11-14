@@ -45,3 +45,24 @@ def test_hash_reaches_ceremony_row_and_report():
     assert row["method_resolved_hash"].startswith("sha256:")
     assert row["rapier_version"]
     assert row["method_hash"][:19] in env.meta["report_md"]
+
+
+def test_losing_only_the_second_vendor_moves_the_resolved_hash():
+    """Verifier R5-1: the reviewer and the correctness gate bind vendors at run
+    time, not through roles. With only the author's vendor left the review is no
+    longer independent, and the resolved hash must say so."""
+    for name in ("spar", "sparring"):
+        stages = load_preset(name).stages
+        both = _fp(stages, ("anthropic", "openai"))
+        one = _fp(stages, ("anthropic",))
+        assert both["hash"] == one["hash"]
+        assert both["resolved_hash"] != one["resolved_hash"], name
+
+
+def test_code_change_moves_the_hash(monkeypatch):
+    from rapier import pipeline
+
+    stages = load_preset("spar").stages
+    before = _fp(stages)["hash"]
+    monkeypatch.setattr(pipeline, "_code_digest", lambda: "sha256:edited")
+    assert _fp(stages)["hash"] != before

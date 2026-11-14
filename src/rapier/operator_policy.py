@@ -179,13 +179,15 @@ def decide_verify(requested: str, set_by: str) -> VerifyDecision:
 def decide_manifest(stages) -> VerifyDecision:
     """Apply the operator minimum to a custom manifest (``rapier run --manifest``).
 
-    A manifest that composes a report but declares no citation gate before
-    compose runs with the check switched off, whatever any flag says. Under a
-    ``gate`` minimum that is refused, the same as ``verify=off``."""
-    from .pipeline import manifest_declares
+    What the minimum holds is whatever the caller gets back. A manifest that
+    writes an answer counts as ``verify=off`` unless a citation gate runs after
+    the last stage that writes the answer and before the output is fixed (at
+    compose, or at the end when there is none). Only a manifest that writes no
+    answer at all (Frame, Proposer-only) has nothing for the floor to hold."""
+    from .pipeline import manifest_declares, writes_answer
 
     names = [s.stage for s in stages]
-    if "compose" not in names:  # no report, nothing for a minimum to hold
+    if not any(writes_answer(n) for n in names):
         mode = "gate"
     elif not manifest_declares(stages, "citation_gate"):
         mode = "off"
