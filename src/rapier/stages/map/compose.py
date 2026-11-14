@@ -52,9 +52,12 @@ def map_final_state(m: dict) -> tuple[str, str]:
     if g["verdict"] == "REVIEW":
         return "escalate", ("The map needs your judgment: " + "; ".join(g["review"]) + ". See the "
                             "coverage rider.")
+    pl = m.get("pattern_lock") or {}
+    merges = (f" Pattern Lock did not run for: {pl.get('reason')}, so duplicates there were "
+              "not merged." if pl.get("status") in ("did-not-run", "partial") else "")
     return "act", ("The map cleared its checks: every region was probed and its attack held, "
-                   "and every cited anchor passed the citation check. Which items matter is yours "
-                   "to judge.")
+                   "and every cited anchor passed the citation check." + merges
+                   + " Which items matter is yours to judge.")
 
 
 def capture_recapture(m: dict) -> dict | None:
@@ -176,7 +179,9 @@ def render_map(env: Envelope) -> str:
     pl = m.get("pattern_lock") or {}
     L += _sec("5. PATTERN LOCK MERGES", "Reported, not gated.",
               (f"{pl.get('merged_count', 0)} item(s) merged ({pl.get('merged_share', 0):.0%} of the SPARK field), "
-               f"in {pl.get('merge_calls', 0)} merge call(s), {pl.get('scope', 'over the whole field')}"
+               f"in {pl.get('merge_calls', 0)} merge call(s) "
+               f"{'attempted' if pl.get('status') in ('did-not-run', 'partial') else 'made'}, "
+               f"{pl.get('scope', 'over the whole field')}"
                + ("; duplicates across regions are not merged" if pl.get("scope") == "within each region" else "")
                + (f"; merges undone by the Challenger: {', '.join(pl['unmerged'])}" if pl.get("unmerged") else "")
                + (f". Pattern Lock did not run for: {pl.get('reason')}" if pl.get("status") in ("did-not-run", "partial") else "")

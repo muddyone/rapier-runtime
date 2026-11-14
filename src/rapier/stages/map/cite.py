@@ -68,12 +68,52 @@ def _pieces(text: str, min_evidence: bool = False) -> list[str]:
     return out
 
 
-def _quote_parts(loc: str) -> list[str]:
-    """The quoted text in a locus, split at ellipses."""
-    parts = []
-    for m in _QUOTE.finditer(loc):
-        parts += _pieces(m.group(1) or m.group(2) or "")
-    return parts
+def _quotes(loc: str) -> list[list[str]]:
+    """Each quote in a locus, as its list of ellipsis-separated pieces."""
+    return [ps for ps in (_pieces(m.group(1) or m.group(2) or "") for m in _QUOTE.finditer(loc)) if ps]
+
+
+_HEADING = re.compile(r"^\s*#{1,6}\s", re.M)
+
+
+def _sections(source: str) -> list[str]:
+    """The source split at its markdown headings, each section folded."""
+    cuts = [m.start() for m in _HEADING.finditer(source)]
+    bounds = [0, *cuts, len(source)]
+    return [_fold(source[a:b]) for a, b in zip(bounds, bounds[1:]) if source[a:b].strip()]
+
+
+def _quote_found(pieces: list[str], source: str) -> bool:
+    """A quote with no ellipsis must be found whole, however short (verifier
+    C-1). A quote spliced with ellipses must not be assembled from scraps
+    (sparring-1): at least one piece needs three or more words, and the pieces
+    must appear in order within one section of the source, each within
+    ``_MAX_GAP`` characters of the one before."""
+    folded = [_fold(p) for p in pieces]
+    if len(folded) == 1:
+        return folded[0] in _fold(source)
+    if max(len(p.split()) for p in folded) < 3:
+        return False
+    for sec in _sections(source):
+        start = 0
+        while True:
+            i = sec.find(folded[0], start)
+            if i < 0:
+                break
+            at, ok = i + len(folded[0]), True
+            for p in folded[1:]:
+                j = sec.find(p, at)
+                if j < 0 or j - at > _MAX_GAP:
+                    ok = False
+                    break
+                at = j + len(p)
+            if ok:
+                return True
+            start = i + 1
+    return False
+
+
+_MAX_GAP = 300  # characters an ellipsis may stand for between two quoted pieces
 
 
 _LEAD_REF = re.compile(r"^\s*(?:(?:§\s*|section\s+)\d+(?:\.\d+)*[^:\u2014-]*?[:\u2014-]\s+)", re.I)
@@ -96,9 +136,9 @@ def locus_exists(locus: str, source: str) -> bool:
     loc = (locus or "").strip()
     if not loc:
         return False
-    quotes = _quote_parts(loc)
+    quotes = _quotes(loc)
     if quotes:
-        return all(_fold(q) in _fold(source) for q in quotes)
+        return all(_quote_found(q, source) for q in quotes)
     bare = loc.strip('"\u201c\u201d\'').strip()
     text = _LEAD_REF.sub("", bare)  # "§11: Lockfile at ..." -> "Lockfile at ..."
     pieces = _pieces(text, min_evidence=True)

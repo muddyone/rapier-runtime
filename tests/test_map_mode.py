@@ -528,3 +528,20 @@ def test_invented_backtick_identifier_is_fabricated():
     from rapier.stages.map.cite import locus_exists
     assert not locus_exists("\u00a72: `fake_identifier`", LIVE_SOURCE)
     assert locus_exists("\u00a79: `finding_id`", LIVE_SOURCE)
+
+
+# ── sparring-1: a quote spliced from scraps must not count as cited ────────
+
+def test_fragment_spliced_quote_is_fabricated():
+    from rapier.stages.map.cite import locus_exists
+    assert not locus_exists('"the … sweep … is … never"', LIVE_SOURCE)
+    # two-word pieces, but drawn from different sections: still not one quote
+    assert not locus_exists('"Every /sync-now step sorts … for each check"', LIVE_SOURCE)
+    # out of order within one section
+    assert not locus_exists('"There is no spectrum … Every /sync-now step"', LIVE_SOURCE)
+
+
+def test_control_real_elided_quote_within_one_section_is_found():
+    from rapier.stages.map.cite import locus_exists
+    assert locus_exists('"Every /sync-now step sorts cleanly … There is no spectrum."', LIVE_SOURCE)
+    assert locus_exists('"eu-west"', SOURCE)  # an unelided short quote is still checked whole
