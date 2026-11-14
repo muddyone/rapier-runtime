@@ -4,7 +4,7 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
-## Unreleased
+## 0.6.2 — 2026-11-14
 
 ### Added: every run names its final state
 
