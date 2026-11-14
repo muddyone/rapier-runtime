@@ -433,3 +433,45 @@ def test_control_real_entry_id_is_named(run):
 def test_empty_region_is_disclosed(run):
     env = run({F.GENERATE: lambda p, v: {"items": []}})
     assert "this region yielded no items" in env.meta["report_md"]
+
+
+# ── live-run regressions (D-100, plan 19): real loci the first check misread ──
+
+LIVE_SOURCE = """## 2. Tiers
+Every /sync-now step sorts cleanly into one of two buckets. There is no spectrum.
+
+| Outcome | What happens |
+|---|---|
+| All clear | **Say nothing.** Not one line. |
+
+> **Decision (locked): the sweep is a single process emitting one consolidated
+> result.**
+
+- **`ran_at` per check** — every rendered advisory line carries its age.
+## 9. Cache
+"""
+
+
+@pytest.mark.parametrize("locus", [
+    "§2: 'Every /sync-now step sorts cleanly into one of two buckets. There is no spectrum.'",
+    "§2: “Every /sync-now step sorts cleanly … There is no spectrum.”",
+    "§2 table: 'All clear — Say nothing. Not one line.'",
+    "the sweep is a single process emitting one consolidated result",
+    "§9 cache format includes `launched_at`, but no sweep id",       # section + comment
+    "§2 table vs §9 list",
+    "§9: \"`ran_at` per check — every rendered advisory line carries its age.\"",
+])
+def test_real_loci_are_found(locus):
+    from rapier.stages.map.cite import locus_exists
+    assert locus_exists(locus, LIVE_SOURCE)
+
+
+@pytest.mark.parametrize("locus", [
+    "§2: 'Every step is on a spectrum of urgency.'",        # real section, made-up quote
+    "§4: 'Every /sync-now step sorts cleanly into one of two buckets.'"[:4] + " table",  # no §4
+    "Lockfile at ~/.loom/audit/.lock",                             # not in the source
+    "§2 table vs §13 list",                               # §13 doesn't exist
+])
+def test_misquotes_and_missing_sections_are_fabricated(locus):
+    from rapier.stages.map.cite import locus_exists
+    assert not locus_exists(locus, LIVE_SOURCE)

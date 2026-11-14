@@ -28,28 +28,77 @@ from . import _common as C
 
 
 def _fold(s: str) -> str:
-    return re.sub(r"\s+", " ", (s or "")).strip().lower()
+    """Compare text the way a reader would: markdown emphasis, backticks, table
+    pipes and blockquote marks dropped, every dash and quote mark alike,
+    whitespace (line wraps included) collapsed, case folded. Applied to both the
+    locus and the source, so it can't make a quote match text that isn't there."""
+    t = (s or "")
+    t = re.sub(r"^\s*>+\s?", " ", t, flags=re.M)          # blockquote marks
+    t = re.sub(r"[*`|]", " ", t)                           # emphasis, code, table pipes
+    t = re.sub(r"(?<!\w)_|_(?!\w)", " ", t)                # _emphasis_, not snake_case
+    t = re.sub(r"[\u2014\u2013\u2212]|--", "-", t)          # dashes
+    t = re.sub(r"\s-\s", " ", t)                           # a spaced dash is punctuation
+    t = re.sub(r"[\u2018\u2019]", "'", t)
+    t = re.sub(r"[\u201c\u201d]", '"', t)
+    t = re.sub(r"\s+", " ", t)
+    t = re.sub(r"\s+([.,;:!?)])", r"\1", t)                # "nothing ." -> "nothing."
+    return t.strip().lower()
 
 
-_SECTION_REF = re.compile(r"^(§\s*|section\s+|sec\.?\s*)?(\d+(?:\.\d+)*)(?:\s|$|[.:,)])", re.I)
+_QUOTE = re.compile(r"[\"\u201c]([^\"\u201d]+)[\"\u201d]|(?<![A-Za-z0-9])['\u2018`]([^'\u2019`]+)['\u2019`](?![A-Za-z])")
+_SECTION_ANY = re.compile(r"(?:§\s*|\bsection\s+|\bsec\.?\s*)(\d+(?:\.\d+)*)|^(\d+(?:\.\d+)+)(?=[\s.:,)]|$)",
+                          re.I)
+
+
+def _pieces(text: str) -> list[str]:
+    """Split quoted text at ellipses, keeping pieces long enough to mean
+    something (two words or 12 characters)."""
+    out = []
+    for piece in re.split(r"\s*(?:\.\.\.|\u2026)\s*", text):
+        piece = piece.strip(" ,;:")
+        if len(piece.split()) >= 2 or len(piece) >= 12:
+            out.append(piece)
+    return out
+
+
+def _quote_parts(loc: str) -> list[str]:
+    """The quoted text in a locus, split at ellipses."""
+    parts = []
+    for m in _QUOTE.finditer(loc):
+        parts += _pieces(m.group(1) or m.group(2) or "")
+    return parts
+
+
+_LEAD_REF = re.compile(r"^\s*(?:(?:§\s*|section\s+)\d+(?:\.\d+)*[^:\u2014-]*?[:\u2014-]\s+)", re.I)
+
+
+def _section_exists(num: str, source: str) -> bool:
+    n = re.escape(num)
+    heading = re.compile(rf"^\s*(?:#+\s*)?(?:§\s*|section\s+)?{n}(?:[\s.:)]|$)", re.I | re.M)
+    return bool(heading.search(source) or re.search(rf"§\s*{n}(?!\.?\d)", source))
 
 
 def locus_exists(locus: str, source: str) -> bool:
-    """True if the quoted text is in the source, or the section it names exists
-    there (as a numbered heading line or a "§n" mark)."""
-    loc = (locus or "").strip().strip('"\u201c\u201d\'').strip()
+    """True if the locus points at something really in the source.
+
+    - If the locus quotes the source, every quoted piece must be found
+      (whitespace and case folded). A real section with a made-up quote fails.
+    - Otherwise, the whole locus found verbatim counts; failing that, every
+      section it names must exist (a "§2 table vs §13" style pointer).
+    A bare number is too weak to be a section reference."""
+    loc = (locus or "").strip()
     if not loc:
         return False
-    m = _SECTION_REF.match(loc)
-    if m and (m.group(1) or "." in m.group(2)) and len(loc) <= len(m.group(0)) + 60:
-        num = re.escape(m.group(2))
-        heading = re.compile(rf"^\s*(?:#+\s*)?(?:§\s*|section\s+)?{num}(?:[\s.:)]|$)", re.I | re.M)
-        if heading.search(source) or re.search(rf"§\s*{num}(?!\.?\d)", source):
-            return True
-    # A quote: at least two words or 12 characters, so a stray token can't "match".
-    if (len(loc.split()) >= 2 or len(loc) >= 12) and _fold(loc) in _fold(source):
+    quotes = _quote_parts(loc)
+    if quotes:
+        return all(_fold(q) in _fold(source) for q in quotes)
+    bare = loc.strip('"\u201c\u201d\'').strip()
+    text = _LEAD_REF.sub("", bare)  # "§11: Lockfile at ..." -> "Lockfile at ..."
+    pieces = _pieces(text)
+    if pieces and all(_fold(p) in _fold(source) for p in pieces):
         return True
-    return False
+    refs = [m.group(1) or m.group(2) for m in _SECTION_ANY.finditer(bare)]
+    return bool(refs) and all(_section_exists(r, source) for r in refs)
 
 
 # An entry identifier that says there is none (verifier M-2): "industry best
