@@ -90,6 +90,45 @@ def manifest_declares(stages: list[StageSpec], stage: str) -> bool:
     return stage in names and ("compose" not in names or names.index(stage) < names.index("compose"))
 
 
+def _canon(obj: Any) -> Any:
+    from dataclasses import asdict, is_dataclass
+
+    if is_dataclass(obj):
+        return _canon(asdict(obj))
+    if isinstance(obj, dict):
+        return {str(k): _canon(v) for k, v in sorted(obj.items(), key=lambda kv: str(kv[0]))}
+    if isinstance(obj, (list, tuple)):
+        return [_canon(v) for v in obj]
+    return obj
+
+
+def method_fingerprint(stages: list[StageSpec], policy, available: list[str]) -> dict[str, Any]:
+    """Identify the method that runs (Accountable Agents item 5).
+
+    ``hash`` covers what was declared: the Rapier version (stage code and its
+    prompts ship in the package), the stages in order with their config and
+    roles, and the vendor policy. ``resolved_hash`` covers what actually ran:
+    the same, with each role after vendor substitution for the keys present.
+    Equal inputs under an equal ``hash`` should give comparable results; a
+    different ``resolved_hash`` under the same ``hash`` means the vendors moved."""
+    import hashlib
+    import json
+
+    from . import __version__
+
+    def digest(stage_list):
+        body = {"rapier_version": __version__, "policy": _canon(policy), "stages": stage_list}
+        raw = json.dumps(body, sort_keys=True, separators=(",", ":"), default=str)
+        return "sha256:" + hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+    declared = [_canon({"stage": s.stage, "config": s.config, "roles": s.roles}) for s in stages]
+    resolved = [_canon({"stage": s.stage, "config": s.config,
+                        "roles": {r: _resolve_role_spec(ms, policy, available)[0]
+                                  for r, ms in s.roles.items()}}) for s in stages]
+    return {"hash": digest(declared), "resolved_hash": digest(resolved),
+            "rapier_version": __version__, "stages": len(stages)}
+
+
 class Pipeline:
     def __init__(self, stages: list[StageSpec], name: str = "pipeline", policy=None):
         self.stages = stages
@@ -146,6 +185,7 @@ class Pipeline:
         # Declared vs ran (Accountable Agents item 3). The pipeline, not each
         # stage, records what happened to every declared stage, so a stage that
         # writes no trace of its own still shows up.
+        env.meta["method"] = method_fingerprint(self.stages, self.policy, available)
         warnings = manifest_warnings(self.stages)
         env.meta["manifest_warnings"] = warnings
         for w in warnings:

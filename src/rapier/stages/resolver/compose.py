@@ -432,6 +432,16 @@ def _record_body(env: Envelope) -> str:
     persisted, name the full path; when it was opted out, say so plainly so a
     missing trail is never mistaken for a lost one.
     """
+    m = env.meta.get("method") or {}
+    method = (f"\n\nMethod: Rapier {m.get('rapier_version')}, method "
+              f"{str(m.get('hash'))[:19]} (as run, with these vendors: "
+              f"{str(m.get('resolved_hash'))[:19]}). The full hashes are in ceremony.json; "
+              "the same inputs under the same method hash should give comparable results."
+              ) if m.get("hash") else ""
+    return _record_core(env) + method
+
+
+def _record_core(env: Envelope) -> str:
     run_dir = env.meta.get("run_dir")
     if run_dir:
         return (
@@ -715,6 +725,9 @@ def _ceremony_row(env: Envelope) -> dict:
         "correctness_check_reason": correctness_outcome(env)[1],
         "citation_check": citation_outcome(env)[0],
         "citation_check_reason": citation_outcome(env)[1],
+        "method_hash": (env.meta.get("method") or {}).get("hash", ""),
+        "method_resolved_hash": (env.meta.get("method") or {}).get("resolved_hash", ""),
+        "rapier_version": (env.meta.get("method") or {}).get("rapier_version", ""),
         "verify_mode": str(env.meta.get("verify") or ""),
         "stages_declared": len(env.meta.get("stage_runs") or []),
         "stages_failed_soft": [r["stage"] for r in (env.meta.get("stage_runs") or [])

@@ -6,6 +6,15 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: a hash of the method that ran
+
+`ceremony.json` gains `method_hash` and `method_resolved_hash` (plus
+`rapier_version`), and THE RECORD shows both, shortened. `method_hash` covers
+the Rapier version, every stage in order with its config and roles, and the
+vendor policy. `method_resolved_hash` is the same after vendor substitution, so
+a run on different keys shows up as the same method on different vendors. To
+check for drift, compare runs on the same inputs under the same `method_hash`.
+
 ### Added: what the method declared, compared with what ran
 
 - **WHAT RAN**, a new report section, lists every stage the method declared
