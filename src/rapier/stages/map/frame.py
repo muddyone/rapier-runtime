@@ -80,8 +80,11 @@ def _norm_regions(raw: Any) -> list[dict]:
 
 def make_units(regions: list[dict], blocks: Any, basis: Any = None) -> tuple[list[dict], str]:
     """Units from regions and declared blocks: ``(units, error)``. With no blocks,
-    each region is its own unit. Blocks must share one basis (section or lens)
-    and cover every region exactly once; members name a region by id or name."""
+    each region is its own unit. Each block declares ONE basis, section or lens,
+    and a block never mixes the two (sparring-3's reading of v1.5 §3.7,
+    2026-11-15: the rule is per block, so a frame may hold section blocks and a
+    lens block for regions that cut across every section). Blocks cover every
+    region exactly once; members name a region by id or name."""
     if not blocks:
         return [{"id": r["id"], "kind": "region", "name": r["name"], "definition": r["definition"],
                  "members": [r["id"]]} for r in regions], ""
@@ -113,8 +116,6 @@ def make_units(regions: list[dict], blocks: Any, basis: Any = None) -> tuple[lis
         units.append({"id": f"B{i}", "kind": "block", "name": str(b["name"]).strip(),
                       "basis": bb, "members": members,
                       "definition": "; ".join(f"{rid}" for rid in members)})
-    if len(bases) > 1:
-        return [], "blocks mix two seams (section and lens); group along one"
     missing = [r["id"] for r in regions if r["id"] not in seen]
     if missing:
         return [], f"regions in no block: {', '.join(missing)}"

@@ -173,7 +173,12 @@ def render_map(env: Envelope) -> str:
     if f.get("frozen"):
         p1 += ["", f"Frozen frame: the regions above, the frame-attack's additions included, were "
                    f"carried verbatim from run {f.get('carried_from')} and regrouped by the frame's "
-                   "author. No second frame-attack ran on the regrouped frame."]
+                   "author. No second frame-attack ran on the regrouped frame. This DEPARTS from "
+                   "SPARRING v1.5 §3.7's text (\"the frame-attack runs on the blocked frame\"): the "
+                   "frame-attack ran on the unblocked frame of that run, not on these blocks. The "
+                   "carried record was cross-checked against that run's hash, supplied frame, call "
+                   "log and transcript; consistent edits to every file of that record could still "
+                   "forge it."]
     st = m.get("stopped")
     if st:
         p1 += ["", f"STOPPED before generation: {st['cause']}."]
@@ -191,7 +196,9 @@ def render_map(env: Envelope) -> str:
         p2.append(f"{r['id']}: {lab.get('label')}" + (f" ({'; '.join(lab.get('why'))})" if lab.get("why") else "")
                   + ("; this unit yielded no items" if n_items == 0 and lab.get("label") != "UNPROBED" else ""))
         if r.get("kind") == "block" and lab.get("label"):
-            p2.append("  " + BLOCK_SENTENCE.format(label=lab["label"], n=len(r["members"])))
+            p2.append("  " + (BLOCK_SENTENCE.format(label=lab["label"], n=len(r["members"]))
+                              if len(r["members"]) > 1 else
+                              f"{lab['label']} for a block of 1 region."))
         for c in (attacks.get(r["id"]) or {}).get("candidates", []):
             if not c.get("new"):
                 p2.append(f"  not new: “{c['text']}” matched to {c.get('matched')}")

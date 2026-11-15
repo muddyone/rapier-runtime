@@ -1,0 +1,135 @@
+{
+  "_note": "Option (a) of the reworked D-138 (sparring-3, 2026-11-15): spec v1.5 as written. Run 20261114190132-map's 16 regions (the 10 supplied regions of 18045917 plus that run's 6 frame-attack additions), verbatim, supplied as an ordinary frame in 8 blocks: 7 section blocks and one lens block for the two cross-cutting regions. A FRESH frame-attack then runs on this blocked frame; with 8 units there are 4 slots under the cap of 12 for its additions. More than 4, and the pre-flight stops the run before generation. Not run until Bart answers.",
+  "regions": [
+    {
+      "name": "Tier split and the interrupt test",
+      "definition": "Sections 1-2.1: what counts as blocking versus advisory, the locked interrupt test, and checks that could land in the wrong tier."
+    },
+    {
+      "name": "Architecture",
+      "definition": "Section 3: the sweep's components and data flow between /sync-now, the background runner and the cache."
+    },
+    {
+      "name": "The backgrounding mechanism",
+      "definition": "Section 4: how the sweep runs in the background, the one thing that breaks it, and the harness behaviour it relies on."
+    },
+    {
+      "name": "Check contract and registration table",
+      "definition": "Sections 5-5.1: the unchanged per-check contract, the registration table, TTLs and scheduling."
+    },
+    {
+      "name": "Surfacing etiquette and the orphaned sweep",
+      "definition": "Sections 6-6.1: when and how results are shown to the partner, including completion after a /clear."
+    },
+    {
+      "name": "One sweep, machine-scoped checks and the worktree nudge",
+      "definition": "Sections 7-8: one consolidated sweep instead of N jobs, machine- versus project-scoped checks, and the worktree-cleanup nudge."
+    },
+    {
+      "name": "Cache format",
+      "definition": "Section 9: the cache schema and fields, freshness, finding ids, and what readers of the cache can rely on."
+    },
+    {
+      "name": "Sinks",
+      "definition": "Section 10: where findings go by actionability (/sync-now report, /wn, the Intake) and routing between them."
+    },
+    {
+      "name": "Bounding",
+      "definition": "Section 11: deadlines, timeouts, deferral, locks and late results, so a slow sweep degrades instead of ambushing."
+    },
+    {
+      "name": "Package, phased build, decisions and open questions",
+      "definition": "Sections 12-16: the package shape, the phases and their exit criteria, the locked decisions, and the open questions."
+    },
+    {
+      "name": "Cross-cutting end-to-end invariants",
+      "definition": "Plan-wide behaviours that emerge only across multiple sections: launch, locking, TTL decisions, cache writes, notification, cache reads and sink routing as one lifecycle."
+    },
+    {
+      "name": "Cache durability, atomicity and filesystem safety",
+      "definition": "How audit JSON files and locks are created, updated, read, permissioned, recovered and migrated on real filesystems."
+    },
+    {
+      "name": "Parsing and classification semantics",
+      "definition": "How raw check blocks are parsed into STATUS, outcome, finding_id and rendered/routed actions, including malformed, missing or unexpected script output."
+    },
+    {
+      "name": "Reader compatibility and rollout/migration",
+      "definition": "How old and new versions of /sync-now, /wn, sync-loom and the sweep coexist during phased rollout, rollback or partial installation."
+    },
+    {
+      "name": "Security and privacy of persisted findings",
+      "definition": "Whether audit blocks or findings may contain secrets, paths, project names or sensitive machine state, and how ~/.loom/audit should be protected or redacted."
+    },
+    {
+      "name": "Observability and diagnosability",
+      "definition": "How failures, skipped checks, deadline hits, stale caches, lock contention and notification delivery problems are logged, inspected and debugged without annoying the partner."
+    }
+  ],
+  "blocks": [
+    {
+      "name": "Tier split and architecture (§1-3)",
+      "basis": "section",
+      "members": [
+        "R1",
+        "R2"
+      ]
+    },
+    {
+      "name": "The backgrounding mechanism (§4)",
+      "basis": "section",
+      "members": [
+        "R3"
+      ]
+    },
+    {
+      "name": "Check contract, registration table, parsing and classification (§5-5.1)",
+      "basis": "section",
+      "members": [
+        "R4",
+        "R13"
+      ]
+    },
+    {
+      "name": "Surfacing, the orphaned sweep, one sweep and machine-scoped checks (§6-8)",
+      "basis": "section",
+      "members": [
+        "R5",
+        "R6"
+      ]
+    },
+    {
+      "name": "Cache format, durability and the security of persisted findings (§9)",
+      "basis": "section",
+      "members": [
+        "R7",
+        "R12",
+        "R15"
+      ]
+    },
+    {
+      "name": "Sinks and bounding (§10-11)",
+      "basis": "section",
+      "members": [
+        "R8",
+        "R9"
+      ]
+    },
+    {
+      "name": "Package, phased build, rollout and migration, decisions, open questions (§12-16)",
+      "basis": "section",
+      "members": [
+        "R10",
+        "R14"
+      ]
+    },
+    {
+      "name": "Cross-cutting: invariants and observability",
+      "basis": "lens",
+      "members": [
+        "R11",
+        "R16"
+      ]
+    }
+  ]
+}

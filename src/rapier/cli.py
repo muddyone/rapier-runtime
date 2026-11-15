@@ -130,31 +130,76 @@ class _Progress:
 
 
 def _load_carried_frame(run_dir: str, request: str) -> tuple[dict | None, str]:
-    """An earlier map run's frame and frame-attack, read from its own record,
-    with a check that this request is the same source that run checked."""
+    """An earlier map run's frame and frame-attack, read from its own record and
+    cross-checked against the rest of that record (verifier CF-1). Refused on any
+    mismatch, before any call:
+
+    1. the request is the same source that run checked (pack.md);
+    2. map-frame.json and map.json carry the same frame and frame-attack, and the
+       frame's hash recomputes from its regions with that run's own formula;
+    3. the regions without an "added" flag are exactly that run's supplied frame
+       (envelope.json's map_regions: ids, names and definitions);
+    4. map.json shows exactly one frame-attack call, answered, on the
+       challenger's vendor, with two distinct vendors (cross_vendor true);
+    5. the added regions are exactly what that call replied, per transcript.jsonl.
+
+    These catch a mixed or partly edited record. Someone who rewrites every file
+    in the run dir consistently can still forge one; that can't be prevented
+    from inside the process."""
     import hashlib
     import json as _json
     import os
 
+    from ._json import parse_json_lenient
+    from .stages.map import _common as MC
+    from .stages.map.frame import FRAME_ATTACK, _norm_regions, parse_frame_attack
+
+    def read(name, as_json=True):
+        with open(os.path.join(run_dir, name), encoding="utf-8") as fh:
+            return _json.load(fh) if as_json else fh.read()
+
     try:
-        with open(os.path.join(run_dir, "map-frame.json"), encoding="utf-8") as fh:
-            rec = _json.load(fh)
+        rec, mp, envl = read("map-frame.json"), read("map.json"), read("envelope.json")
+        prior_source = read("pack.md", as_json=False)
+        transcript = [_json.loads(ln) for ln in read("transcript.jsonl", as_json=False).splitlines() if ln.strip()]
     except (OSError, ValueError) as exc:
-        return None, f"no readable map-frame.json ({exc})"
-    try:
-        with open(os.path.join(run_dir, "pack.md"), encoding="utf-8") as fh:
-            prior_source = fh.read()
-    except OSError as exc:
-        return None, f"no readable pack.md ({exc})"
+        return None, f"its record is incomplete or unreadable ({exc})"
     if prior_source != request:
         return None, "the request is not the same source that run checked"
     frame, fa = rec.get("frame") or {}, rec.get("frame_attack") or {}
     if not frame.get("regions") or not fa:
         return None, "its record has no frame or no frame-attack"
+    if mp.get("frame") != frame or mp.get("frame_attack") != fa:
+        return None, "map-frame.json and map.json disagree about the frame or the frame-attack"
+    want = MC.sha256({"regions": frame["regions"], "units": frame.get("units"),
+                      "source": frame.get("source"), "max_units": frame.get("max_units")})
+    if frame.get("hash") != want:
+        return None, "the frame's hash doesn't match its regions"
+    supplied = _norm_regions((envl.get("meta") or {}).get("map_regions") or [])
+    plain = [{k: r.get(k) for k in ("id", "name", "definition")} for r in frame["regions"] if not r.get("added")]
+    if frame.get("source") != "supplied" or plain != [{k: r[k] for k in ("id", "name", "definition")}
+                                                        for r in supplied]:
+        return None, "its regions without an added flag are not exactly the frame that run was given"
+    vend = mp.get("vendors") or {}
+    fa_calls = [c for c in (mp.get("calls") or []) if c.get("purpose") == "frame-attack"]
+    if (len(fa_calls) != 1 or not fa_calls[0].get("ok") or fa_calls[0].get("vendor") != fa.get("vendor")
+            or vend.get("challenger") != fa.get("vendor") or not vend.get("cross_vendor")
+            or not vend.get("generator") or vend.get("generator") == vend.get("challenger")):
+        return None, ("its call log doesn't show exactly one answered frame-attack on a second "
+                      "vendor")
+    replies = [t for t in transcript if t.get("system") == FRAME_ATTACK and t.get("vendor") == fa.get("vendor")]
+    if len(replies) != 1:
+        return None, "its transcript doesn't hold exactly one frame-attack reply"
+    status, adds, _ = parse_frame_attack(parse_json_lenient(replies[0].get("response") or ""))
+    added = [{"name": r["name"], "definition": r["definition"], "reason": (r.get("added") or {}).get("reason", "")}
+             for r in frame["regions"] if r.get("added")]
+    if status != fa.get("status") or [{k: a[k] for k in ("name", "definition", "reason")} for a in adds] != added:
+        return None, "the added regions are not what the frame-attack replied in the transcript"
     return {"from_run": os.path.basename(os.path.normpath(run_dir)),
             "frame_hash": frame.get("hash"), "regions": frame.get("regions"),
             "declared": frame.get("declared"), "frame_attack": fa,
-            "source_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest()}, ""
+            "source_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest(),
+            "integrity": "hash, supplied frame, call log and transcript cross-checked"}, ""
 
 
 def _usd(text: str) -> float:

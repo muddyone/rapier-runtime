@@ -743,8 +743,8 @@ def test_blocked_frame_runs_per_block_and_labels_claim_nothing_per_region(run):
 
 
 @pytest.mark.parametrize("blocks,why", [
-    ([{"name": "A", "basis": "section", "members": ["R1"]},
-      {"name": "B", "basis": "lens", "members": ["R2"]}], "mix two seams"),
+    ([{"name": "A", "basis": "seam", "members": ["R1"]},
+      {"name": "B", "basis": "lens", "members": ["R2"]}], "needs a basis"),
     ([{"name": "A", "basis": "section", "members": ["R1"]}], "regions in no block"),
     ([{"name": "A", "basis": "section", "members": ["R1", "R1", "R2"]}], "more than one block"),
     ([{"name": "A", "basis": "section", "members": ["R1", "Nope"]}], "not a region"),
@@ -1252,18 +1252,113 @@ def test_carried_plan_over_the_call_budget_is_refused(run):
     assert map_final_state(m)[0] == "refuse"
 
 
+def _genuine_run(tmp_path, monkeypatch):
+    """A real map run record (stubbed models, real pipeline and ledger) whose
+    frame-attack added one region and which stopped on the cap, like run 2."""
+    import os
+
+    script = {**DEFAULT, FR.FRAME_ATTACK: lambda p, v: {"missing_regions": [
+        {"name": "Security", "definition": "abuse and secrets", "reason": "not covered"}]}}
+    monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
+
+    class _Client:
+        def __init__(self, vendor):
+            self.vendor = vendor
+
+        def complete(self, system, prompt):
+            from rapier import models as M
+            text = json.dumps(script[system](prompt, self.vendor))
+            M._record(self.vendor, "m", system, prompt, text)
+            return _Resp(text)
+
+    monkeypatch.setattr(C, "client_for", lambda v: _Client(v))
+    Pipeline.from_manifest(load_preset("map")).run(
+        SOURCE, ledger_root=str(tmp_path / "runs"), seed_meta={"map_regions": REGIONS, "map_max_units": 2})
+    root = tmp_path / "runs"
+    (d,) = [os.path.join(r, x) for r, ds, _ in os.walk(root) for x in ds if x.endswith("-map")]
+    return d
+
+
+def _forge(src, dst, edit):
+    import shutil
+    shutil.copytree(src, dst)
+    edit(dst)
+    return dst
+
+
+def _edit_json(path, fn):
+    d = json.load(open(path))
+    fn(d)
+    json.dump(d, open(path, "w"))
+
+
+def _edit_frame(d, fn):
+    for f in ("map-frame.json", "map.json"):  # keep the two in step, as a careful forger would
+        _edit_json(f"{d}/{f}", lambda r: fn(r["frame"]))
+
+
+def test_genuine_carried_record_is_accepted(tmp_path, monkeypatch):
+    import rapier.cli as cli
+    d = _genuine_run(tmp_path, monkeypatch)
+    got, err = cli._load_carried_frame(d, SOURCE)
+    assert err == "" and len(got["regions"]) == 3 and "cross-checked" in got["integrity"]
+
+
+def _plant(d):
+    _edit_frame(d, lambda f: f["regions"].append({"id": "R9", "name": "Planted", "definition": "x"}))
+
+
+def _redefine(d):
+    _edit_frame(d, lambda f: f["regions"][0].update(definition="rewritten"))
+
+
+def _plant_and_rehash(d):
+    def fn(f):
+        f["regions"].append({"id": "R9", "name": "Planted", "definition": "x"})
+        f["hash"] = C.sha256({"regions": f["regions"], "units": f.get("units"),
+                              "source": f.get("source"), "max_units": f.get("max_units")})
+    _edit_frame(d, fn)
+
+
+def _no_call(d):
+    def fn(m):
+        m["calls"] = []
+        m["vendors"].update(challenger=None, cross_vendor=False)
+    _edit_json(f"{d}/map.json", fn)
+
+
+def _zero_hash(d):
+    _edit_frame(d, lambda f: f.update(hash="sha256:" + "0" * 64))
+
+
+def _disagree(d):
+    _edit_json(f"{d}/map-frame.json", lambda r: r["frame_attack"].update(note="edited"))
+
+
+def _no_transcript(d):
+    open(f"{d}/transcript.jsonl", "w").write("")
+
+
+@pytest.mark.parametrize("label,edit,why", [
+    ("planted region", _plant, "hash"),
+    ("rewritten definition", _redefine, "hash"),
+    ("rehashed after a plant", _plant_and_rehash, "not exactly the frame"),
+    ("no frame-attack call", _no_call, "call log"),
+    ("hash zeroed", _zero_hash, "hash"),
+    ("files disagree", _disagree, "disagree"),
+    ("transcript differs", _no_transcript, "transcript"),
+])
+def test_forged_or_mixed_carried_record_is_refused(tmp_path, monkeypatch, label, edit, why):
+    import rapier.cli as cli
+    d = _forge(_genuine_run(tmp_path, monkeypatch), str(tmp_path / "forged"), edit)
+    got, err = cli._load_carried_frame(d, SOURCE)
+    assert got is None and why in err, (label, err)
+
+
 def test_cli_carries_a_frame_only_for_the_same_source(tmp_path, monkeypatch):
     import rapier.cli as cli
-    run_dir = tmp_path / "20260101000000-map"
-    run_dir.mkdir()
-    c = _carried()
-    (run_dir / "map-frame.json").write_text(json.dumps(
-        {"frame": {"regions": c["regions"], "declared": c["declared"], "hash": "sha256:abc"},
-         "frame_attack": c["frame_attack"]}))
-    (run_dir / "pack.md").write_text(SOURCE)
-    got, err = cli._load_carried_frame(str(run_dir), SOURCE)
-    assert err == "" and got["from_run"] == "20260101000000-map" and len(got["regions"]) == 3
-    got, err = cli._load_carried_frame(str(run_dir), SOURCE + "changed")
+    d = _genuine_run(tmp_path, monkeypatch)
+    got, err = cli._load_carried_frame(d, SOURCE + "changed")
     assert got is None and "not the same source" in err
     seen = {}
     monkeypatch.setattr(cli, "_run", lambda preset, req, ld, seed_meta=None, **k: seen.update(seed_meta) or 0)
@@ -1273,6 +1368,24 @@ def test_cli_carries_a_frame_only_for_the_same_source(tmp_path, monkeypatch):
     f = tmp_path / "blocks.json"
     f.write_text(json.dumps({"blocks": BLOCKS}))
     assert cli.main(["map", "--request-file", str(req), "--frame", str(f),
-                     "--frame-attack-from", str(run_dir), "--max-calls", "12"]) == 0
-    assert seen["map_carried_frame"]["from_run"] == "20260101000000-map" and seen["map_blocks"] == BLOCKS
+                     "--frame-attack-from", d, "--max-calls", "12"]) == 0
+    assert seen["map_carried_frame"]["frame_attack"]["additions"] == ["Security"]
     assert "map_regions" not in seen
+
+
+def test_block_of_one_region_is_not_called_attacked_together(run):
+    env = run(map_blocks=[{"name": "A", "basis": "section", "members": ["R1"]},
+                          {"name": "B", "basis": "section", "members": ["R2"]}])
+    flat = " ".join(env.meta["report_md"].split())
+    assert "for a block of 1 region." in flat and "block of 1 regions" not in flat
+
+
+
+def test_a_frame_may_hold_section_blocks_and_a_lens_block(run):
+    """sparring-3's ruling: "never a mix" is per block. Regions that cut across
+    every section get their own lens block; a section block never holds them."""
+    env = run(map_blocks=[{"name": "Goals (§1)", "basis": "section", "members": ["R1"]},
+                          {"name": "Cross-cutting", "basis": "lens", "members": ["R2"]}])
+    m = _m(env)
+    assert not m.get("stopped")
+    assert [u["basis"] for u in m["frame"]["units"]] == ["section", "lens"]
