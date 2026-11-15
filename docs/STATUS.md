@@ -1,6 +1,6 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-15 (tag v0.6.3 on main; map mode v1.5 on a branch, 960 tests; D-157 run off-contract)._ A running "where we are /
+_Last updated: 2026-11-15 (tag v0.6.3 on main; map mode v1.5 on a branch, 960 tests; D-165 run on-contract, gate REVIEW, release held for W-23)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
@@ -294,6 +294,17 @@ what's next" so a new session can continue without reconstructing from git log.
      final state DEFER; labels 11 YIELDING, 1 UNPROBED; 0 fabricated. Gap found:
      the rider and gate don't list an off-contract expand (B7) anywhere; sent to
      sparring-3 as a method question. Map-mode spend to date: $17.39.
+   - **D-165 a (Bart, queue v7, 15:13Z): the live check passed and the one last
+     run is ON-CONTRACT.** On 74e6a2f7 (Haiku output limit 16,000; structured output
+     on generate and expand). Live check (`scripts/d165-check.sh`): 5 of 5 replies
+     validate strictly against the schema, none cut off, $0.29 of $1. Run
+     (15:18-15:44Z): `~/.rapier/runs/20261115091838-map`, $6.27 of $8, 71 of 74
+     calls, none refused or retried, no overrun, `did_not_run` empty, every stage
+     ran. Gate REVIEW, final state ESCALATE; all 12 units YIELDING; 390 items
+     (a 90%, b 1%, c 9%), misquoted 0.3%, 2 thin loci. Map-mode spend to date:
+     $23.94. **Release held:** under D-128 an on-contract REVIEW releases, but
+     sparring-3 publishes spec v1.5 (W-23) first. rr-1 is doing a second read of
+     the record. Launcher and output: `~/.rapier/d165-check/`.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
      10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live
