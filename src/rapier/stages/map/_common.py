@@ -94,7 +94,7 @@ def _is_cut_off(resp: Any, text: str | None) -> tuple[bool, str]:
     """Whether a reply came back cut off, and how that was told."""
     if getattr(resp, "cut_off", False):
         return True, f"stop reason {getattr(resp, 'stop_reason', None)}"
-    if _unclosed_json(text):
+    if _unclosed_json(text) and parse_json_lenient(text) == {}:  # a reply that parses is not cut off
         return True, ("the reply ends inside unclosed JSON (stop reason "
                       f"{getattr(resp, 'stop_reason', None) or 'not given'})")
     return False, ""

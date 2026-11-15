@@ -1579,3 +1579,11 @@ def test_the_retry_is_held_to_the_dollar_cap(monkeypatch):
     assert m["calls"][-1].get("stopped_by") == "dollar cap" or any(
         c.get("stopped_by") == "dollar cap" and c.get("retry_of") is not None for c in m["calls"])
     assert m["probes"]["R2"]["generate"].startswith("error:")
+
+
+def test_control_a_stray_bracket_before_good_json_is_not_a_cut_off(monkeypatch):
+    good = 'See [the source] then: ' + json.dumps({"items": [{"text": "x", "anchor": {"class": "c"}}]})
+    assert C._unclosed_json(good)                    # the scan alone would say open
+    cl = _cutting({(F.GENERATE, "R2"): [(good, "end_turn")]})
+    m = _m(_run_with(monkeypatch, cl))
+    assert not m.get("retries") and m["probes"]["R2"]["generate"] == "ran"
