@@ -170,6 +170,10 @@ def render_map(env: Envelope) -> str:
                   + (" (declared by the frame)" if f.get("max_units") not in (None, 12) else "") + "."
                   + (" The frame was declared at its cap, with no room for frame-attack additions."
                      if f.get("max_units") and declared_units >= f["max_units"] else ""))
+    if f.get("frozen"):
+        p1 += ["", f"Frozen frame: the regions above, the frame-attack's additions included, were "
+                   f"carried verbatim from run {f.get('carried_from')} and regrouped by the frame's "
+                   "author. No second frame-attack ran on the regrouped frame."]
     st = m.get("stopped")
     if st:
         p1 += ["", f"STOPPED before generation: {st['cause']}."]

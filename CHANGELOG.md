@@ -125,6 +125,10 @@ The class a citation check is made fit for real sources (D-128 a).
   characters and literal `\n` fold to spaces; a single-quoted quote may
   contain an apostrophe; a bare identifier of 6 or more characters found
   verbatim counts as found.
+- `--frame-attack-from RUN_DIR` on `rapier map` carries an earlier run's frame
+  and frame-attack verbatim from its record (same source only), and `--frame`
+  then gives the blocks that regroup it. The frame is frozen: no second
+  frame-attack runs, and the rider says so (sparring-3's ruling on v1.5 §3.7).
 - `--frame FILE` (JSON regions, blocks and `max_units`) on `rapier map`; MCP
   `map` takes `blocks`, `max_units` and `max_calls`.
 

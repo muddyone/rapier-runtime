@@ -129,6 +129,34 @@ class _Progress:
         self._finish()
 
 
+def _load_carried_frame(run_dir: str, request: str) -> tuple[dict | None, str]:
+    """An earlier map run's frame and frame-attack, read from its own record,
+    with a check that this request is the same source that run checked."""
+    import hashlib
+    import json as _json
+    import os
+
+    try:
+        with open(os.path.join(run_dir, "map-frame.json"), encoding="utf-8") as fh:
+            rec = _json.load(fh)
+    except (OSError, ValueError) as exc:
+        return None, f"no readable map-frame.json ({exc})"
+    try:
+        with open(os.path.join(run_dir, "pack.md"), encoding="utf-8") as fh:
+            prior_source = fh.read()
+    except OSError as exc:
+        return None, f"no readable pack.md ({exc})"
+    if prior_source != request:
+        return None, "the request is not the same source that run checked"
+    frame, fa = rec.get("frame") or {}, rec.get("frame_attack") or {}
+    if not frame.get("regions") or not fa:
+        return None, "its record has no frame or no frame-attack"
+    return {"from_run": os.path.basename(os.path.normpath(run_dir)),
+            "frame_hash": frame.get("hash"), "regions": frame.get("regions"),
+            "declared": frame.get("declared"), "frame_attack": fa,
+            "source_sha256": hashlib.sha256(request.encode("utf-8")).hexdigest()}, ""
+
+
 def _usd(text: str) -> float:
     """argparse type for --max-usd: a finite number of dollars, 0 or more."""
     import argparse
@@ -325,6 +353,13 @@ def main(argv: list[str] | None = None) -> int:
              "(or max_units), blocks are required",
     )
     mp.add_argument(
+        "--frame-attack-from", metavar="RUN_DIR",
+        help="carry the frame and its frame-attack from an earlier map run's record (its "
+             "map-frame.json), verbatim, instead of attacking again; --frame then gives only "
+             "the blocks that regroup it. The frame is frozen: no second frame-attack runs. "
+             "The request must be the same source that run checked",
+    )
+    mp.add_argument(
         "--max-calls", type=int, default=None, metavar="N",
         help="call budget: if the planned call count is over it, the run does not start",
     )
@@ -449,6 +484,16 @@ def main(argv: list[str] | None = None) -> int:
             regions.append({"name": name.strip(), "definition": (definition or name).strip()})
         if getattr(args, "max_calls", None):
             frame_extra["map_max_calls"] = args.max_calls
+        if getattr(args, "frame_attack_from", None):
+            carried, err = _load_carried_frame(args.frame_attack_from, request)
+            if err:
+                print(f"can't carry the frame from {args.frame_attack_from}: {err}", file=sys.stderr)
+                return 2
+            if regions:
+                print("--frame-attack-from carries the regions; give only blocks in --frame, "
+                      "and no --region", file=sys.stderr)
+                return 2
+            frame_extra["map_carried_frame"] = carried
         seed_meta = {**decision.meta(), **({"map_regions": regions} if regions else {}), **frame_extra}
         return _run(preset, request, args.ledger_dir, seed_meta=seed_meta,
                     no_save=getattr(args, "no_save", False),

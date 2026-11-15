@@ -1,0 +1,15 @@
+{
+  "_note": "Regrouping of the frame carried from run 20261114190132-map (the 10 supplied regions of 18045917 plus that run's 6 frame-attack additions, verbatim). By the frame's author per sparring-3's ruling (2026-11-15): blocks along the plan's section seams, each addition in the section block it belongs to; the cross-cutting R11 and R16 join Architecture (section 3). Frozen: no second frame-attack. Used with: rapier map --frame-attack-from ~/.rapier/runs/20261114190132-map --frame <this file>. Not run until Bart answers the queue item.",
+  "blocks": [
+    {"name": "Tier split and the interrupt test (§1-2.1)", "basis": "section", "members": ["R1"]},
+    {"name": "Architecture, end-to-end invariants and observability (§3)", "basis": "section", "members": ["R2", "R11", "R16"]},
+    {"name": "The backgrounding mechanism (§4)", "basis": "section", "members": ["R3"]},
+    {"name": "Check contract, registration table, parsing and classification (§5-5.1)", "basis": "section", "members": ["R4", "R13"]},
+    {"name": "Surfacing etiquette and the orphaned sweep (§6-6.1)", "basis": "section", "members": ["R5"]},
+    {"name": "One sweep, machine-scoped checks and the worktree nudge (§7-8)", "basis": "section", "members": ["R6"]},
+    {"name": "Cache format, durability and the security of persisted findings (§9)", "basis": "section", "members": ["R7", "R12", "R15"]},
+    {"name": "Sinks (§10)", "basis": "section", "members": ["R8"]},
+    {"name": "Bounding (§11)", "basis": "section", "members": ["R9"]},
+    {"name": "Package, phased build, rollout and migration, decisions, open questions (§12-16)", "basis": "section", "members": ["R10", "R14"]}
+  ]
+}

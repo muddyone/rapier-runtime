@@ -1192,3 +1192,87 @@ def test_v1_still_holds_for_a_bare_word_that_is_a_diagram_cell(locus):
 
 def test_control_bare_two_word_cell_text_is_found():
     assert _rr("gateway service")["status"] == "found"
+
+
+# ── a frozen frame carried from an earlier run's frame-attack (sparring-3, 2026-11-15) ──
+
+def _carried(adds=("Security",), status="ran", independent=True, extra_added=None):
+    regs = [{"id": "R1", "name": "Performance", "definition": "latency and load"},
+            {"id": "R2", "name": "Rollout", "definition": "how the change reaches users"}]
+    for k, a in enumerate(adds, 3):
+        regs.append({"id": f"R{k}", "name": a, "definition": f"{a} risks",
+                     "added": {"by": "frame-attack", "reason": "missing"}})
+    return {"from_run": "20260101000000-map", "frame_hash": "sha256:abc", "regions": regs,
+            "declared": regs[:2], "frame_attack": {"status": status, "vendor": "openai",
+            "independent": independent, "additions": list(extra_added or adds), "note": ""}}
+
+
+BLOCKS = [{"name": "Goals and security (§1)", "basis": "section", "members": ["R1", "R3"]},
+          {"name": "Rollout (§2)", "basis": "section", "members": ["R2"]}]
+
+
+def test_carried_frame_runs_with_no_second_frame_attack(run):
+    env = run(regions=None, map_carried_frame=_carried(), map_blocks=BLOCKS)
+    m = _m(env)
+    assert not any(c["purpose"] in ("frame-attack", "frame-draft") for c in m["calls"])
+    assert m["frame"]["frozen"] is True and [u["id"] for u in m["frame"]["units"]] == ["B1", "B2"]
+    assert m["frame_attack"]["carried_from"] == "20260101000000-map"
+    assert m["plan"]["planned_calls"] == 12          # 6 per unit, no frame call
+    flat = " ".join(env.meta["report_md"].split())
+    assert "No second frame-attack ran on the regrouped frame." in flat
+    assert "attacked together; the attack was not run region by region." in flat
+    assert not any("frame-attack" in r for r in m["gate"]["review"])
+
+
+@pytest.mark.parametrize("carried,why", [
+    (_carried(status="off-contract"), "did not run independently"),
+    (_carried(independent=False), "did not run independently"),
+    (_carried(extra_added=["Something else"]), "don't match"),
+])
+def test_unusable_carried_frame_is_refused_before_any_call(run, carried, why):
+    env = run(regions=None, map_carried_frame=carried, map_blocks=BLOCKS)
+    m = _m(env)
+    assert m["calls"] == [] and why in m["stopped"]["cause"]
+    assert map_final_state(m)[0] == "refuse"
+
+
+def test_regrouped_frame_over_the_cap_or_with_bad_blocks_is_refused(run):
+    env = run(regions=None, map_carried_frame=_carried(), map_blocks=BLOCKS[:1])
+    assert _m(env)["calls"] == [] and "regions in no block" in _m(env)["stopped"]["cause"]
+    many = _carried(adds=tuple(f"A{k}" for k in range(20)))
+    singles = [{"name": r["name"], "basis": "section", "members": [r["id"]]} for r in many["regions"]]
+    env = run(regions=None, map_carried_frame=many, map_blocks=singles)
+    assert _m(env)["calls"] == [] and "above the cap" in _m(env)["stopped"]["cause"]
+
+
+def test_carried_plan_over_the_call_budget_is_refused(run):
+    env = run(regions=None, map_carried_frame=_carried(), map_blocks=BLOCKS, map_max_calls=11)
+    m = _m(env)
+    assert m["calls"] == [] and m["plan"]["planned_calls"] == 12
+    assert map_final_state(m)[0] == "refuse"
+
+
+def test_cli_carries_a_frame_only_for_the_same_source(tmp_path, monkeypatch):
+    import rapier.cli as cli
+    run_dir = tmp_path / "20260101000000-map"
+    run_dir.mkdir()
+    c = _carried()
+    (run_dir / "map-frame.json").write_text(json.dumps(
+        {"frame": {"regions": c["regions"], "declared": c["declared"], "hash": "sha256:abc"},
+         "frame_attack": c["frame_attack"]}))
+    (run_dir / "pack.md").write_text(SOURCE)
+    got, err = cli._load_carried_frame(str(run_dir), SOURCE)
+    assert err == "" and got["from_run"] == "20260101000000-map" and len(got["regions"]) == 3
+    got, err = cli._load_carried_frame(str(run_dir), SOURCE + "changed")
+    assert got is None and "not the same source" in err
+    seen = {}
+    monkeypatch.setattr(cli, "_run", lambda preset, req, ld, seed_meta=None, **k: seen.update(seed_meta) or 0)
+    monkeypatch.setattr("rapier.onboarding.preflight_error", lambda: None)
+    req = tmp_path / "req.md"
+    req.write_text(SOURCE)
+    f = tmp_path / "blocks.json"
+    f.write_text(json.dumps({"blocks": BLOCKS}))
+    assert cli.main(["map", "--request-file", str(req), "--frame", str(f),
+                     "--frame-attack-from", str(run_dir), "--max-calls", "12"]) == 0
+    assert seen["map_carried_frame"]["from_run"] == "20260101000000-map" and seen["map_blocks"] == BLOCKS
+    assert "map_regions" not in seen

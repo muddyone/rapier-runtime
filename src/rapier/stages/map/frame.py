@@ -179,7 +179,10 @@ class MapFrameStage(TransformStage):
 
         supplied = ctx.config.get("regions") or env.meta.get("map_regions")
         blocks = ctx.config.get("blocks") or env.meta.get("map_blocks")
+        carried = env.meta.get("map_carried_frame")
         units: list[dict] = []
+        if carried:
+            return self._run_carried(env, ctx, m, carried, blocks, cap, per_unit, max_calls, plan)
         if supplied:
             regions, source, drafted_by = _norm_regions(supplied), "supplied", None
             units, err = make_units(regions, blocks)
@@ -271,6 +274,65 @@ class MapFrameStage(TransformStage):
                       f"hash={frame['hash'][:19]} frame_attack={status} "
                       f"independent={attack['independent']} added={len(attack['additions'])} "
                       f"planned_calls={plan['planned_calls']}")
+        return env
+
+    def _run_carried(self, env, ctx, m, carried: dict, blocks, cap, per_unit, max_calls, plan):
+        """A frame whose frame-attack already ran in an earlier run (sparring-3's
+        ruling on v1.5 §3.7, 2026-11-15): its regions, the attack's additions
+        included, are carried verbatim from that run's record, the frame's author
+        regroups them into blocks, and the frame is FROZEN. No second frame-attack
+        runs: the additions were the attack's output and are carried, not re-asked.
+        Everything here is checked before any call; a problem refuses the run."""
+        regions = [dict(r) for r in (carried.get("regions") or [])]
+        fa = dict(carried.get("frame_attack") or {})
+        added = [r for r in regions if r.get("added")]
+        problems = []
+        if not regions:
+            problems.append("the carried frame has no regions")
+        if fa.get("status") != "ran" or not fa.get("independent"):
+            problems.append("the carried frame-attack did not run independently "
+                            f"(status {fa.get('status')!r})")
+        if sorted(r["name"] for r in added) != sorted(fa.get("additions") or []):
+            problems.append("the carried additions don't match the carried frame-attack's record")
+        if any(not str(r.get("id", "")).strip() for r in regions):
+            problems.append("a carried region has no id")
+        if problems:
+            return self._stop(env, m, "the carried frame can't be used: " + "; ".join(problems),
+                              refused=True)
+        units, err = make_units(regions, blocks)
+        if err:
+            return self._stop(env, m, f"the regrouped frame's blocks are invalid: {err}", refused=True)
+        if len(units) > cap:
+            return self._stop(env, m, (
+                f"the regrouped frame has {len(units)} units, above the cap of {cap}; group its "
+                "regions into fewer blocks"), refused=True)
+        planned = per_unit * len(units)  # no frame-attack call: it is carried
+        plan.update(planned_calls=planned, units=len(units))
+        if max_calls is not None and planned > max_calls:
+            return self._stop(env, m, (
+                f"the plan needs up to {planned} calls, over the call budget of {max_calls}; "
+                "regroup the frame or raise the budget"), refused=True)
+        attack = {**fa, "carried_from": carried.get("from_run"),
+                  "carried_frame_hash": carried.get("frame_hash"),
+                  "note": (fa.get("note") or "") + (" " if fa.get("note") else "")
+                          + f"Carried from run {carried.get('from_run')} (frame "
+                            f"{str(carried.get('frame_hash'))[:19]}); not re-run on the regrouped frame."}
+        frame = {"regions": regions, "units": units, "source": "supplied",
+                 "declared": list(carried.get("declared") or []), "drafted_by": None,
+                 "max_units": cap, "blocked": any(u["kind"] == "block" for u in units),
+                 "frozen": True, "carried_from": carried.get("from_run")}
+        frame["hash"] = C.sha256({"regions": regions, "units": units, "source": "supplied",
+                                  "max_units": cap, "carried_from": carried.get("from_run"),
+                                  "carried_frame_hash": carried.get("frame_hash")})
+        frame["recorded_at_call"] = len(m["calls"])
+        m["frame"] = frame
+        m["frame_attack"] = attack
+        if ctx.ledger is not None:
+            ctx.ledger.write_json("map-frame.json", {"frame": frame, "frame_attack": attack, "plan": plan})
+        env.add_trace("map_frame", self.kind,
+                      f"frame supplied, frozen (carried from {carried.get('from_run')}) "
+                      f"regions={len(regions)} units={len(units)} hash={frame['hash'][:19]} "
+                      f"frame_attack=carried planned_calls={planned}")
         return env
 
     def _group(self, env, ctx, m, regions, cap, drafter) -> list[dict]:
