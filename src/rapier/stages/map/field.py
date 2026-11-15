@@ -203,7 +203,11 @@ class MapPatternLockStage(TransformStage):
                                    system=ctx.config.get("filter_prompt", FILTER),
                                    prompt=(f"FIELD (one unit):\n{listing}\n\nPROPOSED MERGES:\n"
                                            + "\n".join(f"{g['keep']} <- {g['merged']}" for g in groups)))
-                    wrong = set(map(str, (reply or {}).get("wrong_merges") or [])) if isinstance(reply, dict) else set()
+                    raw_wrong = reply.get("wrong_merges") if isinstance(reply, dict) else None
+                    if not isinstance(raw_wrong, list):
+                        # an off-contract filter checked nothing: never read it as "no wrong merges"
+                        rec["filter"] = "did-not-run: off-contract filter reply; these merges are unchecked"
+                    wrong = set(map(str, raw_wrong or []))
                 except Exception as exc:  # noqa: BLE001
                     wrong = set()
                     rec["filter"] = f"did-not-run: {str(exc)[:200]}"

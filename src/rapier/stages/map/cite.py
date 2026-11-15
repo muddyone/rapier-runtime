@@ -984,6 +984,7 @@ class MapSupportStage(TransformStage):
             return env
         counts: dict[str, Any] = {"supported": 0, "partly": 0, "not supported": 0, "not judged": 0}
         n_cited = 0
+        not_judged_units: list[str] = []
         for u in C.unit_list(m):
             cited = [i for i in (m.get("items") or []) if (i["regions"] or [None])[0] == u["id"]
                      and i["anchor"].get("class") in ("a", "b")]
@@ -997,13 +998,16 @@ class MapSupportStage(TransformStage):
                 reply = C.call(env, role="judge", vendor=judge, purpose="support", region=u["id"],
                                system=ctx.config.get("support_prompt", SUPPORT),
                                prompt=f"SOURCE:\n{env.request}\n\nITEMS:\n{listing}")
+                if not (isinstance(reply, dict) and isinstance(reply.get("judgments"), list)):
+                    not_judged_units.append(f"{u['id']} (off-contract)")
                 for j in (reply.get("judgments") or []) if isinstance(reply, dict) else []:
                     try:
                         verdicts[int(j.get("item"))] = str(j.get("support", ""))
                     except (TypeError, ValueError, AttributeError):
                         continue
-            except Exception:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 verdicts = {}
+                not_judged_units.append(f"{u['id']} (error: {str(exc)[:120]})")
             for k, it in enumerate(cited, 1):
                 verdict = verdicts.get(k, "")
                 if verdict not in ("supported", "partly", "not supported"):
@@ -1015,5 +1019,7 @@ class MapSupportStage(TransformStage):
                                     "downgraded_from": it["anchor"].get("class"),
                                     "note": "the support check judged the anchor does not support the item"}
         m["support_check"] = {"status": "ran", "vendor": judge, "counts": counts}
+        if not_judged_units:
+            m["support_check"]["units_not_judged"] = not_judged_units
         env.add_trace("map_support", self.kind, f"judged={n_cited} {counts}")
         return env

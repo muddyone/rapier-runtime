@@ -1587,3 +1587,75 @@ def test_control_a_stray_bracket_before_good_json_is_not_a_cut_off(monkeypatch):
     cl = _cutting({(F.GENERATE, "R2"): [(good, "end_turn")]})
     m = _m(_run_with(monkeypatch, cl))
     assert not m.get("retries") and m["probes"]["R2"]["generate"] == "ran"
+
+
+# ── sparring-3's ruling: an off-contract expand is a check that didn't run ─
+
+def test_an_off_contract_expand_is_listed_capped_at_yielding_and_reviewed(monkeypatch):
+    cl = _cutting({(F.EXPAND, "R2"): [('{"items": "not a list"}', "stop")]})
+    env = _run_with(monkeypatch, cl)
+    m = _m(env)
+    g = m["gate"]
+    assert m["probes"]["R2"]["expand"] == "off-contract"
+    assert "expansion for R2 (off-contract)" in g["did_not_run"]
+    assert g["labels"]["R2"]["label"] == "YIELDING"
+    assert any("SPARK expansion did not run on-contract" in w for w in g["labels"]["R2"]["why"])
+    assert any(r.startswith("incomplete run: the SPARK expansion did not run on-contract for R2")
+               for r in g["review"])
+    assert g["verdict"] == "REVIEW" and map_final_state(m)[0] == "defer"
+    flat = " ".join(env.meta["report_md"].split())
+    assert "R2: YIELDING (the Challenger's SPARK expansion did not run on-contract (off-contract)" in flat
+    assert not m.get("retries")              # invalid JSON that isn't cut off is not retried
+
+
+def test_control_a_clean_expand_adds_nothing(run):
+    g = _m(run())["gate"]
+    assert not any(d.startswith("expansion for") for d in g["did_not_run"])
+    assert g["verdict"] == "PASS"
+
+
+# ── rr-1 R-1: an off-contract call of any role is a check that didn't run ──
+
+def _defers_naming(env, text):
+    m = _m(env)
+    assert any(text in d for d in m["gate"]["did_not_run"]), m["gate"]["did_not_run"]
+    assert map_final_state(m)[0] == "defer"
+    assert text in " ".join(env.meta["report_md"].split())
+
+
+def test_an_off_contract_matcher_is_listed(run):
+    env = run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
+               {"text": "dup", "anchor": {"class": "c"}}]},
+               A.MATCHER: lambda p, v: {"verdict": "nope"}})
+    assert _m(env)["attacks"]["R1"]["matcher"] == "off-contract"
+    _defers_naming(env, "matcher for R1 (off-contract; its candidates count as new)")
+
+
+def test_a_failed_merge_is_listed(run):
+    def merge(p, v):
+        if "I1:" in p:
+            raise RuntimeError("timeout")
+        return {"groups": []}
+    env = run({F.MERGE: merge})
+    _defers_naming(env, "Pattern Lock merge for R1 (timeout)")
+
+
+def test_an_off_contract_filter_is_listed_not_read_as_no_wrong_merges(run):
+    env = run({F.MERGE: lambda p, v: {"groups": [{"keep": re.findall(r"^(I\d+):", p, re.M)[0],
+                                                  "merged": re.findall(r"^(I\d+):", p, re.M)[1:2]}]},
+               F.FILTER: lambda p, v: {"wrong": []}})
+    b = [b for b in _m(env)["pattern_lock"]["batches"] if b.get("filter")]
+    assert b and b[0]["filter"].startswith("did-not-run: off-contract filter reply")
+    _defers_naming(env, "Pattern Lock filter for")
+
+
+def test_a_support_unit_not_judged_is_listed():
+    from rapier.stages.map.gate import evaluate
+    m = {"frame": {"units": [{"id": "R1", "kind": "region"}], "recorded_at_call": 0},
+         "calls": [], "probes": {}, "support_check": {"status": "ran", "units_not_judged": ["R1 (off-contract)"]}}
+    assert "support check for R1 (off-contract)" in evaluate(m)["did_not_run"]
+
+
+def test_control_clean_roles_add_nothing(run):
+    m = _m(run())
+    assert m["gate"]["did_not_run"] == [] and all(a.get("matcher") in (None, "ran") for a in m["attacks"].values())

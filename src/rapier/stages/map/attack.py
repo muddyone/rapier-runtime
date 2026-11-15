@@ -158,7 +158,10 @@ class MapAttackStage(TransformStage):
                                            f"FIELD:\n{listing or '(no items yet)'}\n\n"
                                            f"CANDIDATES:\n{numbered}"))
                     judgments = parse_matches(reply, len(cands), ids, unit_ids, r["id"])
+                    rec["matcher"] = ("ran" if isinstance(reply, dict)
+                                      and isinstance(reply.get("judgments"), list) else "off-contract")
                 except Exception as exc:  # noqa: BLE001
+                    rec["matcher"] = f"error: {str(exc)[:120]}"
                     judgments = [(True, None, f"the matcher did not run ({str(exc)[:120]}), so the "
                                               "candidate counts as new", [])] * len(cands)
             for c, (is_new, matched, mnote, fits) in zip(cands, judgments):

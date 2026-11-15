@@ -12,7 +12,9 @@ Unit labels:
   citation check then found (v1.4: demotion lowers an item's claim, never a
   label's). Speculative (class c) candidates never break HELD.
 - **YIELDING**: anything else: a new cited candidate, no attack, an
-  off-contract or crashed attack, or an attack that was not independent.
+  off-contract or crashed attack, an attack that was not independent, or an
+  incomplete probe (the Challenger's SPARK expansion off-contract or failed;
+  sparring-3's ruling, carried to W-28 as explicit text).
 
 Overall: UNPROBED if any unit is, or the run stopped before generation; HELD
 only if every unit is HELD and, for a drafted frame, the frame-attack ran
@@ -21,8 +23,8 @@ independently; otherwise YIELDING.
 Gate: FAIL on a fabricated class a anchor or a frame not recorded before
 generation; REVIEW on an overall label other than HELD, more than half the
 items in class c, a skipped frame-attack, a citation check that did not run, an
-incomplete run (stopped before generation, at the dollar cap, or with any
-unit's calls refused), more than 10% of class a anchors misquoted (near-quotes
+incomplete run (stopped before generation, at the dollar cap, with any
+unit's calls refused, or with any unit's SPARK expansion off-contract), more than 10% of class a anchors misquoted (near-quotes
 and elisions both), or a possible reversal by ellipsis; PASS otherwise. Capture-recapture is never read here.
 """
 from __future__ import annotations
@@ -69,6 +71,7 @@ def evaluate(m: dict) -> dict:
     attacks = m.get("attacks") or {}
     labels: dict[str, dict] = {}
     did_not_run: list[str] = []
+    expand_short: list[str] = []
     for r in regions:
         rid = r["id"]
         a = attacks.get(rid)
@@ -76,6 +79,15 @@ def evaluate(m: dict) -> dict:
         cut = _stopped_calls(m, rid)
         if cut:
             why.append(f"stopped at the dollar cap: its {', '.join(cut)} call(s) were refused")
+        expand = (m.get("probes") or {}).get(rid, {}).get("expand")
+        if expand is not None and expand != "ran":
+            # sparring-3's ruling (W-28): an off-contract or failed SPARK expansion is
+            # a check that did not run. It never makes a unit UNPROBED, but a unit
+            # with an incomplete probe can't read HELD.
+            why.append(f"the Challenger's SPARK expansion did not run on-contract ({expand}), "
+                       "so the probe is incomplete and the unit can't read HELD")
+            did_not_run.append(f"expansion for {rid} ({expand})")
+            expand_short.append(rid)
         if not _probed(m, rid):
             status = (m.get("probes") or {}).get(rid, {}).get("generate", "not-run")
             labels[rid] = {"label": "UNPROBED", "why": [f"no on-contract generation call ({status})"] + why}
@@ -95,6 +107,24 @@ def evaluate(m: dict) -> dict:
             if landed:
                 why.append(f"the attack raised {len(landed)} new candidate(s) claiming a citation")
         labels[rid] = {"label": "YIELDING" if why else "HELD", "why": why}
+
+    # rr-1 R-1: every off-contract or failed call, whatever its role, is a check
+    # that did not run, named with its unit and reason. Only the expansion changes
+    # a label (above); these defer the run without changing a label.
+    unit_ids = {r["id"] for r in regions}
+    for rid in [r["id"] for r in regions]:
+        ms = (attacks.get(rid) or {}).get("matcher")
+        if ms is not None and ms != "ran":
+            did_not_run.append(f"matcher for {rid} ({ms}; its candidates count as new)")
+    for b in (m.get("pattern_lock") or {}).get("batches") or []:
+        if b.get("region") not in unit_ids:
+            continue
+        if b.get("status") != "ran":
+            did_not_run.append(f"Pattern Lock merge for {b['region']} ({b.get('reason') or b.get('status')})")
+        if str(b.get("filter", "")).startswith("did-not-run"):
+            did_not_run.append(f"Pattern Lock filter for {b['region']} ({b['filter'][len('did-not-run: '):]})")
+    for u in (m.get("support_check") or {}).get("units_not_judged") or []:
+        did_not_run.append(f"support check for {u}")
 
     fa = m.get("frame_attack") or {}
     frame = m.get("frame") or {}
@@ -144,6 +174,9 @@ def evaluate(m: dict) -> dict:
                                f"(${stop['spent_usd']:.2f} spent)")
         review.append("incomplete run: stopped at the dollar cap"
                       + (f" (units cut short: {', '.join(cut_units)})" if cut_units else ""))
+    if expand_short:
+        review.append(f"incomplete run: the SPARK expansion did not run on-contract for "
+                      f"{', '.join(expand_short)}")
     claimed_a = [i for i in items if (i.get("anchor") or {}).get("class") == "a"
                  or (i.get("anchor") or {}).get("downgraded_from") == "a"]
     misquoted = [i for i in claimed_a if (i.get("anchor") or {}).get("misquoted")]
