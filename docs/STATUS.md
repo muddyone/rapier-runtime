@@ -251,8 +251,17 @@ what's next" so a new session can continue without reconstructing from git log.
      Lesson: size `--max-calls` for the unit CAP (1 + 6 x 12 = 73), never for the
      frame as supplied. The Anthropic default model is Opus 4.8, so the Generator
      was pinned with `RAPIER_MODEL_ANTHROPIC=claude-haiku-5-5`.
-   - **Next:** D-136 (blocking, money): one more identical run with `--max-calls 73`,
-     or stop. Nothing runs until it shows answered a on the queue. v1.5 goes public (sparring W-23)
+   - **The D-136 run (01:01Z) also stopped before generation, $0.06**: the
+     frame-attack added 6 regions this time (16 units, over the cap). Run dir
+     `~/.rapier/runs/20261114190132-map`. Tonight's two tries: $0.11.
+   - **Fix (sparring-3's method ruling, no spec change):** carry run 2's frame-attack
+     verbatim, regroup the 16 regions by section into 10 blocks
+     (`docs/map-runs/plan-19-frame-regrouped.json`), freeze the frame, no second
+     frame-attack. Built as `rapier map --frame-attack-from RUN_DIR` (0043781d), in
+     rr-1's review. $0 dry run: 60 calls, about $4.20. A 16-unit higher cap priced
+     at about $8.55, over the cap, so it was not offered.
+   - **Next:** D-138 (blocking, money): one run on the frozen frame, `--max-calls 60`,
+     $8 cap, only after rr-1 passes 0043781d; or stop. Nothing runs before both. v1.5 goes public (sparring W-23)
      before any release.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
