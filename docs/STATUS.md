@@ -1,6 +1,6 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode v1.5 on a branch, 850 tests)._ A running "where we are /
+_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode v1.5 on a branch, 928 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
@@ -231,17 +231,19 @@ what's next" so a new session can continue without reconstructing from git log.
      blocks, pre-run call plan (`--max-calls`), labels by claimed class, matcher over
      the whole field (one call per unit), misquoted demotion at 0.8, REVIEW at >10%
      misquoted; absence claims anchor to a section.
-   - **v1.5 class a check: built** (2083f4b2, from private spec fe5f4c00; D-128 a),
-     in rr-1's review. Own-build $0 re-score of D-100 (`scripts/rescore-map.py`)
-     reproduces sparring-2's reference: v1.4 890/40/18; v1.5 863/79/6, 8.3%
-     misquoted (32 near-quotes, 47 elisions; sparring-2 agreed this split, the
-     reference's 38/41 was a keyword sort), possible reversal on 18 items (17
-     distinct quotes; the reference's 54 triple-counted). The 6 are real errors.
-     Diagram cells "touch" only on one line with separators between, or on
-     adjacent lines with overlapping columns (sparring-2 confirmed; stricter than
-     the reference, counts unchanged).
-   - **Next, in order:** rr-1 passes the v1.5 build (2083f4b2). Then the ONE $8 run,
-     under the brief below. v1.5 goes public (sparring W-23) before any release.
+   - **v1.5 class a check: passed** (rr-1, d09b90f2; from private spec fe5f4c00,
+     D-128 a). rr-1's V15-1..V15-4 (stemmed protected words, near-quote window
+     edges, unfenced diagrams and multi-line cells, a source's own "...") were the
+     build catching up to v1.5 as written (sparring-3's ruling; the explicit stem
+     rule goes to the next spec bump, sparring W-28). Own-build $0 re-score of
+     D-100 (`scripts/rescore-map.py`): v1.4 890/40/18; **v1.5 872/70/6, 7.4%
+     misquoted (32 near-quotes, 38 elisions), possible reversal on 18 items**;
+     rr-1 reproduced it. The 9 that moved from the first build's 863/79/6 are all
+     quotes of the source's own "...". The 6 are real errors.
+   - **Next, in order:** sparring-2's reference script lands on the same counts;
+     sparring-3 shows Bart the new counts beside 863/79/6 in a confirm item; on his
+     yes, the ONE $8 run under the brief below. v1.5 goes public (sparring W-23)
+     before any release.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
      10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live
