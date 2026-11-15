@@ -784,20 +784,20 @@ def test_frame_attack_addition_past_the_cap_stops_before_generation(run):
 
 
 def test_plan_over_the_call_budget_does_not_start(run):
-    env = run(map_max_calls=12)   # 1 frame-attack + 6 per unit x 2 units = 13
+    env = run(map_max_calls=13)   # 1 frame-attack + 6 per unit x 2 units + 1 retry = 14
     m = _m(env)
-    assert m["calls"] == [] and m["plan"]["planned_calls"] == 13
+    assert m["calls"] == [] and m["plan"]["planned_calls"] == 14
     assert map_final_state(m)[0] == "refuse"
-    assert "over the call budget of 12" in env.meta["report_md"]
+    assert "over the call budget of 13" in env.meta["report_md"]
 
 
 def test_control_plan_within_the_call_budget_runs_and_reports_planned_and_actual(run):
-    env = run(map_max_calls=13)
+    env = run(map_max_calls=14)
     m = _m(env)
-    assert not m.get("stopped") and len(m["calls"]) <= 13
+    assert not m.get("stopped") and len(m["calls"]) <= 14
     flat = " ".join(env.meta["report_md"].split())
-    assert "Planned: 13 model call(s) at most (6 per unit over 2 unit(s), plus the frame calls), " \
-           "under a call budget of 13" in flat
+    assert "Planned: 14 model call(s) at most (6 per unit over 2 unit(s), plus the frame calls), " \
+           "under a call budget of 14, including 1 held for a retry" in flat
     assert f"Actual: {len(m['calls'])} attempted" in flat
 
 
@@ -1236,7 +1236,7 @@ def test_carried_frame_runs_with_no_second_frame_attack(run):
     assert not any(c["purpose"] in ("frame-attack", "frame-draft") for c in m["calls"])
     assert m["frame"]["frozen"] is True and [u["id"] for u in m["frame"]["units"]] == ["B1", "B2"]
     assert m["frame_attack"]["carried_from"] == "20260101000000-map"
-    assert m["plan"]["planned_calls"] == 12          # 6 per unit, no frame call
+    assert m["plan"]["planned_calls"] == 13          # 6 per unit + 1 retry, no frame call
     flat = " ".join(env.meta["report_md"].split())
     assert "No second frame-attack ran on the regrouped frame." in flat
     assert "attacked together; the attack was not run region by region." in flat
@@ -1265,9 +1265,9 @@ def test_regrouped_frame_over_the_cap_or_with_bad_blocks_is_refused(run):
 
 
 def test_carried_plan_over_the_call_budget_is_refused(run):
-    env = run(regions=None, map_carried_frame=_carried(), map_blocks=BLOCKS, map_max_calls=11)
+    env = run(regions=None, map_carried_frame=_carried(), map_blocks=BLOCKS, map_max_calls=12)
     m = _m(env)
-    assert m["calls"] == [] and m["plan"]["planned_calls"] == 12
+    assert m["calls"] == [] and m["plan"]["planned_calls"] == 13
     assert map_final_state(m)[0] == "refuse"
 
 
@@ -1458,6 +1458,124 @@ def test_a_cut_off_generator_reply_is_named_in_the_probe(run, monkeypatch):
     monkeypatch.setattr(C, "client_for", lambda v: Cut(v))
     env = Pipeline.from_manifest(load_preset("map")).run(SOURCE, seed_meta={"map_regions": REGIONS})
     m = _m(env)
-    assert m["probes"]["R2"]["generate"] == "off-contract (the reply was cut off: stop reason max_tokens)"
+    assert m["probes"]["R2"]["generate"] == ("off-contract (the reply was cut off: stop reason max_tokens; "
+                                             "retried once, cut off again)")
     assert m["gate"]["labels"]["R2"]["label"] == "UNPROBED"
     assert any(c.get("cut_off") for c in m["calls"])
+
+
+# ── D-157 b: one in-run retry of a cut-off reply ───────────────────────────
+
+def _cutting(script_cut):
+    """A client whose reply for (system, unit) is given by ``script_cut`` as a
+    list of (text, stop_reason) consumed in order; everything else is normal."""
+    from rapier.models import ModelResponse
+    seen: dict = {}
+
+    class Cl:
+        def __init__(self, v):
+            self.v = v
+
+        def complete(self, system, prompt):
+            for (sysname, unit), outs in script_cut.items():
+                if system == sysname and f"UNIT {unit}" in prompt:
+                    k = (sysname, unit)
+                    i = seen.get(k, 0)
+                    seen[k] = i + 1
+                    if i < len(outs):
+                        text, stop = outs[i]
+                        return ModelResponse(text=text, vendor=self.v, model="m", stop_reason=stop)
+            return ModelResponse(text=json.dumps(DEFAULT[system](prompt, self.v)), vendor=self.v,
+                                 model="m", stop_reason="end_turn")
+    return Cl
+
+
+def _run_with(monkeypatch, cl, **meta):
+    monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
+    monkeypatch.setattr(C, "client_for", lambda v: cl(v))
+    seed = {"map_regions": REGIONS, **meta}
+    return Pipeline.from_manifest(load_preset("map")).run(SOURCE, seed_meta=seed)
+
+
+def test_a_cut_off_reply_is_retried_once_and_the_retry_is_used(monkeypatch):
+    cl = _cutting({(F.GENERATE, "R2"): [('{"items": [{"te', "max_tokens")]})
+    env = _run_with(monkeypatch, cl)
+    m = _m(env)
+    assert m["probes"]["R2"]["generate"] == "ran"
+    assert m["gate"]["labels"]["R2"]["label"] != "UNPROBED"
+    [r] = m["retries"]
+    assert r["outcome"] == "completed" and r["region"] == "R2" and r["purpose"] == "generate"
+    first, second = m["calls"][r["call"]], m["calls"][r["retry_call"]]
+    assert first["cut_off"] and first["retried"] and second["retry_of"] == r["call"]
+    assert not second.get("cut_off")
+    flat = " ".join(env.meta["report_md"].split())
+    assert "Retried once (the run allows one): the generator's generate reply for R2 came back cut off" in flat
+    assert "The map uses the retry's reply" in flat
+
+
+def test_a_reply_left_mid_json_is_a_cut_off_whatever_the_stop_reason(monkeypatch):
+    # run 20261115010859-map, B4: ended mid-string far under the limit, stop reason unknown
+    cl = _cutting({(F.GENERATE, "R2"): [('{"items": [{"text": "a", "anchor": {"class": "c"}}, {"text": "Mach',
+                                         "end_turn")]})
+    m = _m(_run_with(monkeypatch, cl))
+    [r] = m["retries"]
+    assert "unclosed JSON" in r["first_how"] and r["outcome"] == "completed"
+    assert m["probes"]["R2"]["generate"] == "ran"
+
+
+def test_a_second_cut_off_is_off_contract_with_no_third_call(monkeypatch):
+    cut = ('{"items": [', "max_tokens")
+    cl = _cutting({(F.GENERATE, "R2"): [cut, cut, ('{"items": []}', "end_turn")]})
+    m = _m(_run_with(monkeypatch, cl))
+    gens = [c for c in m["calls"] if c["purpose"] == "generate" and c["region"] == "R2"]
+    assert len(gens) == 2
+    assert m["retries"][0]["outcome"].startswith("cut off again")
+    assert m["gate"]["labels"]["R2"]["label"] == "UNPROBED"
+
+
+def test_only_one_retry_per_run(monkeypatch):
+    cut = ('{"items": [', "max_tokens")
+    cl = _cutting({(F.GENERATE, "R1"): [cut], (F.GENERATE, "R2"): [cut]})
+    env = _run_with(monkeypatch, cl)
+    m = _m(env)
+    assert len(m["retries"]) == 1 and m["retries"][0]["region"] == "R1"
+    assert m["probes"]["R1"]["generate"] == "ran"
+    assert m["probes"]["R2"]["generate"].endswith("not retried: the run's one retry was already used)")
+    [s] = m["cut_offs_not_retried"]
+    assert s["region"] == "R2"
+    flat = " ".join(env.meta["report_md"].split())
+    assert "Not retried: the generator's generate reply for R2 came back cut off" in flat
+
+
+def test_control_a_clean_run_reports_no_retry(run):
+    env = run()
+    m = _m(env)
+    assert not m.get("retries") and not any(c.get("cut_off") for c in m["calls"])
+    assert "Retries: none. No reply came back cut off." in " ".join(env.meta["report_md"].split())
+
+
+def test_complete_json_with_prose_is_not_a_cut_off():
+    assert not C._unclosed_json('Here: {"items": []} and an aside {')
+    assert not C._unclosed_json('no json at all')
+    assert C._unclosed_json('```json\n{"items": [{"text": "x\\" y')
+    assert not C._unclosed_json('{"t": "brace } in a string"}')
+
+
+def test_the_retry_is_held_to_the_dollar_cap(monkeypatch):
+    from rapier import budget
+    cut = ('{"items": [', "max_tokens")
+    base = _cutting({(F.GENERATE, "R2"): [cut]})
+
+    class Capped(base):
+        def complete(self, system, prompt):
+            if system == F.GENERATE and "UNIT R2" in prompt and getattr(Capped, "n", 0) >= 1:
+                raise budget.BudgetExceeded("the dollar cap would be passed")
+            if system == F.GENERATE and "UNIT R2" in prompt:
+                Capped.n = 1
+            return super().complete(system, prompt)
+    m = _m(_run_with(monkeypatch, Capped))
+    [r] = m["retries"]
+    assert r["outcome"].startswith("the retry failed")
+    assert m["calls"][-1].get("stopped_by") == "dollar cap" or any(
+        c.get("stopped_by") == "dollar cap" and c.get("retry_of") is not None for c in m["calls"])
+    assert m["probes"]["R2"]["generate"].startswith("error:")

@@ -6,6 +6,21 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: map mode retries one cut-off reply per run (D-157 b)
+
+A model reply in a map run that comes back cut off is sent again once, with the
+same prompt to the same model. "Cut off" means a cut-off stop reason
+(`max_tokens`, `length`, `model_context_window_exceeded`) or a reply that ends
+inside JSON it opened, whatever stop reason came with it (the D-138 run's B4
+reply ended mid-string far under its output limit). The run allows ONE retry in
+total. A second cut-off, or a cut-off after the retry is spent, is off-contract
+as before, with no further call. Both calls are in the call log and the
+transcript; `map.json` lists the retry under `retries` (and any unretried
+cut-off under `cut_offs_not_retried`), and the rider's CALLS section says what
+was retried and how it came out, or that nothing was. The retry goes through the
+dollar cap like any call. The call plan holds one call for it, so a plan that
+needed 73 calls now needs 74.
+
 ### Added: a hard dollar cap on a run
 
 `--max-usd` on every ceremony command, `max_usd` on the MCP tools, and

@@ -284,8 +284,11 @@ def render_map(env: Envelope) -> str:
                        "the frame calls)" if plan.get("units") else "")
                     + (f", under a call budget of {plan['max_calls']}" if plan.get("max_calls") is not None
                        else ", no call budget declared")
+                    + (f", including {plan['retry_reserve']} held for a retry" if plan.get("retry_reserve")
+                       else "")
                     + f". Actual: {len(calls)} attempted, {sum(1 for c in calls if c.get('ok'))} "
-                      f"answered, {sum(1 for c in calls if c.get('stopped_by'))} refused at the dollar cap."))
+                      f"answered, {sum(1 for c in calls if c.get('stopped_by'))} refused at the dollar cap."
+                    + "\n\n" + retry_note(m)))
 
     stage_lines = declared_vs_ran(env)
     if stage_lines:
@@ -307,6 +310,35 @@ def render_map(env: Envelope) -> str:
     L += ["", "", _RULE, "Produced by Rapier Runtime — a ResourceForge project · rapierruntime.com"]
     return "\n".join(L).rstrip() + "\n"
 
+
+
+def _retry_use(outcome: str) -> str:
+    if outcome == "completed":
+        return "The map uses the retry's reply; the cut-off one is in the transcript, unused."
+    if outcome.startswith("cut off again"):
+        return ("Neither reply was usable, so that check reads as off-contract; no further retry "
+                "was made.")
+    return "No reply from it was used."
+
+
+def retry_note(m: dict) -> str:
+    """The rider's disclosure of the run's one retry of a cut-off reply (D-157 b)."""
+    retries = m.get("retries") or []
+    skipped = m.get("cut_offs_not_retried") or []
+    lines = []
+    if not retries:
+        lines.append("Retries: none. No reply came back cut off." if not skipped else "Retries: none sent.")
+    for r in retries:
+        lines.append(f"Retried once (the run allows one): the {r['role']}'s {r['purpose']} reply"
+                     + (f" for {r['region']}" if r.get("region") else "")
+                     + f" came back cut off ({r['first_how']}) and was sent again with the same "
+                       f"prompt to the same model. Outcome: {r['outcome']}. "
+                     + _retry_use(r["outcome"]))
+    for s in skipped:
+        lines.append(f"Not retried: the {s['role']}'s {s['purpose']} reply"
+                     + (f" for {s['region']}" if s.get("region") else "")
+                     + f" came back cut off ({s['how']}) after the run's one retry was used.")
+    return " ".join(lines)
 
 @register_stage("compose_map")
 class ComposeMapStage(TransformStage):

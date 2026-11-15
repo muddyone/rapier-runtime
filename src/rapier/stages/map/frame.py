@@ -22,7 +22,8 @@ SPARRING spec v1.4 §3.7, "The search frame is declared before generation" and
 4. **Record.** The frame, blocks and cap are recorded verbatim with a sha256 and
    the trace position, before the first generation call. The gate checks it.
 5. **Plan.** Before any generation, the planned call count is computed from the
-   frame (``per_unit_calls`` per unit, an upper bound). If it exceeds the
+   frame (``per_unit_calls`` per unit, an upper bound, plus one call held for
+   the run's one retry of a cut-off reply, D-157 b). If it exceeds the
    declared call budget (``max_calls``), the run does not start.
 """
 from __future__ import annotations
@@ -175,7 +176,8 @@ class MapFrameStage(TransformStage):
         cap = _cap(ctx.config.get("max_units") or env.meta.get("map_max_units"))
         per_unit = int(ctx.config.get("per_unit_calls") or PER_UNIT_CALLS)
         max_calls = _max_calls(ctx.config.get("max_calls") or env.meta.get("map_max_calls"))
-        plan: dict[str, Any] = {"per_unit_calls": per_unit, "max_calls": max_calls, "max_units": cap}
+        plan: dict[str, Any] = {"per_unit_calls": per_unit, "max_calls": max_calls, "max_units": cap,
+                                "retry_reserve": C.RETRIES_PER_RUN}
         m["plan"] = plan
 
         supplied = ctx.config.get("regions") or env.meta.get("map_regions")
@@ -197,7 +199,7 @@ class MapFrameStage(TransformStage):
                     "higher cap"), refused=True)
             # Every call this run can make, before the first one: the frame-attack
             # plus the per-unit calls. Additions are not known yet; checked again below.
-            planned = 1 + per_unit * len(units)
+            planned = 1 + per_unit * len(units) + C.RETRIES_PER_RUN
             if max_calls is not None and planned > max_calls:
                 plan["planned_calls"] = planned
                 return self._stop(env, m, (
@@ -258,7 +260,7 @@ class MapFrameStage(TransformStage):
         frame["recorded_at_call"] = len(m["calls"])  # calls made before the frame was fixed
         m["frame"] = frame
         m["frame_attack"] = attack
-        plan["planned_calls"] = len(m["calls"]) + per_unit * len(units)
+        plan["planned_calls"] = len(m["calls"]) + per_unit * len(units) + C.RETRIES_PER_RUN
         plan["units"] = len(units)
         if ctx.ledger is not None:
             ctx.ledger.write_json("map-frame.json", {"frame": frame, "frame_attack": attack, "plan": plan})
@@ -307,7 +309,7 @@ class MapFrameStage(TransformStage):
             return self._stop(env, m, (
                 f"the regrouped frame has {len(units)} units, above the cap of {cap}; group its "
                 "regions into fewer blocks"), refused=True)
-        planned = per_unit * len(units)  # no frame-attack call: it is carried
+        planned = per_unit * len(units) + C.RETRIES_PER_RUN  # no frame-attack call: it is carried
         plan.update(planned_calls=planned, units=len(units))
         if max_calls is not None and planned > max_calls:
             return self._stop(env, m, (
