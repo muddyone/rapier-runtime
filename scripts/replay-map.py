@@ -37,7 +37,7 @@ def replay(run_dir, frame_file, request_file, max_calls, scripted=None, override
                     log.append(("scripted", None)); return ModelResponse(text=got[0], vendor=self.v, model="scripted", stop_reason=got[1])
             raise RuntimeError(f"REPLAY GAP: no recorded reply for a {self.v} call (system {system[:40]!r})")
     C.available_vendors = lambda: ["anthropic", "openai"]
-    C.client_for = lambda v: Cl(v)
+    C.client_for = lambda v, **kw: Cl(v)
     fd = json.load(open(frame_file))
     seed = {"verify": "gate", "map_regions": fd["regions"], "map_blocks": fd.get("blocks"), "map_max_calls": max_calls}
     env = Pipeline.from_manifest(load_preset("map")).run(open(os.path.expanduser(request_file)).read(), seed_meta=seed)

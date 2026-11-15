@@ -291,7 +291,7 @@ def render_map(env: Envelope) -> str:
                        else "")
                     + f". Actual: {len(calls)} attempted, {sum(1 for c in calls if c.get('ok'))} "
                       f"answered, {sum(1 for c in calls if c.get('stopped_by'))} refused at the dollar cap."
-                    + "\n\n" + retry_note(m)))
+                    + "\n\n" + retry_note(m) + output_note(m)))
 
     stage_lines = declared_vs_ran(env)
     if stage_lines:
@@ -322,6 +322,22 @@ def _retry_use(outcome: str) -> str:
         return ("Neither reply was usable, so that check reads as off-contract; no further retry "
                 "was made.")
     return "No reply from it was used."
+
+
+def output_note(m: dict) -> str:
+    """How generate and expand replies were asked for (D-165): the vendors'
+    structured-output mode, and the output limit by model."""
+    calls = m.get("calls") or []
+    n = sum(1 for c in calls if c.get("structured_output"))
+    if not n:
+        return ""
+    from . import _common as C
+
+    limits = ", ".join(f"{k} {v:,} tokens" for k, v in sorted(C.MAX_TOKENS_BY_MODEL.items()))
+    return (f" Structured output: {n} generate and expand call(s) asked the vendor to hold the reply "
+            "to the items schema (Anthropic output_config.format, OpenAI response_format strict "
+            "json_schema); a reply can still be cut off or refused, and is checked as before. "
+            f"Output limit: {limits}; {C.MAX_TOKENS:,} tokens otherwise.")
 
 
 def retry_note(m: dict) -> str:

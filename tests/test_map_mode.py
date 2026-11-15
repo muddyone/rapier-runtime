@@ -81,7 +81,7 @@ def run(monkeypatch):
                     return _Resp(r)
                 return _Resp(json.dumps(r(prompt, self.vendor)))
 
-        monkeypatch.setattr(C, "client_for", lambda v: _Client(v))
+        monkeypatch.setattr(C, "client_for", lambda v, **kw: _Client(v))
         seed = dict(meta)
         if regions is not None:
             seed["map_regions"] = regions
@@ -1290,7 +1290,7 @@ def _genuine_run(tmp_path, monkeypatch):
             M._record(self.vendor, "m", system, prompt, text)
             return _Resp(text)
 
-    monkeypatch.setattr(C, "client_for", lambda v: _Client(v))
+    monkeypatch.setattr(C, "client_for", lambda v, **kw: _Client(v))
     Pipeline.from_manifest(load_preset("map")).run(
         SOURCE, ledger_root=str(tmp_path / "runs"), seed_meta={"map_regions": REGIONS, "map_max_units": 2})
     root = tmp_path / "runs"
@@ -1455,7 +1455,7 @@ def test_a_cut_off_generator_reply_is_named_in_the_probe(run, monkeypatch):
                                  stop_reason="end_turn")
 
     monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
-    monkeypatch.setattr(C, "client_for", lambda v: Cut(v))
+    monkeypatch.setattr(C, "client_for", lambda v, **kw: Cut(v))
     env = Pipeline.from_manifest(load_preset("map")).run(SOURCE, seed_meta={"map_regions": REGIONS})
     m = _m(env)
     assert m["probes"]["R2"]["generate"] == ("off-contract (the reply was cut off: stop reason max_tokens; "
@@ -1492,7 +1492,7 @@ def _cutting(script_cut):
 
 def _run_with(monkeypatch, cl, **meta):
     monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
-    monkeypatch.setattr(C, "client_for", lambda v: cl(v))
+    monkeypatch.setattr(C, "client_for", lambda v, **kw: cl(v))
     seed = {"map_regions": REGIONS, **meta}
     return Pipeline.from_manifest(load_preset("map")).run(SOURCE, seed_meta=seed)
 
@@ -1669,3 +1669,105 @@ def test_a_pass_with_checks_not_run_says_so_beside_the_verdict(run):
     assert m["gate"]["verdict"] == "PASS" and map_final_state(m)[0] == "defer"
     flat = " ".join(env.meta["report_md"].split())
     assert "PASS. Not every check ran, so this verdict covers only what did. Did not run: Pattern Lock merge for" in flat
+
+
+# ── D-165: Haiku's output limit and the vendors' structured-output modes ───
+
+def _schema_objects(node, out):
+    if isinstance(node, dict):
+        if node.get("type") == "object":
+            out.append(node)
+        for v in node.values():
+            _schema_objects(v, out)
+    elif isinstance(node, list):
+        for v in node:
+            _schema_objects(v, out)
+    return out
+
+
+def test_items_schema_meets_strict_mode_rules():
+    objs = _schema_objects(C.ITEMS_SCHEMA, [])
+    assert objs
+    for o in objs:   # OpenAI strict and Anthropic: every object closed, every property required
+        assert o.get("additionalProperties") is False
+        assert sorted(o["required"]) == sorted(o["properties"])
+    assert C.ITEMS_SCHEMA["type"] == "object" and "anyOf" not in C.ITEMS_SCHEMA
+
+
+def test_items_schema_accepts_the_anchor_rule_shapes_and_nothing_else():
+    jsonschema = pytest.importorskip("jsonschema")
+    ok = {"items": [{"text": "t", "anchor": {"class": "a", "locus": "§1"}},
+                    {"text": "t", "anchor": {"class": "b", "title": "T", "entry_id": "E"}},
+                    {"text": "t", "anchor": {"class": "c", "basis": "why"}}]}
+    jsonschema.validate(ok, C.ITEMS_SCHEMA)
+    for bad in ({"items": [{"text": "t", "anchor": {"class": "d", "basis": "x"}}]},
+                {"items": [{"text": "t", "anchor": {"class": "a"}}]},
+                {"items": [{"text": "t"}]}, {"groups": []}):
+        with pytest.raises(jsonschema.ValidationError):
+            jsonschema.validate(bad, C.ITEMS_SCHEMA)
+
+
+@pytest.mark.parametrize("vendor,model,body", [
+    ("anthropic", "claude-haiku-5-5", {"content": [{"type": "text", "text": '{"items": []}'}],
+                                       "stop_reason": "end_turn"}),
+    ("openai", "gpt-5.5", {"choices": [{"message": {"content": '{"items": []}'}, "finish_reason": "stop"}]}),
+])
+def test_structured_output_and_limit_are_in_the_request(monkeypatch, vendor, model, body):
+    from rapier import models
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setattr(C, "default_model", lambda v: model)
+    sent = []
+    monkeypatch.setattr(models, "_post_with_retry", lambda url, h, payload, **k: sent.append(payload) or body)
+    C.client_for(vendor, schema=C.ITEMS_SCHEMA).complete("s", "p")
+    C.client_for(vendor).complete("s", "p")
+    with_schema, without = sent
+    if vendor == "anthropic":
+        assert with_schema["output_config"] == {"format": {"type": "json_schema", "schema": C.ITEMS_SCHEMA}}
+        assert with_schema["max_tokens"] == 16000 and "output_config" not in without
+    else:
+        rf = with_schema["response_format"]
+        assert rf["type"] == "json_schema" and rf["json_schema"]["strict"] is True
+        assert rf["json_schema"]["schema"] == C.ITEMS_SCHEMA and "response_format" not in without
+        assert with_schema["max_completion_tokens"] == 8000
+
+
+def test_openai_structured_refusal_is_recorded_as_a_refusal(monkeypatch):
+    from rapier import models
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setattr(models, "_post_with_retry", lambda *a, **k: {
+        "choices": [{"message": {"content": None, "refusal": "no"}, "finish_reason": "stop"}]})
+    r = models.build_client(models.ModelSpec("openai", "gpt-5.5", json_schema=C.ITEMS_SCHEMA)).complete("s", "p")
+    assert r.stop_reason == "refusal" and r.text == ""
+
+
+def test_other_vendors_get_no_schema():
+    c = C.client_for("groq", schema=C.ITEMS_SCHEMA)
+    assert c.spec.json_schema is None
+
+
+def test_generate_and_expand_ask_for_structured_output_and_the_rider_says_so(monkeypatch):
+    asked = []
+
+    class Cl:
+        def __init__(self, v, schema=None):
+            self.v, self.schema = v, schema
+
+        def complete(self, system, prompt):
+            from rapier.models import ModelResponse
+            asked.append((system, self.schema is not None))
+            return ModelResponse(text=json.dumps(DEFAULT[system](prompt, self.v)), vendor=self.v,
+                                 model="m", stop_reason="end_turn")
+    monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
+    monkeypatch.setattr(C, "client_for", lambda v, schema=None: Cl(v, schema))
+    env = Pipeline.from_manifest(load_preset("map")).run(SOURCE, seed_meta={"map_regions": REGIONS})
+    by = {}
+    for system, has in asked:
+        by.setdefault(system, set()).add(has)
+    assert by[F.GENERATE] == {True} and by[F.EXPAND] == {True}
+    assert by[F.MERGE] == {False} and by[A.ATTACK_CONTRACT] == {False}
+    m = _m(env)
+    assert sum(1 for c in m["calls"] if c.get("structured_output")) == 4
+    flat = " ".join(env.meta["report_md"].split())
+    assert "Structured output: 4 generate and expand call(s)" in flat
+    assert "Output limit: claude-haiku-5-5 16,000 tokens; 8,000 tokens otherwise." in flat

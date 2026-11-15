@@ -109,7 +109,7 @@ class MapSparkStage(TransformStage):
         for r in regions:
             p = probes.setdefault(r["id"], {"generate": "not-run", "expand": "not-run"})
             try:
-                reply = C.call(env, role="generator", vendor=gen, purpose="generate", region=r["id"],
+                reply = C.call(env, role="generator", vendor=gen, purpose="generate", region=r["id"], schema=C.ITEMS_SCHEMA,
                                system=ctx.config.get("generate_prompt", GENERATE),
                                prompt=f"REQUEST AND SOURCE:\n{env.request}\n\n{_unit_text(m, r)}")
                 got = norm_items(reply)
@@ -121,7 +121,7 @@ class MapSparkStage(TransformStage):
                          origin="spark", role="generator", vendor=gen)
             listed = [i["text"] for i in m.get("items", []) if r["id"] in i["regions"]]
             try:
-                reply = C.call(env, role="challenger", vendor=chal, purpose="expand", region=r["id"],
+                reply = C.call(env, role="challenger", vendor=chal, purpose="expand", region=r["id"], schema=C.ITEMS_SCHEMA,
                                system=ctx.config.get("expand_prompt", EXPAND),
                                prompt=(f"REQUEST AND SOURCE:\n{env.request}\n\n{_unit_text(m, r)}\n\n"
                                        f"GENERATOR'S ITEMS FOR THIS UNIT:\n{listed}"))

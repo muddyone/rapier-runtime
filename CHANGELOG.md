@@ -6,6 +6,25 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 
 ## Unreleased
 
+### Added: structured output for map generate and expand, and room for Haiku's thinking (D-165)
+
+Map generate and expand calls now ask the vendor to hold the reply to the items
+schema: Anthropic `output_config.format` (`json_schema`), OpenAI `response_format`
+(strict `json_schema`). Other vendors are asked as before. Every reply is still
+checked against the contract: a reply can still be cut off or refused (an OpenAI
+refusal is recorded with stop reason `refusal`). Haiku 5.5's output limit in map
+mode is 16,000 tokens (8,000 for other models), because its default adaptive
+thinking used up 8,000 on the longest replies. The rider's CALLS section says how
+many calls used structured output and gives the limits.
+
+### Changed: an off-contract call of any role is a check that didn't run (R-1)
+
+A failed or off-contract expand, matcher, merge, filter or support call is listed
+in the gate's `did_not_run`, so the run defers. An off-contract expand also caps
+its unit at YIELDING and is an incomplete-run REVIEW trigger. A filter reply of
+the wrong shape is recorded as unchecked merges, no longer read as "no wrong
+merges". A verdict reached with checks not run says so beside it in the rider.
+
 ### Added: map mode retries one cut-off reply per run (D-157 b)
 
 A model reply in a map run that comes back cut off is sent again once, with the

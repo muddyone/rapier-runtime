@@ -24,6 +24,32 @@ from ...envelope import Envelope
 from ...models import ModelSpec, Policy, available_vendors, build_client, default_model
 
 MAX_TOKENS = 8000
+# D-165: Haiku 5.5 thinks by default, and its hidden reasoning used up 8,000 tokens
+# on the longest generate replies (runs 20261115010859 and 20261115015600).
+MAX_TOKENS_BY_MODEL = {"claude-haiku-5-5": 16000}
+STRUCTURED_VENDORS = frozenset({"anthropic", "openai"})
+
+
+def _anchor_variant(cls: str, fields: list[str]) -> dict:
+    return {"type": "object",
+            "properties": {"class": {"type": "string", "enum": [cls]},
+                           **{f: {"type": "string"} for f in fields}},
+            "required": ["class", *fields], "additionalProperties": False}
+
+
+# The items contract of generate and expand (field.GENERATE / field.EXPAND,
+# ANCHOR_RULE), as a schema for the vendors' structured-output modes.
+ITEMS_SCHEMA = {
+    "type": "object",
+    "properties": {"items": {"type": "array", "items": {
+        "type": "object",
+        "properties": {"text": {"type": "string"},
+                       "anchor": {"anyOf": [_anchor_variant("a", ["locus"]),
+                                            _anchor_variant("b", ["title", "entry_id"]),
+                                            _anchor_variant("c", ["basis"])]}},
+        "required": ["text", "anchor"], "additionalProperties": False}}},
+    "required": ["items"], "additionalProperties": False,
+}
 
 
 def sha256(obj: Any) -> str:
@@ -50,9 +76,17 @@ def vendors(env: Envelope, ctx) -> dict:
     return m["vendors"]
 
 
-def client_for(vendor: str):
-    """Seam for tests: build a model client for ``vendor``."""
-    return build_client(ModelSpec(vendor, default_model(vendor), max_tokens=MAX_TOKENS))
+def max_tokens_for(model: str) -> int:
+    return MAX_TOKENS_BY_MODEL.get(model, MAX_TOKENS)
+
+
+def client_for(vendor: str, schema: dict | None = None):
+    """Seam for tests: build a model client for ``vendor``, with an optional
+    JSON schema for the vendor's structured-output mode."""
+    model = default_model(vendor)
+    return build_client(ModelSpec(vendor, model, max_tokens=max_tokens_for(model),
+                                  json_schema=schema if vendor in STRUCTURED_VENDORS else None,
+                                  schema_name="map_items"))
 
 
 RETRIES_PER_RUN = 1  # D-157 b: one in-run retry of a cut-off reply, for the whole run
@@ -101,15 +135,18 @@ def _is_cut_off(resp: Any, text: str | None) -> tuple[bool, str]:
 
 
 def _send(env: Envelope, m: dict, *, role, vendor, purpose, region, system, prompt,
-          retry_of: int | None = None):
+          schema=None, retry_of: int | None = None):
     from ... import budget
 
     rec = {"role": role, "vendor": vendor, "purpose": purpose, "region": region, "ok": False}
     if retry_of is not None:
         rec["retry_of"] = retry_of
+    if schema is not None and vendor in STRUCTURED_VENDORS:
+        rec["structured_output"] = True
     m["calls"].append(rec)
     try:
-        resp = client_for(vendor).complete(system, prompt)
+        client = client_for(vendor) if schema is None else client_for(vendor, schema=schema)
+        resp = client.complete(system, prompt)
         text = resp.text
     except budget.BudgetExceeded as exc:
         rec.update(error=str(exc)[:200], stopped_by="dollar cap")
@@ -128,7 +165,7 @@ def _send(env: Envelope, m: dict, *, role, vendor, purpose, region, system, prom
 
 
 def call(env: Envelope, *, role: str, vendor: str, purpose: str, system: str, prompt: str,
-         region: str | None = None) -> Any:
+         region: str | None = None, schema: dict | None = None) -> Any:
     """One model call, recorded before its result is used. Returns parsed JSON,
     or raises; callers decide what a failure means for their check.
 
@@ -140,7 +177,8 @@ def call(env: Envelope, *, role: str, vendor: str, purpose: str, system: str, pr
     the caller reads it as off-contract. The retry goes through the dollar cap
     like any other call."""
     m = state(env)
-    kw = dict(role=role, vendor=vendor, purpose=purpose, region=region, system=system, prompt=prompt)
+    kw = dict(role=role, vendor=vendor, purpose=purpose, region=region, system=system, prompt=prompt,
+              schema=schema)
     rec, text = _send(env, m, **kw)
     if rec.get("cut_off"):
         retries = m.setdefault("retries", [])

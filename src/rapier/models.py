@@ -25,6 +25,11 @@ class ModelSpec:
     prompt_template: str | None = None
     max_tokens: int = 4096  # generative floor; 1024 truncates real recommendations
     temperature: float = 1.0
+    # A JSON schema the reply must follow, sent in the vendor's structured-output
+    # mode (Anthropic output_config.format; OpenAI response_format json_schema,
+    # strict). Only the native anthropic and openai clients send it.
+    json_schema: dict | None = None
+    schema_name: str = "reply"
 
 
 @dataclass
@@ -193,6 +198,8 @@ class AnthropicModelClient(ModelClient):
                 "max_tokens": self.spec.max_tokens,
                 "system": system,
                 "messages": [{"role": "user", "content": prompt}],
+                **({"output_config": {"format": {"type": "json_schema", "schema": self.spec.json_schema}}}
+                   if self.spec.json_schema else {}),
             },
         )
         text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
@@ -215,11 +222,16 @@ class OpenAIModelClient(ModelClient):
                     {"role": "user", "content": prompt},
                 ],
                 "max_completion_tokens": self.spec.max_tokens,
+                **({"response_format": {"type": "json_schema", "json_schema": {
+                    "name": self.spec.schema_name, "strict": True, "schema": self.spec.json_schema}}}
+                   if self.spec.json_schema else {}),
             },
         )
         choice = (data.get("choices") or [{}])[0]
         text = choice.get("message", {}).get("content") or ""
         stop = choice.get("finish_reason")
+        if choice.get("message", {}).get("refusal"):
+            stop = "refusal"  # a structured-output refusal carries no content
         _record("openai", self.spec.model, system, prompt, text, stop)
         return ModelResponse(text=text, vendor="openai", model=self.spec.model, stop_reason=stop)
 

@@ -135,7 +135,7 @@ def test_capped_map_run_reads_as_not_run_and_defers(monkeypatch):
     from rapier.stages.map.compose import map_final_state
 
     monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
-    monkeypatch.setattr(C, "client_for", lambda v: models.build_client(
+    monkeypatch.setattr(C, "client_for", lambda v, **kw: models.build_client(
         models.ModelSpec("anthropic" if v == "anthropic" else "openai",
                          "claude-haiku-5-5" if v == "anthropic" else "gpt-5.5", max_tokens=8000)))
     monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
