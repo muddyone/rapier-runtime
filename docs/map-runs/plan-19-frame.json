@@ -1,0 +1,25 @@
+{
+  "_note": "Proposed supplied search frame for the ONE D-115/D-133 map run of Loom plan 19 (rapier-runtime-2, 2026-11-15). Ten regions along the plan's own section seams, so the frame comes from the artifact's structure, not from the Generator. Two units of headroom under the default cap of 12 for frame-attack additions (D-128 covers 3; spec v1.5 frame headroom). Not used until D-133 is answered a and this frame is confirmed.",
+  "regions": [
+    {"name": "Tier split and the interrupt test",
+     "definition": "Sections 1-2.1: what counts as blocking versus advisory, the locked interrupt test, and checks that could land in the wrong tier."},
+    {"name": "Architecture",
+     "definition": "Section 3: the sweep's components and data flow between /sync-now, the background runner and the cache."},
+    {"name": "The backgrounding mechanism",
+     "definition": "Section 4: how the sweep runs in the background, the one thing that breaks it, and the harness behaviour it relies on."},
+    {"name": "Check contract and registration table",
+     "definition": "Sections 5-5.1: the unchanged per-check contract, the registration table, TTLs and scheduling."},
+    {"name": "Surfacing etiquette and the orphaned sweep",
+     "definition": "Sections 6-6.1: when and how results are shown to the partner, including completion after a /clear."},
+    {"name": "One sweep, machine-scoped checks and the worktree nudge",
+     "definition": "Sections 7-8: one consolidated sweep instead of N jobs, machine- versus project-scoped checks, and the worktree-cleanup nudge."},
+    {"name": "Cache format",
+     "definition": "Section 9: the cache schema and fields, freshness, finding ids, and what readers of the cache can rely on."},
+    {"name": "Sinks",
+     "definition": "Section 10: where findings go by actionability (/sync-now report, /wn, the Intake) and routing between them."},
+    {"name": "Bounding",
+     "definition": "Section 11: deadlines, timeouts, deferral, locks and late results, so a slow sweep degrades instead of ambushing."},
+    {"name": "Package, phased build, decisions and open questions",
+     "definition": "Sections 12-16: the package shape, the phases and their exit criteria, the locked decisions, and the open questions."}
+  ]
+}
