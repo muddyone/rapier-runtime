@@ -254,15 +254,21 @@ what's next" so a new session can continue without reconstructing from git log.
    - **The D-136 run (01:01Z) also stopped before generation, $0.06**: the
      frame-attack added 6 regions this time (16 units, over the cap). Run dir
      `~/.rapier/runs/20261114190132-map`. Tonight's two tries: $0.11.
-   - **Fix (sparring-3's method ruling, no spec change):** carry run 2's frame-attack
-     verbatim, regroup the 16 regions by section into 10 blocks
-     (`docs/map-runs/plan-19-frame-regrouped.json`), freeze the frame, no second
-     frame-attack. Built as `rapier map --frame-attack-from RUN_DIR` (0043781d), in
-     rr-1's review. $0 dry run: 60 calls, about $4.20. A 16-unit higher cap priced
-     at about $8.55, over the cap, so it was not offered.
-   - **Next:** D-138 (blocking, money): one run on the frozen frame, `--max-calls 60`,
-     $8 cap, only after rr-1 passes 0043781d; or stop. Nothing runs before both. v1.5 goes public (sparring W-23)
-     before any release.
+   - **Two ways to run, both built and passed by rr-1 (de74d353):** sparring-3
+     corrected its first ruling: v1.5 says "the frame-attack runs on the blocked
+     frame", so carrying run 2's attack departs from the text.
+     (a) spec as written: run 2's 16 regions supplied in 8 blocks
+     (`docs/map-runs/plan-19-frame-8-blocks.json`), a fresh frame-attack,
+     `--max-calls 73`; $0 price $2.98-$5.87 for 8-12 units (thin margin at 12: cap
+     stop line ~$6.69), ~$0.06 if it overflows again.
+     (b) carried attack (`--frame-attack-from ~/.rapier/runs/20261114190132-map`),
+     11 blocks (`docs/map-runs/plan-19-frame-regrouped.json`), `--max-calls 66`,
+     ~$4.95, the departure stated in the rider. The carried record is
+     cross-checked against its hash, supplied frame, call log and transcript
+     (rr-1 CF-1). "Never a mix" of seams is per block (sparring-3), so a frame can
+     hold a lens block.
+   - **Next:** D-138 (blocking, money), a / b / c (stop). Nothing runs before Bart
+     answers it on the queue.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
      10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live
