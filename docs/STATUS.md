@@ -1,6 +1,6 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode v1.4 on a branch, 588 tests)._ A running "where we are /
+_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode v1.5 on a branch, 850 tests)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
@@ -231,16 +231,17 @@ what's next" so a new session can continue without reconstructing from git log.
      blocks, pre-run call plan (`--max-calls`), labels by claimed class, matcher over
      the whole field (one call per unit), misquoted demotion at 0.8, REVIEW at >10%
      misquoted; absence claims anchor to a section.
-   - **Blocked on v1.5 (sparring W-24).** A $0 re-score of the D-100 record under
-     v1.4: 890 found, 40 misquoted (4.2%), 18 fabricated, so plan 19 (same source)
-     would likely FAIL. Most of the 18 quote across a box diagram's cells or omit a
-     table column; sparring-2 proposes a v1.5 rule (separators in a table/diagram
-     act like an ellipsis) plus string-escape folding. Not built until v1.5 is
-     decided. Plan 19 frame: 10 supplied regions under the default cap of 12.
-   - **Next, in order:** Bart answers D-128 (v1.5, a/b/c/d). sparring-3 applies v1.5
-     to the private spec and sends the SHA. Build v1.5, then reproduce sparring-2's
-     $0 re-score of D-100 (863 found / 79 demoted / 6 fabricated) before anything
-     paid. Then the ONE $8 run.
+   - **v1.5 class a check: built** (2083f4b2, from private spec fe5f4c00; D-128 a),
+     in rr-1's review. Own-build $0 re-score of D-100 (`scripts/rescore-map.py`)
+     reproduces sparring-2's reference: v1.4 890/40/18; v1.5 863/79/6, 8.3%
+     misquoted (32 near-quotes, 47 elisions; sparring-2 agreed this split, the
+     reference's 38/41 was a keyword sort), possible reversal on 18 items (17
+     distinct quotes; the reference's 54 triple-counted). The 6 are real errors.
+     Diagram cells "touch" only on one line with separators between, or on
+     adjacent lines with overlapping columns (sparring-2 confirmed; stricter than
+     the reference, counts unchanged).
+   - **Next, in order:** rr-1 passes the v1.5 build (2083f4b2). Then the ONE $8 run,
+     under the brief below. v1.5 goes public (sparring W-23) before any release.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
      10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live
