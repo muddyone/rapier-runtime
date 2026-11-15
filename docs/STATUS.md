@@ -1,6 +1,6 @@
 # Rapier — dev status
 
-_Last updated: 2026-11-14 (tag v0.6.3 on main; map mode v1.5 on a branch, 928 tests)._ A running "where we are /
+_Last updated: 2026-11-15 (tag v0.6.3 on main; map mode v1.5 on a branch, 960 tests; D-157 run off-contract)._ A running "where we are /
 what's next" so a new session can continue without reconstructing from git log.
 
 ## Done
@@ -281,6 +281,19 @@ what's next" so a new session can continue without reconstructing from git log.
      fabricated. Re-scoring this run's record under it: REVIEW (0 fabricated,
      4 thin), labels unchanged.
    - **Next:** sparring-3 puts one item to Bart. Nothing more runs without it.
+   - **The D-157 b run (2026-11-15 07:56-08:24Z, on 071be4a9) is NOT on-contract;
+     no release.** Run dir `~/.rapier/runs/20261115015600-map`. Built first at $0:
+     one in-run retry of a cut-off reply (4f61e170..071be4a9, rr-1 passed).
+     $6.66 of $8, 72 of 74 planned calls, all answered, none refused, no overrun.
+     Fresh frame-attack added 4 (12 units). **The retry worked:** B8's Haiku
+     Generator reply stopped at `max_tokens`, was retried once, and completed; the
+     rider discloses it. **Off-contract, not cut off** (stop reasons
+     `end_turn`/`stop`, the retry rightly didn't apply): B2's Haiku generate reply
+     had invalid JSON (`"class": a`, unquoted), and B7's GPT-5.5 expand reply had an
+     unescaped `"` inside a string. Gate REVIEW ("overall label is UNPROBED", B2),
+     final state DEFER; labels 11 YIELDING, 1 UNPROBED; 0 fabricated. Gap found:
+     the rider and gate don't list an off-contract expand (B7) anywhere; sent to
+     sparring-3 as a method question. Map-mode spend to date: $17.39.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
      10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live
