@@ -217,12 +217,16 @@ what's next" so a new session can continue without reconstructing from git log.
    $20.85) FAILED: a drafted 47-region frame hit the 120-call cap, and the citation
    check misread real loci. Bart chose D-115 a: $0 work first, then ONE run of Loom
    plan 19, supplied frame, Haiku 5.5 Generator, GPT-5.5 attacker, hard cap $8.
-   - **Dollar cap: passed** (rr-1, fe7b0113). Per-run budget (contextvar),
-     non-finite caps refused, every retry reserved and settled, spend written on
-     every exit, price overrides can't lower a price, incomplete usage charged in
-     full, MCP `max_usd=0` is $0, vendored direct callers refuse under a cap. The
-     D-120 cross-vendor /spar ($1.10) found S-1..S-6; all fixed. A second
-     cross-vendor pass is filed to Bart by rr-1.
+   - **Dollar cap: passed** (rr-1, 56c26e03; 830 tests; rr-1's own 300-run fuzz
+     clean). Per-run budget (contextvar) set and reset around the whole run;
+     every input that feeds a charge finite, non-negative and under a ceiling
+     ($1,000 cap, $1,000/M price, 200k output tokens, 50M usage) or refused;
+     every retry reserved and settled; spend written on every exit; price
+     overrides can't lower a price; incomplete usage charged in full; MCP
+     `max_usd=0` is $0; vendored direct callers refuse under a cap; an overrun is
+     charged in full and stops the run. Cross-vendor /spars D-120 ($1.10) and
+     D-123 ($1.52) found S-1..S-6 and M-1/M-4, all fixed. **The last cross-vendor
+     pass is D-126, Bart's to answer.**
    - **v1.4 rules: passed** (rr-1, 4faa3777 + 1976e28a + 1e2b4d4d). 12-unit cap and
      blocks, pre-run call plan (`--max-calls`), labels by claimed class, matcher over
      the whole field (one call per unit), misquoted demotion at 0.8, REVIEW at >10%
