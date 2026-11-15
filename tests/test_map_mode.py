@@ -1582,7 +1582,7 @@ def test_the_retry_is_held_to_the_dollar_cap(monkeypatch):
 
 
 def test_control_a_stray_bracket_before_good_json_is_not_a_cut_off(monkeypatch):
-    good = 'See [the source] then: ' + json.dumps({"items": [{"text": "x", "anchor": {"class": "c"}}]})
+    good = 'Items [ one stray bracket, then: ' + json.dumps({"items": [{"text": "x", "anchor": {"class": "c"}}]})
     assert C._unclosed_json(good)                    # the scan alone would say open
     cl = _cutting({(F.GENERATE, "R2"): [(good, "end_turn")]})
     m = _m(_run_with(monkeypatch, cl))
