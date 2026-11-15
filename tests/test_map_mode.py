@@ -464,7 +464,7 @@ The cache stores `launched_at` and `finding_id` for each check.
 
 @pytest.mark.parametrize("locus", [
     "§2: 'Every /sync-now step sorts cleanly into one of two buckets. There is no spectrum.'",
-    "§2: “Every /sync-now step sorts cleanly … There is no spectrum.”",
+    "§2: “Every /sync-now step sorts cleanly into … of two buckets.”",       # v1.5: 3+ words a piece
     "§2 table: 'All clear — Say nothing. Not one line.'",
     "the sweep is a single process emitting one consolidated result",
     "§9 cache format includes `launched_at`, but no sweep id",       # section + comment
@@ -524,8 +524,8 @@ def test_one_region_merge_failing_is_partial_and_disclosed(run):
 @pytest.mark.parametrize("bad,good", [
     ('§2 "instantly"', '§2 "eu-west"'),
     ('§2: "eu-east"', '§2: "eu-west"'),
-    ('"Rollout happens region by region ... instantly"', '"Rollout happens region by region ... eu-west"'),
-    ('"The service must answer ... never"', '"The service must answer ... 200 ms"'),
+    ('"Rollout happens region by region ... instantly"', '"Rollout happens region by region ... starting with eu-west"'),
+    ('"The service must answer ... never"', '"The service must answer ... within 200 ms"'),
 ])
 def test_short_invented_quote_is_fabricated_and_real_control_found(bad, good):
     from rapier.stages.map.cite import locus_exists
@@ -551,9 +551,12 @@ def test_fragment_spliced_quote_is_fabricated():
 
 
 def test_control_real_elided_quote_within_one_section_is_found():
-    from rapier.stages.map.cite import locus_exists
-    assert locus_exists('"Every /sync-now step sorts cleanly … There is no spectrum."', LIVE_SOURCE)
+    from rapier.stages.map.cite import check_locus, locus_exists
+    assert locus_exists('"Every /sync-now step sorts cleanly … one of two buckets."', LIVE_SOURCE)
     assert locus_exists('"eu-west"', SOURCE)  # an unelided short quote is still checked whole
+    # v1.5: the same splice across a sentence break is an elision, demoted, not found
+    v = check_locus('"Every /sync-now step sorts cleanly … There is no spectrum."', LIVE_SOURCE)
+    assert v["status"] == "misquoted" and v["kind"] == "elision" and not v.get("reversal")
 
 
 # ── v1.4 overlap: newness against the whole field, credit and tags ───────────
@@ -917,3 +920,156 @@ def test_unelided_quote_needs_only_to_be_in_the_source():
     """v1.4 scopes only ellipsis quotes to the cited section; the docstring says so."""
     from rapier.stages.map.cite import check_locus
     assert check_locus('§2 "The service must answer within 200 ms."', SOURCE)["status"] == "found"
+
+
+# ── SPARRING v1.5 §3.7 (D-128 a): the class a check made fit for real sources ──
+
+V15_SOURCE = """## 1. Goals
+The cache must not be shared across machines. Each machine keeps its own copy.
+Rollout starts with eu-west and ends with us-east.
+## 2. Runner
+The sweep checks every clone in turn, then writes one consolidated result to the cache.
+Checks are marked "deferred" when the deadline passes.
+## 3. Diagram
+```
+  step 1 ──run──▶│ loom-audit-sweep │──write──▶│ ~/.loom/     │
+                 │  · TTL table     │          │  audit/*.json│
+  step 7 ──read cache──────────────────────────▶└──────────────┘
+```
+## 4. Table
+| Check | Scope | TTL | Why |
+|---|---|---|---|
+| template-drift | project | 7d | upstream template moves slowly |
+| secrets | machine | 1d | rotates often |
+## 5. Code
+```
+if not ready: wait()   # retry ... later
+```
+"""
+
+
+def _v15(locus, src=V15_SOURCE):
+    from rapier.stages.map.cite import check_locus
+    return check_locus(locus, src)
+
+
+# Looser where only layout differs
+
+def test_v15_string_escapes_are_removed():
+    assert _v15('§2: "Checks are marked \\"deferred\\" when the deadline passes"')["status"] == "found"
+
+
+def test_v15_diagram_fragments_in_touching_cells_are_found():
+    v = _v15('§3: "loom-audit-sweep │──write──▶│ ~/.loom/ audit/*.json"')
+    assert v["status"] == "found" and v.get("how") == "diagram-cell"
+
+
+def test_v15_diagram_fragments_in_distant_cells_are_not_found():
+    # "step 7" and "audit/*.json" are real, but their cells don't touch
+    assert _v15('§3: "step 1 │ audit/*.json"')["status"] != "found"
+
+
+def test_v15_a_word_added_between_diagram_cells_fails():
+    assert _v15('§3: "loom-audit-sweep │──not──▶│ ~/.loom/ audit/*.json"')["status"] != "found"
+
+
+def test_v15_table_row_with_a_skipped_column_is_found_in_order():
+    v = _v15('§4: "template-drift | 7d"')
+    assert v["status"] == "found" and v.get("how") == "table-row"
+    assert _v15('§4: "7d | template-drift"')["status"] != "found"          # order matters in a row
+    assert _v15('§4: "template-drift | 1d"')["status"] != "found"          # 1d is another row's
+
+
+# Tighter where meaning can change
+
+def test_v15_ellipsis_fragment_under_three_words_is_an_elision():
+    v = _v15('§2: "The sweep checks every clone … the cache"')
+    assert v["status"] == "misquoted" and v["kind"] == "elision"
+
+
+def test_v15_ellipsis_gap_over_300_characters_is_an_elision():
+    src = "## 1. X\nThe first part of the claim is here " + "filler " * 80 + "and the last part ends it.\n"
+    v = _v15('§1: "The first part of the claim … and the last part ends it"', src)
+    assert v["status"] == "misquoted" and v["kind"] == "elision"
+
+
+def test_v15_control_ellipsis_within_limits_is_found():
+    assert _v15('§2: "The sweep checks every clone … one consolidated result"')["status"] == "found"
+
+
+def test_v15_same_sentence_skip_of_a_negation_is_fabricated():
+    v = _v15('§1: "The cache must … be shared across machines"')
+    assert v["status"] == "fabricated" and "inside one sentence" in v["why"]
+
+
+def test_v15_cross_sentence_skip_of_a_negation_is_a_possible_reversal():
+    v = _v15('§1: "The cache must not be shared across machines … its own copy"')
+    assert v["status"] != "fabricated"
+    v = _v15('§1: "The cache must … keeps its own copy"')     # skips "not be shared ... ." across a break
+    assert v["status"] == "misquoted" and v["kind"] == "elision" and v["reversal"] is True
+
+
+def test_v15_cross_sentence_skip_without_a_protected_word_is_an_elision_not_a_reversal():
+    v = _v15('§1: "Each machine keeps its own copy … starts with eu-west"')
+    assert v["status"] == "misquoted" and not v.get("reversal")
+
+
+def test_v15_edge_cut_at_a_protected_word_is_fabricated():
+    # a leading ellipsis that drops the "not" right before the quoted words
+    v = _v15('§1: "… be shared across machines"')
+    assert v["status"] == "fabricated" and "edge" in v["why"]
+
+
+def test_v15_control_edge_cut_where_the_source_has_its_own_ellipsis():
+    src = '## 1. X\nThe text says "… be shared across machines" in its own words.\n'
+    assert _v15('§1: "… be shared across machines"', src)["status"] == "found"
+
+
+def test_v15_gap_rules_do_not_apply_inside_fenced_code():
+    assert _v15('§5: "if not ready: wait() … retry"')["status"] != "fabricated"
+
+
+def test_v15_a_changed_direction_word_fabricates():
+    assert _v15('§1: "Rollout ends with eu-west and ends with us-east."')["status"] == "fabricated"
+
+
+def test_v15_control_a_changed_plain_word_is_a_near_quote():
+    v = _v15('§1: "Rollout starts with eu-west and finishes at us-east."'.replace("finishes at", "ends near"))
+    assert v["status"] == "misquoted" and v["kind"] == "near-quote"
+
+
+def test_v15_rules_are_in_the_manifest():
+    from rapier.stages.map import cite
+    cfg = next(s for s in load_preset("map").stages if s.stage == "map_cite").config
+    assert cfg["protected_direction_words"] == sorted(cite.DIRECTION_WORDS)
+    assert cfg["ellipsis_min_words"] == 3 and cfg["ellipsis_max_gap"] == 300
+
+
+# The gate and the rider
+
+def test_v15_possible_reversal_is_a_review_trigger_and_listed(run):
+    env = run({F.GENERATE: lambda p, v: {"items": [
+        {"text": "x", "anchor": {"class": "a", "locus": '§1: "The service must … within 200 ms."'}},
+        {"text": "y", "anchor": {"class": "a", "locus": '§2: "Rollout happens region by region"'}}]}})
+    m = _m(env)
+    assert m["gate"]["verdict"] != "FAIL"
+    flat = " ".join(env.meta["report_md"].split())
+    assert "Possible reversal by ellipsis: none." in flat  # control: no reversal here
+    assert not any("possible reversal" in r for r in m["gate"]["review"])
+
+
+def test_v15_rider_counts_near_quotes_and_elisions_separately(run):
+    near = '§2: "Rollout happens region by region, beginning with eu-west."'
+    elide = '§2: "Rollout happens region by … starting with eu-west"'.replace(" by …", " … by")
+    env = run({F.GENERATE: lambda p, v: {"items": [
+        {"text": "a", "anchor": {"class": "a", "locus": near}},
+        {"text": "b", "anchor": {"class": "a", "locus": '§2: "Rollout happens … starting with eu-west"'}}]}})
+    flat = " ".join(env.meta["report_md"].split())
+    assert "near-quote(s) and" in flat and "elision(s)" in flat
+
+
+def test_v15_frame_declared_at_its_cap_is_noted(run):
+    env = run(regions=[{"name": f"A{k}", "definition": "d"} for k in range(1, 13)])
+    assert "declared at its cap, with no room for frame-attack additions" in env.meta["report_md"]
+    env2 = run(regions=[{"name": f"A{k}", "definition": "d"} for k in range(1, 11)])
+    assert "no room for frame-attack additions" not in env2.meta["report_md"]

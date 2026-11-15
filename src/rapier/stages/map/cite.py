@@ -170,14 +170,16 @@ def nearest_passage(quote: str, scope: str) -> tuple[float, str, list[str]]:
     return r, " ".join(w), diff
 
 
-def judge_failed(quote: str, scope: str, threshold: float) -> dict:
-    """A quote (or fragment) not found: misquoted or fabricated."""
+def judge_failed(quote: str, scope: str, threshold: float,
+                 protect: frozenset[str] = frozenset()) -> dict:
+    """A quote (or fragment) not found: misquoted (a near-quote) or fabricated.
+    ``protect`` adds words whose change fabricates (v1.5: direction and quantity)."""
     r, passage, diff = nearest_passage(quote, scope)
-    meaning = sorted({w for w in diff if _meaning_word(w)})
+    meaning = sorted({w for w in diff if _meaning_word(w) or w in protect})
     if r >= threshold and not meaning:
-        return {"status": "misquoted", "quote": quote, "passage": passage,
+        return {"status": "misquoted", "kind": "near-quote", "quote": quote, "passage": passage,
                 "similarity": round(r, 3)}
-    why = (f"a negation, modal or number differs ({', '.join(meaning)})" if r >= threshold and meaning
+    why = (f"a protected word differs ({', '.join(meaning)})" if r >= threshold and meaning
            else f"no passage of the source is close (best word-level similarity {r:.2f})")
     return {"status": "fabricated", "quote": quote, "passage": passage, "similarity": round(r, 3),
             "why": why}
@@ -193,15 +195,16 @@ def _in_order(folded: list[str], sec: str) -> bool:
     return True
 
 
-def check_quote(pieces: list[str], source: str, section: str | None,
-                threshold: float = MISQUOTE_THRESHOLD) -> dict:
-    """One quote's verdict: ``{"status": found|misquoted|fabricated, ...}``.
+def check_quote_v14(pieces: list[str], source: str, section: str | None,
+                    threshold: float = MISQUOTE_THRESHOLD,
+                    protect: frozenset[str] = frozenset()) -> dict:
+    """One quote's v1.4 verdict: ``{"status": found|misquoted|fabricated, ...}``.
     ``section`` is the cited section's raw text, or None when none is cited."""
     folded = [_fold(p) for p in pieces]
     if len(folded) == 1:
         if folded[0] in _fold(source):
             return {"status": "found"}
-        return judge_failed(pieces[0], source, threshold)
+        return judge_failed(pieces[0], source, threshold, protect)
     scopes = [_fold(section)] if section is not None else _sections(source)
     if any(_in_order(folded, sec) for sec in scopes):
         return {"status": "found"}
@@ -212,7 +215,7 @@ def check_quote(pieces: list[str], source: str, section: str | None,
         if f in scope_f:
             fragments.append({"status": "found", "quote": p})
         else:
-            fragments.append(judge_failed(p, scope_raw, threshold))
+            fragments.append(judge_failed(p, scope_raw, threshold, protect))
     if any(fr["status"] == "fabricated" for fr in fragments):
         bad = next(fr for fr in fragments if fr["status"] == "fabricated")
         return {**bad, "fragments": fragments}
@@ -277,9 +280,9 @@ def _identifier(raw: str) -> bool:
     return bool(re.search(r"[_./]|::|\d|[a-z][A-Z]|[A-Za-z]-[A-Za-z]", t))
 
 
-def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) -> dict:
-    """The citation check for one class a locus: ``{"status": found | misquoted
-    | fabricated, ...}`` with the failing quote and nearest passage when not found.
+def _check_locus_core(locus: str, source: str, threshold: float, quote_check) -> dict:
+    """The citation check's shared core for one class a locus: ``{"status": found
+    | misquoted | fabricated, ...}`` with the failing quote and nearest passage.
 
     - If the locus quotes the source, every quote is checked (``check_quote``);
       any fabricated quote makes the locus fabricated, else any misquoted one
@@ -295,7 +298,7 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) 
     quotes = [(mm.start(), _pieces(mm.group(1) or mm.group(2) or "")) for mm in _QUOTE.finditer(loc)]
     quotes = [(at, ps) for at, ps in quotes if ps]
     if quotes:
-        verdicts = [check_quote(ps, source, _section_before(loc, at, source), threshold)
+        verdicts = [quote_check(ps, source, _section_before(loc, at, source), threshold)
                     for at, ps in quotes]
         for st in ("fabricated", "misquoted"):
             hit = next((v for v in verdicts if v["status"] == st), None)
@@ -319,6 +322,412 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) 
     return {"status": "fabricated", "why": "neither the text nor every section it names is in the source"}
 
 
+def check_locus_v14(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) -> dict:
+    """The v1.4 class a check, kept so a re-score can show both versions."""
+    return _check_locus_core(locus, source, threshold, check_quote_v14)
+
+
+# ---------------------------------------------------------------------------
+# v1.5 (SPARRING spec v1.5 §3.7, D-128 a). Ported step for step from the
+# reviewed reference re-score (sparring-framework docs/spars/
+# 202611141303-map-mode-quality-bar/rescore-v15-2026-11-14.py), which is the
+# acceptance test: the same D-100 counts in this build.
+# ---------------------------------------------------------------------------
+
+# Direction and quantity words, protected in near-quotes. The list is fixed in
+# the manifest (map_cite config) and so hashed with the method.
+DIRECTION_WORDS = frozenset({
+    "start", "starts", "started", "end", "ends", "ended", "begin", "begins", "finish", "finishes",
+    "before", "after", "first", "last", "earlier", "later", "earliest", "latest", "all", "some",
+    "any", "every", "each", "most", "few", "many", "more", "less", "fewer", "increase",
+    "increases", "increased", "decrease", "decreases", "decreased", "higher", "lower", "above",
+    "below", "up", "down", "min", "max", "minimum", "maximum", "always", "sometimes", "only",
+    "include", "includes", "exclude", "excludes", "enable", "enabled", "disable", "disabled",
+    "allow", "allows", "deny", "denies", "add", "adds", "remove", "removes", "open", "close",
+    "on", "off", "in", "out", "from", "to", "into", "over", "under", "inside", "outside", "both",
+    "either"})
+ELLIPSIS_MIN_WORDS = 3
+ELLIPSIS_MAX_GAP = 300
+# Words an ellipsis must not skip inside one sentence: a negation, a modal, or an
+# exclusion word.
+_EXCLUSION = frozenset({"only", "except", "unless", "without", "never"})
+_GAP_PROTECTED = frozenset(_NEGATIONS) | frozenset(_MODALS) | _EXCLUSION
+_SENT = re.compile(r"[.!?;]\s|[.!?;]$")
+_BOXCH = "│┃|─━▶▸►→←↓↑┌┐└┘├┤┬┴┼╔╗╚╝═║"
+_CELLSEP = re.compile("[" + _BOXCH + "]+")
+_NONSEP = re.compile("[^" + _BOXCH + "]+")
+_ELL = re.compile(r"\.\.\.|…")
+_MINF = 4  # a diagram or table fragment shorter than this must equal a whole cell
+
+
+class Rules:
+    """The v1.5 check's parameters, all from the manifest."""
+
+    def __init__(self, threshold: float = MISQUOTE_THRESHOLD, direction_words=DIRECTION_WORDS,
+                 min_words: int = ELLIPSIS_MIN_WORDS, max_gap: int = ELLIPSIS_MAX_GAP):
+        self.threshold = float(threshold)
+        self.direction = frozenset(direction_words)
+        self.min_words = int(min_words)
+        self.max_gap = int(max_gap)
+
+
+class _Index:
+    """What the v1.5 rules need from one source: its fenced blocks (where the
+    gap rules don't apply), its diagrams and its table rows."""
+
+    def __init__(self, source: str):
+        fenced = re.findall(r"```.*?```", source, re.S)
+        self.fenced = [_fold(b) for b in fenced]
+        self.blocks = [b.split("\n") for b in fenced if re.search(r"[│┃─━▶┌┐└┘├┤┬┴┼╔╗╚╝═║]", b)]
+        self.rows = [ln for ln in source.split("\n") if ln.count("|") >= 2]
+        self._cells: dict[int, list] = {}
+
+    def cells(self, k: int) -> list:
+        if k not in self._cells:
+            self._cells[k] = _diagram_cells(self.blocks[k])
+        return self._cells[k]
+
+
+_INDEX_CACHE: dict[int, tuple[str, _Index]] = {}
+
+
+def _index(source: str) -> _Index:
+    key = hash(source)
+    hit = _INDEX_CACHE.get(key)
+    if hit and hit[0] is source:
+        return hit[1]
+    ix = _Index(source)
+    _INDEX_CACHE.clear()
+    _INDEX_CACHE[key] = (source, ix)
+    return ix
+
+
+def _dens(t: str) -> str:
+    return re.sub(r"\s+", "", _fold(t))
+
+
+def _unescape(t: str) -> str:
+    return t.replace('\\"', '"').replace("\\'", "'").replace("\\n", "\n")
+
+
+def _gap_protected(w: str) -> bool:
+    return w in _GAP_PROTECTED or w.endswith("n't")
+
+
+def _gap_kind(text: str) -> str:
+    """Skipped text between two fragments: ``ok``; ``cross`` (crosses a sentence
+    break: misquoted); ``cross-reversal`` (crosses one AND skips a protected word:
+    misquoted plus the REVIEW trigger); ``bad`` (skips a protected word inside
+    one sentence: fabricated)."""
+    t = _fold(text)
+    crosses = bool(_SENT.search(t))
+    prot = any(_gap_protected(w) for w in _words(t))
+    if prot and not crosses:
+        return "bad"
+    if prot:
+        return "cross-reversal"
+    return "cross" if crosses else "ok"
+
+
+def _ordered_spans(folded: list[str], sec: str):
+    at, spans = 0, []
+    for p in folded:
+        j = sec.find(p, at)
+        if j < 0:
+            return None
+        spans.append((j, j + len(p)))
+        at = j + len(p)
+    return spans
+
+
+def _in_order_limited(folded: list[str], sec: str, R: Rules) -> bool:
+    if any(len(_words(f)) < R.min_words for f in folded):
+        return False
+    at, prev_end = 0, None
+    for p in folded:
+        j = sec.find(p, at)
+        if j < 0:
+            return False
+        if prev_end is not None and j - prev_end > R.max_gap:
+            return False
+        prev_end = j + len(p)
+        at = prev_end
+    return True
+
+
+def check_quote_v15(pieces: list[str], source: str, section: str | None, R: Rules,
+                    hits: list | None = None) -> dict:
+    """One quote's v1.5 verdict. v1.4's verdict first, without limits; a quote it
+    finds only through an ellipsis splice is then held to v1.5's limits."""
+    v = check_quote_v14(pieces, source, section, R.threshold)
+    if v["status"] != "found":
+        return check_quote_v14(pieces, source, section, R.threshold, R.direction)
+    if len(pieces) < 2:
+        return v
+    ix = _index(source)
+    folded = [_fold(p) for p in pieces]
+    scopes = [_fold(section)] if section is not None else _sections(source)
+    joined = " … ".join(pieces)
+    for sec in scopes:
+        sp = _ordered_spans(folded, sec)
+        if not sp or all(any(f in fb for fb in ix.fenced) for f in folded):
+            continue  # not here, or inside a code/data block, where the gap rules don't apply
+        kinds = [_gap_kind(sec[a[1]:b[0]]) for a, b in zip(sp, sp[1:])]
+        if "bad" in kinds:
+            return {"status": "fabricated", "quote": joined,
+                    "why": "the ellipsis skips a negation, modal or exclusion word inside one sentence"}
+        if "cross-reversal" in kinds:
+            if hits is not None:
+                hits.append(joined)
+            return {"status": "misquoted", "kind": "elision", "reversal": True, "quote": joined,
+                    "why": "possible reversal by ellipsis: it crosses a sentence break and skips "
+                           "a negation, modal or exclusion word"}
+        if "cross" in kinds:
+            return {"status": "misquoted", "kind": "elision", "quote": joined,
+                    "why": "the ellipsis crosses a sentence break"}
+        break
+    if any(_in_order_limited(folded, sec, R) for sec in scopes):
+        return v
+    return {"status": "misquoted", "kind": "elision", "quote": joined,
+            "why": f"an ellipsis splice outside the limits (a fragment under {R.min_words} words, "
+                   f"or a gap over {R.max_gap} characters)"}
+
+
+def _edge_cut_bad(q: str, ps: list[str], sec_raw: str | None, source: str) -> bool:
+    """A leading or trailing ellipsis that cuts just before or after a protected
+    word, where the source has no ellipsis of its own."""
+    lead = bool(re.match(r"\s*(\.\.\.|…)", q))
+    trail = bool(re.search(r"(\.\.\.|…)\s*$", q))
+    if not (lead or trail):
+        return False
+    sec = _fold(sec_raw if sec_raw is not None else source)
+    first, last = _fold(ps[0]), _fold(ps[-1])
+    if lead:
+        k = sec.find(first)
+        if k > 0 and re.search(r"(\.\.\.|…)[\s:;,.\"'\u201c\u2018]*$", sec[:k]):
+            lead = False
+        if lead and k > 0:
+            before = _words(sec[max(0, k - 40):k])
+            if before and _gap_protected(before[-1]):
+                return True
+    if trail:
+        k = sec.find(last)
+        if k >= 0 and re.match(r"[\s:;,.!?\"'\u201d\u2019]*(\.\.\.|…)", sec[k + len(last):]):
+            trail = False
+        if trail and k >= 0:
+            after = _words(sec[k + len(last):k + len(last) + 40])
+            if after and _gap_protected(after[0]):
+                return True
+    return False
+
+
+def _diagram_cells(lines: list[str]) -> list:
+    """Cells of a diagram: runs of non-separator text with their column spans,
+    joined down consecutive lines where the spans overlap. Each cell is
+    ``(first line, last line, its text with whitespace removed, {line: (start, end)})``."""
+    segs = []
+    for li, ln in enumerate(lines):
+        for mm in _NONSEP.finditer(ln):
+            t = mm.group(0)
+            if t.strip():
+                a = mm.start() + len(t) - len(t.lstrip())
+                e = mm.end() - (len(t) - len(t.rstrip()))
+                segs.append([li, a, e, t.strip()])
+    cells, used = [], set()
+    for k, sg in enumerate(segs):
+        if k in used:
+            continue
+        cur, last = [sg], sg
+        used.add(k)
+        for j in range(k + 1, len(segs)):
+            o = segs[j]
+            if j in used:
+                continue
+            if o[0] == last[0] + 1 and o[1] < last[2] and o[2] > last[1]:
+                cur.append(o)
+                used.add(j)
+                last = o
+        cells.append((cur[0][0], cur[-1][0], _dens("".join(x[3] for x in cur)),
+                      {x[0]: (x[1], x[2]) for x in cur}))
+        for x in cur:
+            cells.append((x[0], x[0], _dens(x[3]), {x[0]: (x[1], x[2])}))
+    return cells
+
+
+def _cells_touch(c1, c2, lines: list[str]) -> bool:
+    """Two cells touch: on one line with only separators or spaces between them,
+    or on adjacent lines with overlapping columns. (Lines alone are not enough:
+    the two ends of a wide diagram are not one quote.)"""
+    for l1, (a1, e1) in c1[3].items():
+        for l2, (a2, e2) in c2[3].items():
+            if l1 == l2:
+                lo, hi = (e1, a2) if e1 <= a2 else (e2, a1)
+                if lo <= hi and not re.search(r"\w", lines[l1][lo:hi]):
+                    return True
+            elif abs(l1 - l2) == 1 and a1 < e2 and a2 < e1:
+                return True
+    return False
+
+
+def _groups(q: str) -> list:
+    gs = []
+    for part in _ELL.split(q):
+        frs = [f.strip() for f in _CELLSEP.split(part) if re.search(r"\w", f)]
+        if frs:
+            gs.append([(_dens(f), len(re.sub(r"\W", "", f)) < _MINF) for f in frs])
+    return gs
+
+
+def _frag_match_raw(q: str, ix: _Index, R: Rules, limited: bool) -> str | None:
+    gs = _groups(q)
+    if not gs or not any(not short for g in gs for _, short in g):
+        return None  # needs at least one fragment of 4+ letters or digits
+    flat = [x for g in gs for x in g]
+    for row in ix.rows:  # a table row: fragments in order; a short one must be a whole cell
+        cellz = [_dens(c) for c in row.split("|")]
+        r, pos, ok = _dens(row), 0, True
+        for f, short in flat:
+            if short:
+                k = next((r.find(c, pos) for c in cellz if c == f and r.find(c, pos) >= 0), -1)
+            else:
+                k = r.find(f, pos)
+            if k < 0:
+                ok = False
+                break
+            if limited and pos > 0 and _gap_kind(r[pos:k].replace("|", " ")) == "bad":
+                ok = False
+                break
+            pos = k + len(f)
+        if ok:
+            return "table-row"
+    for bi, b in enumerate(ix.blocks):  # a diagram: a chain of touching cells
+        cells = ix.cells(bi)
+
+        def places(f, short):
+            hits = [c for c in cells if (c[2] == f if short else f in c[2])]
+            if not hits:
+                return []
+            mn = min(c[1] - c[0] for c in hits)
+            return [c for c in hits if c[1] - c[0] == mn]
+
+        start, ok, prev_line = 0, True, None
+        offs = [0]
+        for ln in b:
+            offs.append(offs[-1] + len(ln) + 1)
+        for g in gs:
+            if limited and len(gs) > 1 and sum(len(re.findall(r"[a-z0-9]+", f)) for f, _ in g) < R.min_words:
+                ok = False
+                break
+            P = [places(f, sh) for f, sh in g]
+            if not all(P):
+                ok = False
+                break
+            reach = [x for x in P[0] if x[0] >= start]
+            for nxt in P[1:]:
+                reach = [n for n in nxt if any(_cells_touch(x, n, b) for x in reach)]
+                if not reach:
+                    break
+            if not reach:
+                ok = False
+                break
+            here = min(x[0] for x in reach)
+            if limited and prev_line is not None and offs[here] - offs[prev_line + 1] > R.max_gap:
+                ok = False
+                break
+            prev_line = max(x[1] for x in reach)
+            start = here
+        if ok:
+            return "diagram-cell"
+    return None
+
+
+def _frag_match(q: str, ix: _Index, R: Rules) -> str | None:
+    """``table-row`` / ``diagram-cell`` when the quote's fragments sit in one row
+    or touching cells within the limits; ``outside-limits`` when they do only
+    without them; None when they don't."""
+    r = _frag_match_raw(q, ix, R, limited=True)
+    if r:
+        return r
+    return "outside-limits" if _frag_match_raw(q, ix, R, limited=False) else None
+
+
+def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD,
+                rules: Rules | None = None) -> dict:
+    """The v1.5 class a citation check for one locus: ``{"status": found |
+    misquoted | fabricated, ...}``, with ``kind`` (near-quote or elision) on a
+    misquote, ``reversal`` when an ellipsis may reverse the source, and ``how``
+    (escape, table-row, diagram-cell) when a v1.5 rule found it.
+
+    In order: the v1.4 core with the v1.5 quote rules; an edge-cut check on what
+    it found; a retry with string escapes removed; then, for what is still not
+    found, the table-row and diagram-cell rule, quote by quote (or on the bare
+    text of an unquoted locus)."""
+    R = rules or Rules(threshold)
+    hits: list[str] = []
+
+    def qc(ps, src, sec, _thr):
+        return check_quote_v15(ps, src, sec, R, hits)
+
+    def done(v):
+        if hits:
+            v = {**v, "reversal": True, "reversal_quotes": sorted(set(hits))}
+        return v
+
+    base = _check_locus_core(locus, source, R.threshold, qc)
+    if base["status"] == "found":
+        for mm in _QUOTE.finditer(locus or ""):
+            q = mm.group(1) or mm.group(2) or ""
+            ps = _pieces(q)
+            if ps and _edge_cut_bad(q, ps, _section_before(locus, mm.start(), source), source):
+                return done({"status": "fabricated", "quote": q,
+                             "why": "an ellipsis at the edge of the quote cuts at a negation, "
+                                    "modal or exclusion word"})
+        return done({"status": "found"})
+    loc = _unescape(locus or "")
+    b2 = _check_locus_core(loc, source, R.threshold, qc)
+    if b2["status"] == "found":
+        return done({"status": "found", "how": "escape"})
+    ix = _index(source)
+    found_q = [(mm.start(), mm.group(1) or mm.group(2) or "") for mm in _QUOTE.finditer(loc)]
+    found_q = [(at, q) for at, q in found_q if q.strip()]
+    if not found_q:
+        bare = _LEAD_REF.sub("", loc.strip('"\u201c\u201d\'').strip())
+        fm = _frag_match(bare, ix, R)
+        if fm == "outside-limits":
+            return done({"status": "misquoted", "kind": "elision", "quote": bare,
+                         "why": "table or diagram fragments outside the ellipsis limits"})
+        return done({"status": "found", "how": fm} if fm else b2)
+    how: list[str] = []
+    worst = None
+    for at, q in found_q:
+        ps = _pieces(q)
+        if not ps:
+            continue
+        sec_raw = _section_before(loc, at, source)
+        v = check_quote_v15(ps, source, sec_raw, R, hits)
+        if v["status"] == "found":
+            if _edge_cut_bad(q, ps, sec_raw, source):
+                worst = {"status": "fabricated", "quote": q,
+                         "why": "an ellipsis at the edge of the quote cuts at a negation, "
+                                "modal or exclusion word"}
+            continue
+        fm = _frag_match(q, ix, R)
+        if fm == "outside-limits":
+            if worst is None or worst["status"] != "fabricated":
+                worst = worst if worst and worst["status"] == "misquoted" else {
+                    "status": "misquoted", "kind": "elision", "quote": q,
+                    "why": "table or diagram fragments outside the ellipsis limits"}
+            continue
+        if fm:
+            how.append(fm)
+            continue
+        if v["status"] == "fabricated" or worst is None:
+            worst = v
+    if worst:
+        return done(worst)
+    return done({"status": "found", "how": ",".join(how) or "v1.4"})
+
+
 def locus_exists(locus: str, source: str) -> bool:
     """True only if the locus is found as cited (a misquote is not found)."""
     return check_locus(locus, source)["status"] == "found"
@@ -335,23 +744,30 @@ def _placeholder(entry: str) -> bool:
     return entry.strip().strip(".").lower() in _PLACEHOLDERS or entry.strip().lower() in _PLACEHOLDERS
 
 
-def check_item(item: dict, source: str, threshold: float = MISQUOTE_THRESHOLD) -> None:
+def check_item(item: dict, source: str, threshold: float = MISQUOTE_THRESHOLD,
+               rules: Rules | None = None) -> None:
     """Apply the citation check to one item, in place."""
     a = item["anchor"]
     cls = a.get("class")
     if cls == "a":
-        v = check_locus(a.get("locus", ""), source, threshold)
+        v = check_locus(a.get("locus", ""), source, threshold, rules)
         if v["status"] == "found":
             a["citation_check"] = "found"
         elif v["status"] == "misquoted":
+            kind = v.get("kind") or "near-quote"
             item["anchor"] = {"class": "c", "basis": "", "downgraded_from": "a", "misquoted": True,
-                              "locus": a.get("locus", ""), "quote": v.get("quote", ""),
+                              "misquote_kind": kind, "locus": a.get("locus", ""),
+                              "quote": v.get("quote", ""),
                               "nearest_passage": v.get("passage", ""),
                               "similarity": v.get("similarity"),
-                              "note": "misquoted: the quote is close to, but not, the source passage"}
+                              "note": ("misquoted: the quote is close to, but not, the source passage"
+                                       if kind == "near-quote" else
+                                       f"misquoted (elision): {v.get('why', 'an ellipsis splice')}")}
         else:
             a["citation_check"] = "fabricated"
             a["fabricated"] = {k: v[k] for k in ("quote", "passage", "similarity", "why") if k in v}
+        if v.get("reversal"):
+            item["anchor"]["possible_reversal"] = v.get("reversal_quotes") or True
     elif cls == "b":
         title, entry = a.get("title", "").strip(), a.get("entry_id", "").strip()
         if title and entry and entry.lower() != title.lower() and not _placeholder(entry):
@@ -371,18 +787,26 @@ class MapCiteStage(TransformStage):
             env.add_trace("map_cite", self.kind, "no field to check — skipped")
             return env
         threshold = float(ctx.config.get("misquote_threshold", MISQUOTE_THRESHOLD))
+        rules = Rules(threshold,
+                      ctx.config.get("protected_direction_words") or DIRECTION_WORDS,
+                      ctx.config.get("ellipsis_min_words", ELLIPSIS_MIN_WORDS),
+                      ctx.config.get("ellipsis_max_gap", ELLIPSIS_MAX_GAP))
         for it in items:
-            check_item(it, env.request, threshold)
+            check_item(it, env.request, threshold, rules)
         # Attack candidates carry anchors too: a candidate that "landed" must be cited.
         for rec in (m.get("attacks") or {}).values():
             for c in rec.get("candidates", []):
                 tmp = {"anchor": dict(c["anchor"])}
-                check_item(tmp, env.request, threshold)
+                check_item(tmp, env.request, threshold, rules)
                 c["anchor"] = tmp["anchor"]
         fab = sum(1 for i in items if i["anchor"].get("citation_check") == "fabricated")
         mis = sum(1 for i in items if i["anchor"].get("misquoted"))
+        near = sum(1 for i in items if i["anchor"].get("misquote_kind") == "near-quote")
+        rev = [i["id"] for i in items if i["anchor"].get("possible_reversal")]
         m["citation_check"] = {"status": "ran", "misquote_threshold": threshold,
-                               "fabricated": fab, "misquoted": mis}
+                               "ellipsis_min_words": rules.min_words, "ellipsis_max_gap": rules.max_gap,
+                               "fabricated": fab, "misquoted": mis, "near_quotes": near,
+                               "elisions": mis - near, "possible_reversal": rev}
         env.add_trace("map_cite", self.kind, f"items={len(items)} fabricated={fab} misquoted={mis}")
         return env
 

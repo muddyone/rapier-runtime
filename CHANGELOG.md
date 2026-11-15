@@ -56,6 +56,36 @@ The cap holds per run and per request:
   charged in full, never clamped; the run stops there and the report says by
   how much.
 
+### Changed: map mode follows SPARRING specification v1.5, section 3.7
+
+The class a citation check is made fit for real sources (D-128 a).
+- **Looser where only layout differs.** String escapes (`\"`) are removed. In a
+  table row, a quote's fragments between pipes must appear in order within one
+  row. In a diagram (a fenced block drawn with box or arrow characters), each
+  fragment of four or more letters or digits must be inside one cell, a shorter
+  one must equal a whole cell, and consecutive fragments must be in cells that
+  touch. That means on one line with only separators between them, or on
+  adjacent lines with overlapping columns; adjacent lines alone are not enough.
+- **Tighter where meaning can change.**
+  - Each ellipsis fragment needs 3 or more words, with at most 300 characters
+    between fragments; outside those limits the quote is misquoted (an elision).
+  - An ellipsis that skips a negation, modal or exclusion word (only, except,
+    unless, without, never) inside one sentence is fabricated. A skip across a
+    sentence break is misquoted; if it also skips such a word, the map gets a
+    REVIEW trigger, *possible reversal by ellipsis*.
+  - A leading or trailing ellipsis that cuts at one of those words is fabricated,
+    unless the source has its own ellipsis there.
+  - The gap rules don't apply inside fenced code or data blocks.
+  - Direction and quantity words (before/after, start/end, all/some and so on)
+    are protected in near-quotes. The list, the 3-word minimum and the 300-character
+    gap are in the manifest.
+- **Gate and rider.** The 10% REVIEW line counts near-quotes and elisions both;
+  the rider counts them separately and lists every possible reversal. A frame
+  declared at its cap is noted as having no room for frame-attack additions.
+- `scripts/rescore-map.py` re-scores a saved run at $0 under v1.4 and v1.5. On
+  the D-100 record: v1.4 890 / 40 / 18, v1.5 863 / 79 / 6 (8.3% misquoted), 18
+  possible reversals.
+
 ### Changed: map mode follows SPARRING specification v1.4, section 3.7
 
 - **Units and blocks.** A map attacks at most 12 units (a region, or a declared

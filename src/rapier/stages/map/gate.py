@@ -1,6 +1,6 @@
 """map_gate: unit labels and the map gate, decided in code from the run's record.
 
-SPARRING spec v1.4 §3.7, "Each region gets a probe and an attack", "Frame size
+SPARRING spec v1.5 §3.7, "Each region gets a probe and an attack", "Frame size
 and blocks" and "The map gate". No model is asked about any of this. Labels are
 per unit (a region, or a declared block); a block's label claims nothing about
 any single region in it.
@@ -22,8 +22,8 @@ Gate: FAIL on a fabricated class a anchor or a frame not recorded before
 generation; REVIEW on an overall label other than HELD, more than half the
 items in class c, a skipped frame-attack, a citation check that did not run, an
 incomplete run (stopped before generation, at the dollar cap, or with any
-unit's calls refused), or more than 10% of class a anchors misquoted; PASS
-otherwise. Capture-recapture is never read here.
+unit's calls refused), more than 10% of class a anchors misquoted (near-quotes
+and elisions both), or a possible reversal by ellipsis; PASS otherwise. Capture-recapture is never read here.
 """
 from __future__ import annotations
 
@@ -148,8 +148,11 @@ def evaluate(m: dict) -> dict:
                  or (i.get("anchor") or {}).get("downgraded_from") == "a"]
     misquoted = [i for i in claimed_a if (i.get("anchor") or {}).get("misquoted")]
     if claimed_a and len(misquoted) > MISQUOTE_REVIEW_SHARE * len(claimed_a):
-        review.append(f"more than 10% of class a anchors are misquoted ({len(misquoted)} of "
-                      f"{len(claimed_a)})")
+        review.append(f"more than 10% of class a anchors are misquoted, near-quotes and elisions "
+                      f"both ({len(misquoted)} of {len(claimed_a)})")
+    reversals = [i["id"] for i in items if (i.get("anchor") or {}).get("possible_reversal")]
+    if reversals:
+        review.append(f"possible reversal by ellipsis: {', '.join(reversals)}")
     verdict = "FAIL" if fail else ("REVIEW" if review else "PASS")
     return {"verdict": verdict, "fail": fail, "review": review, "labels": labels,
             "overall": overall, "did_not_run": did_not_run}

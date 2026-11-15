@@ -121,7 +121,7 @@ def _resolver(settle: int = 0, verify: str = "gate", reconcile: str = "gate") ->
 
 
 def _map(support: bool = False) -> list[dict]:
-    """Map mode (SPARRING spec v1.4 §3.7). Every prompt the method relies on is
+    """Map mode (SPARRING spec v1.5 §3.7). Every prompt the method relies on is
     carried here in the manifest config, so the method hash covers the frame
     prompts, the attack contract and the matcher."""
     from .stages.map import attack, cite, field, frame
@@ -137,7 +137,10 @@ def _map(support: bool = False) -> list[dict]:
                                                  "filter_prompt": field.FILTER}},
         {"stage": "map_attack", "config": {"attack_contract": attack.ATTACK_CONTRACT,
                                            "matcher_prompt": attack.MATCHER}},
-        {"stage": "map_cite", "config": {"misquote_threshold": cite.MISQUOTE_THRESHOLD}},
+        {"stage": "map_cite", "config": {"misquote_threshold": cite.MISQUOTE_THRESHOLD,
+                                         "protected_direction_words": sorted(cite.DIRECTION_WORDS),
+                                         "ellipsis_min_words": cite.ELLIPSIS_MIN_WORDS,
+                                         "ellipsis_max_gap": cite.ELLIPSIS_MAX_GAP}},
     ]
     if support:
         stages.append({"stage": "map_support", "config": {"support_prompt": cite.SUPPORT}})

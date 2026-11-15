@@ -96,6 +96,11 @@ def _item_line(it: dict) -> str:
         if a.get("citation_check") == "fabricated":
             fb = a.get("fabricated") or {}
             anc += " (FABRICATED: not found in the source" + (f"; {fb['why']}" if fb.get("why") else "") + ")"
+    elif a.get("misquoted") and a.get("misquote_kind") == "elision":
+        anc = (f"MISQUOTED (elision), demoted to speculative: cited {a.get('locus')}; "
+               f"{a.get('note', '').removeprefix('misquoted (elision): ')}")
+        if a.get("possible_reversal"):
+            anc += " — POSSIBLE REVERSAL BY ELLIPSIS"
     elif a.get("misquoted"):
         anc = (f"MISQUOTED, demoted to speculative: cited {a.get('locus')}; the quote "
                f"“{a.get('quote')}” is not in the source; nearest source passage "
@@ -160,8 +165,11 @@ def render_map(env: Envelope) -> str:
                 "  (added by the frame-attack: " + (r['added'].get('reason') or 'no reason given') + ")"
                 if r.get("added") else ""))
     if f.get("units") is not None:
+        declared_units = len(regions) - len(fa.get("additions") or [])
         p1.append(f"Units: {len(regions)}, cap {f.get('max_units')}"
-                  + (" (declared by the frame)" if f.get("max_units") not in (None, 12) else "") + ".")
+                  + (" (declared by the frame)" if f.get("max_units") not in (None, 12) else "") + "."
+                  + (" The frame was declared at its cap, with no room for frame-attack additions."
+                     if f.get("max_units") and declared_units >= f["max_units"] else ""))
     st = m.get("stopped")
     if st:
         p1 += ["", f"STOPPED before generation: {st['cause']}."]
@@ -206,13 +214,25 @@ def render_map(env: Envelope) -> str:
     org = {k: sum(1 for i in items if i.get("origin") == k) for k in _ORIGIN_ORDER}
     sc = m.get("support_check") or {}
     n_mis = sum(1 for i in items if i["anchor"].get("misquoted"))
+    n_near = sum(1 for i in items if i["anchor"].get("misquoted")
+                 and i["anchor"].get("misquote_kind", "near-quote") == "near-quote")
+    revs = [i for i in items if i["anchor"].get("possible_reversal")]
     claimed_a = cls["a"] + n_mis
     p4 = [f"Anchor classes: a (cited source) {cls['a']} ({cls['a'] / n:.0%}), b (cited ground) "
           f"{cls['b']} ({cls['b'] / n:.0%}), c (speculative) {cls['c']} ({cls['c'] / n:.0%}).",
           f"Misquoted class a anchors, demoted to c: {n_mis}"
-          + (f" of {claimed_a} claimed ({n_mis / claimed_a:.0%})" if claimed_a else "")
-          + f"; threshold {(m.get('citation_check') or {}).get('misquote_threshold', 0.8)} "
-            "word-level similarity, no negation, modal or number among the differing words.",
+          + (f" of {claimed_a} claimed ({n_mis / claimed_a:.1%})" if claimed_a else "")
+          + f": {n_near} near-quote(s) and {n_mis - n_near} elision(s). Near-quote threshold "
+            f"{(m.get('citation_check') or {}).get('misquote_threshold', 0.8)} word-level similarity, "
+            "with no negation, modal, number, or direction or quantity word among the differing "
+            "words; an elision is an ellipsis splice outside the limits or across a sentence break.",
+          ("Possible reversal by ellipsis (the quote skips a negation, modal or exclusion word "
+           "across a sentence break; check it against the source): "
+           + "; ".join(f"{i['id']} “{q}”" for i in revs
+                       for q in (i['anchor']['possible_reversal']
+                                 if isinstance(i['anchor']['possible_reversal'], list) else
+                                 [i['anchor'].get('quote', '')]))
+           if revs else "Possible reversal by ellipsis: none."),
           "Support check: " + (f"ran on {sc.get('vendor')}: {sc.get('counts')} (a model judgment)"
                                if sc.get("status") == "ran" else
                                "did not run" + (f" ({sc.get('reason')})" if sc.get("reason") else "")
