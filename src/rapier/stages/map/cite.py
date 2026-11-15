@@ -170,19 +170,125 @@ def nearest_passage(quote: str, scope: str) -> tuple[float, str, list[str]]:
     return r, " ".join(w), diff
 
 
+def _forms(w: str) -> set[str]:
+    """The word and its candidate bases with an inflection removed (-s, -es,
+    -ed, -ing; a doubled consonant undone; a dropped e restored)."""
+    out = {w}
+    for suf in ("ing", "ed", "es", "s"):
+        if w.endswith(suf) and len(w) - len(suf) >= 2:
+            b = w[:-len(suf)]
+            out |= {b, b + "e"}
+            if len(b) >= 3 and b[-1] == b[-2]:
+                out.add(b[:-1])
+    return out
+
+
+_MEANING_BASE = frozenset(_NEGATIONS) | frozenset(_MODALS) | frozenset(_NUMBER_WORDS)
+
+
+def _protected_stem(w: str, protect: frozenset[str]) -> str | None:
+    """The protected word ``w`` is a form of, by its stem, or None. Two words
+    with the same stem ("starting", "starts") are the same protected word; a
+    change between different stems ("starting", "ending") is a protected change
+    (verifier V15-1)."""
+    if any(ch.isdigit() for ch in w):
+        return w
+    if w.endswith("n't"):
+        return w
+    base = _MEANING_BASE | protect
+    hit = _forms(w) & base
+    if not hit:
+        return None
+    cur = min(hit)
+    while True:  # reduce to a fixed point, so "adds", "added" and "add" share one stem
+        nxt = min(_forms(cur) & base)
+        if nxt == cur:
+            return cur
+        cur = nxt
+
+
+def _edge_trimmed_diff(q: list[str], w: list[str]) -> tuple[list[str], list[str]]:
+    """The words that differ between a quote and a window, after dropping the
+    window's own unmatched words at either edge: a same-length window that slid
+    into the next sentence picks up words the quote never had (verifier V15-2)."""
+    ops = SequenceMatcher(None, q, w, autojunk=False).get_opcodes()
+    while ops and ops[0][0] == "insert":
+        ops = ops[1:]
+    while ops and ops[-1][0] == "insert":
+        ops = ops[:-1]
+    qd, wd = [], []
+    for tag, a1, a2, b1, b2 in ops:
+        if tag != "equal":
+            qd += q[a1:a2]
+            wd += w[b1:b2]
+    return qd, wd
+
+
+def _windows_over(quote: str, scope: str, threshold: float) -> list[tuple[float, list[str], list[str]]]:
+    """Every same-length passage at or above ``threshold``, best first, as
+    ``(similarity, quote words, passage words)``."""
+    q = _words(_fold(quote))
+    s = _words(_fold(scope))
+    k = len(q)
+    if not k or len(s) < k:
+        return []
+    need: dict[str, int] = {}
+    for w in q:
+        need[w] = need.get(w, 0) + 1
+    have: dict[str, int] = {}
+    overlap = 0
+
+    def add(w, d):
+        nonlocal overlap
+        if w not in need:
+            return
+        before = min(have.get(w, 0), need[w])
+        have[w] = have.get(w, 0) + d
+        overlap += min(have[w], need[w]) - before
+
+    for w in s[:k]:
+        add(w, 1)
+    out = []
+    for i in range(len(s) - k + 1):
+        if i:
+            add(s[i - 1], -1)
+            add(s[i + k - 1], 1)
+        if overlap / k < threshold:
+            continue
+        r = SequenceMatcher(None, q, s[i:i + k], autojunk=False).ratio()
+        if r >= threshold:
+            out.append((r, q, s[i:i + k]))
+    out.sort(key=lambda x: -x[0])
+    return out
+
+
 def judge_failed(quote: str, scope: str, threshold: float,
                  protect: frozenset[str] = frozenset()) -> dict:
     """A quote (or fragment) not found: misquoted (a near-quote) or fabricated.
-    ``protect`` adds words whose change fabricates (v1.5: direction and quantity)."""
-    r, passage, diff = nearest_passage(quote, scope)
-    meaning = sorted({w for w in diff if _meaning_word(w) or w in protect})
-    if r >= threshold and not meaning:
-        return {"status": "misquoted", "kind": "near-quote", "quote": quote, "passage": passage,
-                "similarity": round(r, 3)}
-    why = (f"a protected word differs ({', '.join(meaning)})" if r >= threshold and meaning
-           else f"no passage of the source is close (best word-level similarity {r:.2f})")
+
+    A near-quote is a same-length passage at ``threshold`` or more word-level
+    similarity whose differing words change no protected word: a negation, a
+    modal, a number, or (``protect``) a direction or quantity word. Protected
+    words are compared by stem, and the window's own edge words are not counted
+    as differences. Any passage that qualifies makes it a near-quote."""
+    best_bad = None
+    for r, q, w in _windows_over(quote, scope, threshold):
+        qd, wd = _edge_trimmed_diff(q, w)
+        qs = sorted(x for x in (_protected_stem(t, protect) for t in qd) if x)
+        ws = sorted(x for x in (_protected_stem(t, protect) for t in wd) if x)
+        if qs == ws:
+            return {"status": "misquoted", "kind": "near-quote", "quote": quote,
+                    "passage": " ".join(w), "similarity": round(r, 3)}
+        if best_bad is None:
+            changed = sorted(set(qs) ^ set(ws)) or sorted(set(qs + ws))
+            best_bad = (r, w, changed)
+    if best_bad:
+        r, w, changed = best_bad
+        return {"status": "fabricated", "quote": quote, "passage": " ".join(w), "similarity": round(r, 3),
+                "why": f"a protected word differs ({', '.join(changed)})"}
+    r, passage, _ = nearest_passage(quote, scope)
     return {"status": "fabricated", "quote": quote, "passage": passage, "similarity": round(r, 3),
-            "why": why}
+            "why": f"no passage of the source is close (best word-level similarity {r:.2f})"}
 
 
 def _in_order(folded: list[str], sec: str) -> bool:
@@ -295,11 +401,12 @@ def _check_locus_core(locus: str, source: str, threshold: float, quote_check) ->
     loc = (locus or "").strip()
     if not loc:
         return {"status": "fabricated", "why": "the locus is empty"}
-    quotes = [(mm.start(), _pieces(mm.group(1) or mm.group(2) or "")) for mm in _QUOTE.finditer(loc)]
-    quotes = [(at, ps) for at, ps in quotes if ps]
+    quotes = [(mm.start(), mm.group(1) or mm.group(2) or "") for mm in _QUOTE.finditer(loc)]
+    quotes = [(at, raw, _pieces(raw)) for at, raw in quotes]
+    quotes = [(at, raw, ps) for at, raw, ps in quotes if ps]
     if quotes:
-        verdicts = [quote_check(ps, source, _section_before(loc, at, source), threshold)
-                    for at, ps in quotes]
+        verdicts = [quote_check(ps, source, _section_before(loc, at, source), threshold, raw)
+                    for at, raw, ps in quotes]
         for st in ("fabricated", "misquoted"):
             hit = next((v for v in verdicts if v["status"] == st), None)
             if hit:
@@ -324,7 +431,8 @@ def _check_locus_core(locus: str, source: str, threshold: float, quote_check) ->
 
 def check_locus_v14(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD) -> dict:
     """The v1.4 class a check, kept so a re-score can show both versions."""
-    return _check_locus_core(locus, source, threshold, check_quote_v14)
+    return _check_locus_core(locus, source, threshold,
+                             lambda ps, src, sec, thr, _raw=None: check_quote_v14(ps, src, sec, thr))
 
 
 # ---------------------------------------------------------------------------
@@ -358,6 +466,7 @@ _CELLSEP = re.compile("[" + _BOXCH + "]+")
 _NONSEP = re.compile("[^" + _BOXCH + "]+")
 _ELL = re.compile(r"\.\.\.|…")
 _MINF = 4  # a diagram or table fragment shorter than this must equal a whole cell
+_DRAW = re.compile(r"[│┃─━▶┌┐└┘├┤┬┴┼╔╗╚╝═║]")  # box and arrow drawing (not the table pipe)
 
 
 class Rules:
@@ -378,9 +487,29 @@ class _Index:
     def __init__(self, source: str):
         fenced = re.findall(r"```.*?```", source, re.S)
         self.fenced = [_fold(b) for b in fenced]
-        self.blocks = [b.split("\n") for b in fenced if re.search(r"[│┃─━▶┌┐└┘├┤┬┴┼╔╗╚╝═║]", b)]
+        self.blocks = [b.split("\n") for b in fenced if _DRAW.search(b)]
+        # A diagram need not be fenced (verifier V15-3): a run of two or more
+        # consecutive lines drawn with box or arrow characters, outside any fence.
+        inside, run = False, []
+        for ln in source.split("\n"):
+            if ln.lstrip().startswith("```"):
+                inside = not inside
+                if run:
+                    self._add_run(run)
+                run = []
+                continue
+            if not inside and _DRAW.search(ln):
+                run.append(ln)
+            else:
+                self._add_run(run)
+                run = []
+        self._add_run(run)
         self.rows = [ln for ln in source.split("\n") if ln.count("|") >= 2]
         self._cells: dict[int, list] = {}
+
+    def _add_run(self, run: list[str]) -> None:
+        if len(run) >= 2:
+            self.blocks.append(list(run))
 
     def cells(self, k: int) -> list:
         if k not in self._cells:
@@ -456,9 +585,11 @@ def _in_order_limited(folded: list[str], sec: str, R: Rules) -> bool:
 
 
 def check_quote_v15(pieces: list[str], source: str, section: str | None, R: Rules,
-                    hits: list | None = None) -> dict:
+                    hits: list | None = None, raw: str | None = None) -> dict:
     """One quote's v1.5 verdict. v1.4's verdict first, without limits; a quote it
     finds only through an ellipsis splice is then held to v1.5's limits."""
+    if len(pieces) > 1 and raw is not None and _fold(raw) in _fold(source):
+        return {"status": "found", "how": "verbatim"}  # the source has the ellipsis itself (V15-4)
     v = check_quote_v14(pieces, source, section, R.threshold)
     if v["status"] != "found":
         return check_quote_v14(pieces, source, section, R.threshold, R.direction)
@@ -665,8 +796,8 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD,
     R = rules or Rules(threshold)
     hits: list[str] = []
 
-    def qc(ps, src, sec, _thr):
-        return check_quote_v15(ps, src, sec, R, hits)
+    def qc(ps, src, sec, _thr, raw=None):
+        return check_quote_v15(ps, src, sec, R, hits, raw)
 
     def done(v):
         if hits:
@@ -692,6 +823,10 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD,
     found_q = [(at, q) for at, q in found_q if q.strip()]
     if not found_q:
         bare = _LEAD_REF.sub("", loc.strip('"\u201c\u201d\'').strip())
+        # V-1 still holds for unquoted text: one common word proves nothing, even
+        # when it is a diagram or table cell. Two or more words, or an identifier.
+        if len(_words(_fold(bare))) < 2 and not _identifier(bare):
+            return done(b2)
         fm = _frag_match(bare, ix, R)
         if fm == "outside-limits":
             return done({"status": "misquoted", "kind": "elision", "quote": bare,
@@ -704,7 +839,7 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD,
         if not ps:
             continue
         sec_raw = _section_before(loc, at, source)
-        v = check_quote_v15(ps, source, sec_raw, R, hits)
+        v = check_quote_v15(ps, source, sec_raw, R, hits, q)
         if v["status"] == "found":
             if _edge_cut_bad(q, ps, sec_raw, source):
                 worst = {"status": "fabricated", "quote": q,

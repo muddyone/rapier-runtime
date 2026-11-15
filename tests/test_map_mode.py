@@ -610,7 +610,7 @@ def test_misquoting_attack_cannot_produce_held(run):
     to c, but the unit is YIELDING, not HELD."""
     env = run({A.ATTACK_CONTRACT: lambda p, v: {"candidates": [
         {"text": "gap", "anchor": {"class": "a",
-         "locus": '§2: "Rollout happens region by region, beginning with eu-west."'}}]}
+         "locus": '§2: "Rollout proceeds region by region, starting with eu-west."'}}]}
         if "UNIT R2" in p else {"none_found": True, "searched": "all"}})
     m = _m(env)
     c = m["attacks"]["R2"]["candidates"][0]
@@ -629,7 +629,7 @@ def test_control_new_speculative_candidate_keeps_held(run):
 @pytest.mark.parametrize("locus,status", [
     ('§2: "Rollout happens region by region, starting with eu-west."', "found"),
     ('§2: "rollout happens   REGION by **region**, starting with eu-west"', "found"),   # normalized
-    ('§2: "Rollout happens region by region, beginning with eu-west."', "misquoted"),  # one word
+    ('§2: "Rollout proceeds region by region, starting with eu-west."', "misquoted"),  # one word
     ('§1: "The service must answer within 300 ms."', "fabricated"),                    # a number
     ('§1: "The service should answer within 200 ms."', "fabricated"),                  # a modal
     ('§1: "The service must not answer within 200 ms."', "fabricated"),                # a negation
@@ -642,14 +642,16 @@ def test_class_a_check_statuses(locus, status):
 
 def test_misquote_shows_the_nearest_passage():
     from rapier.stages.map.cite import check_locus
-    v = check_locus('"Rollout happens region by region, beginning with eu-west."', SOURCE)
+    v = check_locus('"Rollout proceeds region by region, starting with eu-west."', SOURCE)
     assert v["passage"] == "rollout happens region by region starting with eu-west"
+    # V15-1: "beginning" is a form of the protected "begin", so it is a protected change
+    assert check_locus('"Rollout happens region by region, beginning with eu-west."', SOURCE)["status"] == "fabricated"
     assert v["similarity"] >= 0.8
 
 
 def test_misquote_threshold_comes_from_the_manifest():
     from rapier.stages.map.cite import check_locus
-    loc = '"Rollout happens region by region, beginning with eu-west."'
+    loc = '"Rollout proceeds region by region, starting with eu-west."'
     assert check_locus(loc, SOURCE, threshold=0.95)["status"] == "fabricated"
     cfg = next(s for s in load_preset("map").stages if s.stage == "map_cite").config
     assert cfg["misquote_threshold"] == 0.8  # in the manifest, so in the method hash
@@ -658,11 +660,11 @@ def test_misquote_threshold_comes_from_the_manifest():
 def test_ellipsis_fragment_is_judged_on_its_own():
     from rapier.stages.map.cite import check_locus
     ok = check_locus('§2: "Rollout happens region by region … starting with eu-west."', SOURCE)
-    mis = check_locus('§2: "Rollout happens … by region, beginning with eu-west."', SOURCE)  # 4 of 5 words
+    mis = check_locus('§2: "Rollout happens … by region, starting at eu-west."', SOURCE)  # 4 of 5 words
     fab = check_locus('§2: "Rollout happens region by region … never eu-west."', SOURCE)
     assert ok["status"] == "found"
-    assert mis["status"] == "misquoted" and mis["quote"] == "by region, beginning with eu-west."
-    assert check_locus('§2: "Rollout happens … beginning with the eu-west."', SOURCE)["status"] == "fabricated"
+    assert mis["status"] == "misquoted" and mis["quote"] == "by region, starting at eu-west."
+    assert check_locus('§2: "Rollout happens … starting at the eu-west."', SOURCE)["status"] == "fabricated"
     assert fab["status"] == "fabricated"
 
 
@@ -676,7 +678,7 @@ def test_ellipsis_quote_must_be_within_the_cited_section():
 def test_misquoted_item_is_demoted_and_shown_not_failed(run):
     env = run({F.GENERATE: lambda p, v: {"items": [
         {"text": "x", "anchor": {"class": "a",
-         "locus": '§2: "Rollout happens region by region, beginning with eu-west."'}}]}})
+         "locus": '§2: "Rollout proceeds region by region, starting with eu-west."'}}]}})
     m = _m(env)
     assert m["gate"]["verdict"] != "FAIL"
     flat = " ".join(env.meta["report_md"].split())
@@ -685,7 +687,7 @@ def test_misquoted_item_is_demoted_and_shown_not_failed(run):
 
 
 def test_more_than_ten_percent_misquoted_is_review(run):
-    mis = '§2: "Rollout happens region by region, beginning with eu-west."'
+    mis = '§2: "Rollout proceeds region by region, starting with eu-west."'
     good = '§2: "Rollout happens region by region, starting with eu-west."'
 
     def gen(p, v, loci):
@@ -1059,7 +1061,7 @@ def test_v15_possible_reversal_is_a_review_trigger_and_listed(run):
 
 
 def test_v15_rider_counts_near_quotes_and_elisions_separately(run):
-    near = '§2: "Rollout happens region by region, beginning with eu-west."'
+    near = '§2: "Rollout proceeds region by region, starting with eu-west."'
     elide = '§2: "Rollout happens region by … starting with eu-west"'.replace(" by …", " … by")
     env = run({F.GENERATE: lambda p, v: {"items": [
         {"text": "a", "anchor": {"class": "a", "locus": near}},
@@ -1073,3 +1075,120 @@ def test_v15_frame_declared_at_its_cap_is_noted(run):
     assert "declared at its cap, with no room for frame-attack additions" in env.meta["report_md"]
     env2 = run(regions=[{"name": f"A{k}", "definition": "d"} for k in range(1, 11)])
     assert "no room for frame-attack additions" not in env2.meta["report_md"]
+
+
+# ── verifier V15-1..V15-4: the build catching up to v1.5 as written ───────────
+
+RR1_SOURCE = """# Plan
+## 1. Goals
+The billing service must not cache the raw tokens at all. Each request is logged to the audit table with its region.
+Rollout will never start before the audit closes. The team expects the first region to go live in March.
+## 2. Rollout
+Rollout happens region by region, starting with eu-west.
+
+```
+config: retries ... must not exceed 3
+```
+
+    ┌──────────┐     ┌───────────┐
+    │ gateway  │ ──▶ │ billing   │
+    │ service  │     │ ledger    │
+    └──────────┘     └───────────┘
+"""
+
+
+def _rr(locus):
+    from rapier.stages.map.cite import check_locus
+    return check_locus(locus, RR1_SOURCE)
+
+
+def test_v15_1_an_inflected_direction_word_change_fabricates():
+    assert _rr('"Rollout happens region by region, ending with eu-west."')["status"] == "fabricated"
+
+
+def test_v15_1_control_same_stem_is_not_a_protected_change():
+    v = _rr('"Rollout happens region by region, starts with eu-west."')
+    assert v["status"] == "misquoted" and v["kind"] == "near-quote"
+
+
+def _ing(w):
+    if w.endswith("e") and not w.endswith("ee"):
+        return w[:-1] + "ing"
+    if len(w) >= 3 and w[-1] not in "aeiouwxy" and w[-2] in "aeiou" and w[-3] not in "aeiou" and len(w) <= 4:
+        return w + w[-1] + "ing"
+    return w + "ing"
+
+
+def _ed(w):
+    if w.endswith("e"):
+        return w + "d"
+    if len(w) >= 3 and w[-1] not in "aeiouwxy" and w[-2] in "aeiou" and w[-3] not in "aeiou" and len(w) <= 4:
+        return w + w[-1] + "ed"
+    return w + "ed"
+
+
+def _base_words():
+    from rapier.stages.map.cite import DIRECTION_WORDS, _forms
+    return sorted(w for w in DIRECTION_WORDS if (_forms(w) & DIRECTION_WORDS) == {w})
+
+
+@pytest.mark.parametrize("w", _base_words())
+def test_v15_1_every_listed_word_is_protected_in_its_ing_and_ed_forms(w):
+    from rapier.stages.map.cite import DIRECTION_WORDS, _protected_stem
+    base = _protected_stem(w, DIRECTION_WORDS)
+    assert base is not None
+    for form in (_ing(w), _ed(w)):
+        assert _protected_stem(form, DIRECTION_WORDS) == base, (w, form)   # same stem: same word
+
+
+def test_v15_1_listed_inflections_share_their_base_stem():
+    from rapier.stages.map.cite import DIRECTION_WORDS, _protected_stem
+    for a, b in [("adds", "add"), ("added", "add"), ("starts", "start"), ("started", "start"),
+                 ("ends", "end"), ("increased", "increase"), ("enabled", "enable")]:
+        assert _protected_stem(a, DIRECTION_WORDS) == _protected_stem(b, DIRECTION_WORDS), (a, b)
+
+
+def test_v15_1_different_stems_differ():
+    from rapier.stages.map.cite import DIRECTION_WORDS, _protected_stem
+    assert _protected_stem("starting", DIRECTION_WORDS) != _protected_stem("ending", DIRECTION_WORDS)
+    assert _protected_stem("opened", DIRECTION_WORDS) != _protected_stem("closed", DIRECTION_WORDS)
+    assert _protected_stem("region", DIRECTION_WORDS) is None
+
+
+def test_v15_2_a_window_edge_word_is_not_a_difference():
+    """Only the plural differs; the same-length window slides into "… at all.",
+    and its extra edge word must not count as a changed protected word."""
+    v = _rr('"Each request is logged to the audit table with its regions."')
+    assert v["status"] == "misquoted" and v["kind"] == "near-quote"
+
+
+def test_v15_2_control_a_real_protected_change_still_fabricates():
+    assert _rr('"Each request is never logged to the audit table with its region."')["status"] == "fabricated"
+
+
+@pytest.mark.parametrize("locus", ['"gateway service"', '"billing ledger"'])
+def test_v15_3_a_cell_across_lines_of_an_unfenced_diagram_is_found(locus):
+    v = _rr(locus)
+    assert v["status"] == "found" and v.get("how") == "diagram-cell"
+
+
+@pytest.mark.parametrize("locus", ['"gateway ledger"', '"service billing ledger gateway"'])
+def test_v15_3_control_text_from_different_cells_is_not_one_cell(locus):
+    assert _rr(locus)["status"] != "found"
+
+
+def test_v15_4_a_verbatim_quote_with_the_sources_own_ellipsis_is_found():
+    assert _rr('"config: retries ... must not exceed 3"')["status"] == "found"
+
+
+def test_v15_4_control_a_splice_that_drops_words_is_still_judged():
+    assert _rr('"config: retries ... exceed 3"')["status"] != "found"
+
+
+@pytest.mark.parametrize("locus", ["billing", "gateway", "service"])
+def test_v1_still_holds_for_a_bare_word_that_is_a_diagram_cell(locus):
+    assert _rr(locus)["status"] == "fabricated"
+
+
+def test_control_bare_two_word_cell_text_is_found():
+    assert _rr("gateway service")["status"] == "found"

@@ -82,9 +82,15 @@ The class a citation check is made fit for real sources (D-128 a).
 - **Gate and rider.** The 10% REVIEW line counts near-quotes and elisions both;
   the rider counts them separately and lists every possible reversal. A frame
   declared at its cap is noted as having no room for frame-attack additions.
+- Protected words are compared by stem: "starting" for "ending" is a protected
+  change, "starts" for "starting" is not. A near-quote's window doesn't count
+  its own unmatched edge words as differences. A diagram need not be fenced
+  (two or more consecutive lines drawn with box or arrow characters), and a cell
+  spans consecutive lines. A quote whose "..." is in the source itself is found
+  verbatim. A bare single common word stays fabricated even when it is a cell.
 - `scripts/rescore-map.py` re-scores a saved run at $0 under v1.4 and v1.5. On
-  the D-100 record: v1.4 890 / 40 / 18, v1.5 863 / 79 / 6 (8.3% misquoted), 18
-  possible reversals.
+  the D-100 record: v1.4 890 / 40 / 18, v1.5 872 / 70 / 6 (7.4% misquoted: 32
+  near-quotes, 38 elisions), possible reversal on 18 items.
 
 ### Changed: map mode follows SPARRING specification v1.4, section 3.7
 
