@@ -4,7 +4,17 @@ Notable changes to `rapier-runtime`. Earlier releases are summarized in
 [`docs/STATUS.md`](docs/STATUS.md) and on the
 [Releases](https://github.com/muddyone/rapier-runtime/releases) page.
 
-## Unreleased
+## 0.6.4 — 2026-11-15
+
+Map mode is released, following SPARRING specification v1.5 (published in
+`sparring-publicaccess` at 5b1e1287). The release gate (D-101, as stated in
+D-128) was a live map run of Loom plan 19 that is on-contract: every stage ran
+and every model reply met its contract. Run `20261115091838-map` met it: $6.27
+of an $8 cap, 71 calls, none refused, retried or cut off; map gate REVIEW, all
+12 units YIELDING. Its record pins the code by `code_hash` (commit 74e6a2f7).
+Its `rapier_version` field reads "0.6.0", which a stale editable install on the
+build machine supplied, so cite the run by `code_hash`, not by version or
+`method_hash`.
 
 ### Added: structured output for map generate and expand, and room for Haiku's thinking (D-165)
 
