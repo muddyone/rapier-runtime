@@ -524,7 +524,7 @@ def test_s3_anthropic_cache_tokens_are_charged(monkeypatch):
 
 
 def test_s3_the_worst_case_covers_a_full_cache_write():
-    p = _payload("claude-haiku-5-5", max_tokens=0, chars=4000)
+    p = _payload("claude-haiku-5-5", max_tokens=1, chars=4000)
     in_tokens = len(__import__("json").dumps(p, ensure_ascii=False).encode()) + 64
     assert budget.worst_case_usd(p) >= in_tokens * 0.10 * 1.25 / 1e6 * 0.999
 

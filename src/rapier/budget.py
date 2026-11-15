@@ -49,7 +49,12 @@ PRICES: dict[str, tuple[float, float]] = {
 
 # Allowance per message for the chat template's own tokens (role markers etc.).
 PER_MESSAGE_OVERHEAD_TOKENS = 64
-DEFAULT_OUTPUT_TOKENS = 8000  # a payload that names no output limit
+# Ceilings: a value above one is a typo or an attack, never a real run, and it
+# fails closed rather than quietly disabling the cap.
+MAX_CAP_USD = 1000.0            # one run's cap
+MAX_PRICE_PER_M = 1000.0        # $ per million tokens, input or output
+MAX_OUTPUT_TOKENS = 200_000     # one call's output limit
+MAX_USAGE_TOKENS = 50_000_000   # one usage field of one call
 CACHE_WRITE_MULT = 1.25  # Anthropic bills cache-creation input at 1.25x the input price
 CACHE_READ_MULT = 0.10   # and cache reads at 0.1x
 
@@ -67,7 +72,7 @@ class _Budget:
         self.lock = threading.Lock()
         self.state: dict[str, Any] = {
             "cap_usd": float(cap_usd), "spent_usd": 0.0, "reserved_usd": 0.0, "calls": 0,
-            "released": 0, "refused": 0, "stopped": False, "by_model": {}}
+            "released": 0, "refused": 0, "stopped": False, "overrun_usd": 0.0, "by_model": {}}
 
 
 _current: contextvars.ContextVar[_Budget | None] = contextvars.ContextVar(
@@ -87,14 +92,20 @@ def _prices() -> dict[str, tuple[float, float]]:
             items = []
         for k, v in items:
             try:
+                if isinstance(v, (str, bytes)) or any(isinstance(x, bool) for x in v):
+                    continue
                 inp, out = float(v[0]), float(v[1])
             except (ValueError, TypeError, IndexError, KeyError):
                 continue  # a bad entry adds nothing; an unpriced model is still refused
-            if not (_valid(inp) and _valid(out) and inp > 0 and out > 0):
+            if not (_good_price(inp) and _good_price(out)):
                 continue
             base = PRICES.get(str(k))
             table[str(k)] = (inp, out) if base is None else (max(inp, base[0]), max(out, base[1]))
     return table
+
+
+def _good_price(x: float) -> bool:
+    return _valid(x) and 0 < x <= MAX_PRICE_PER_M
 
 
 class Reservation(float):
@@ -118,6 +129,8 @@ def check_cap(requested: Any) -> float | None:
         raise InvalidCap(f"max_usd must be a number of dollars, got {requested!r}") from None
     if isinstance(requested, bool) or not _valid(v):
         raise InvalidCap(f"max_usd must be a finite number of dollars, 0 or more; got {requested!r}")
+    if v > MAX_CAP_USD:
+        raise InvalidCap(f"max_usd {v:g} is above the ${MAX_CAP_USD:g} ceiling for one run")
     return v
 
 
@@ -136,7 +149,7 @@ def _env_cap() -> float | None:
         v = float(raw)
     except ValueError:
         return 0.0  # an unreadable cap fails closed: nothing may be spent
-    return v if _valid(v) else 0.0  # nan, inf, negative: fail closed too
+    return v if _valid(v) and v <= MAX_CAP_USD else 0.0  # nan, inf, negative, absurd: fail closed
 
 
 def set_budget(cap_usd: float | None) -> contextvars.Token:
@@ -179,14 +192,29 @@ def _price_for(payload: dict) -> tuple[float, float]:
     if price is None:
         raise BudgetExceeded(f"no price for model {model!r}; a capped run can't use it "
                              "(add it to rapier.budget.PRICES or RAPIER_PRICES)")
+    if not (_good_price(price[0]) and _good_price(price[1])):
+        raise BudgetExceeded(f"the price for {model!r} is not a usable number: {price!r}")
     return price
+
+
+def _output_limit(payload: dict) -> int:
+    """The payload's output limit, which must be a whole number above 0. A
+    negative one made a negative reservation that credited spend and unlocked the
+    cap (verifier M-1); a missing one can't be bounded. Either is refused."""
+    present = [k for k in ("max_tokens", "max_completion_tokens") if k in (payload or {})]
+    if not present:
+        raise BudgetExceeded("the call names no output limit, so its cost can't be bounded")
+    v = payload[present[0]]
+    if isinstance(v, bool) or not isinstance(v, int) or not 0 < v <= MAX_OUTPUT_TOKENS:
+        raise BudgetExceeded(f"the call's output limit must be a whole number from 1 to "
+                             f"{MAX_OUTPUT_TOKENS}, got {v!r}")
+    return v
 
 
 def _worst_case(payload: dict, price: tuple[float, float]) -> float:
     in_tokens = (len(json.dumps(payload, default=str, ensure_ascii=False).encode("utf-8"))
                  + PER_MESSAGE_OVERHEAD_TOKENS * max(1, _count_messages(payload)))
-    out_max = int(payload.get("max_tokens") or payload.get("max_completion_tokens")
-                  or DEFAULT_OUTPUT_TOKENS)
+    out_max = _output_limit(payload)
     # A cache write bills input at 1.25x; reserve as if all of it were one.
     return in_tokens * price[0] * CACHE_WRITE_MULT / 1e6 + out_max * price[1] / 1e6
 
@@ -205,22 +233,42 @@ def reserve(payload: dict) -> float:
         try:
             price = _price_for(payload)
             need = _worst_case(payload, price)
+            if not (math.isfinite(need) and need >= 0):
+                raise BudgetExceeded(f"this call's worst case is not a usable number ({need!r})")
         except BudgetExceeded:
             st["refused"] += 1
             st["stopped"] = True
             raise
         # Written so that anything that isn't a plain comparison (a NaN anywhere)
         # refuses the call rather than letting it through.
+        if st["overrun_usd"] > 0:
+            st["refused"] += 1
+            raise BudgetExceeded(
+                f"a call cost ${st['overrun_usd']:.4f} more than it reserved, so the run stops: "
+                "the cap's estimate can't be trusted for the rest of it")
         if not (st["spent_usd"] + st["reserved_usd"] + need <= st["cap_usd"]):
             st["refused"] += 1
             st["stopped"] = True
             raise BudgetExceeded(
                 f"dollar cap ${st['cap_usd']:.2f} reached: ${st['spent_usd']:.2f} spent, "
                 f"this call could cost up to ${need:.2f}")
+        need = max(0.0, need)
         st["reserved_usd"] += need
         r = Reservation(need)
         r.price = price
         return r
+
+
+def _tokens(v: Any) -> bool:
+    """A usage count: a whole number from 0 to MAX_USAGE_TOKENS (not a bool)."""
+    if isinstance(v, bool):
+        return False
+    if isinstance(v, float):
+        if not (math.isfinite(v) and v == int(v)):
+            return False
+    elif not isinstance(v, int):
+        return False
+    return 0 <= v <= MAX_USAGE_TOKENS
 
 
 def _usage_cost(u: dict, price: tuple[float, float]) -> tuple[float, int, int] | None:
@@ -230,15 +278,11 @@ def _usage_cost(u: dict, price: tuple[float, float]) -> tuple[float, int, int] |
     out_key = next((k for k in ("output_tokens", "completion_tokens") if k in u), None)
     if in_key is None or out_key is None:
         return None
-    try:
-        inp, out = int(u[in_key]), int(u[out_key])
-        # Anthropic's input_tokens excludes cached input; count both kinds.
-        cw = int(u.get("cache_creation_input_tokens") or 0)
-        cr = int(u.get("cache_read_input_tokens") or 0)
-    except (TypeError, ValueError):
-        return None
-    if min(inp, out, cw, cr) < 0:
-        return None
+    vals = [u[in_key], u[out_key], u.get("cache_creation_input_tokens", 0) or 0,
+            u.get("cache_read_input_tokens", 0) or 0]
+    if not all(_tokens(v) for v in vals):
+        return None  # a bool, a string, a fraction, a negative, a NaN or an absurd count
+    inp, out, cw, cr = (int(v) for v in vals)
     cost = ((inp + cw * CACHE_WRITE_MULT + cr * CACHE_READ_MULT) * price[0] + out * price[1]) / 1e6
     return cost, inp + cw + cr, out
 
@@ -263,6 +307,13 @@ def settle(payload: dict, data: dict | None, reserved: float) -> None:
         else:
             cost, inp, out = got
             cost = cost if cost == cost else float(reserved)  # never a NaN charge
+        cost = max(0.0, cost)  # a charge can never credit the run
+        if cost > float(reserved) + 1e-12:
+            # Charged honestly, never clamped: hiding real spend would be worse than
+            # an overrun. The run stops at once (no further call is reserved), and
+            # the record says by how much the estimate was short.
+            st["overrun_usd"] += cost - float(reserved)
+            st["stopped"] = True
         st["spent_usd"] += cost
         st["calls"] += 1
         m = st["by_model"].setdefault(model, {"calls": 0, "input_tokens": 0,

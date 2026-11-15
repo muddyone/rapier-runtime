@@ -50,11 +50,19 @@ class Manifest:
                     raise ValueError(
                         f"pipeline[{i}].roles.{role} needs both 'vendor' and 'model'"
                     )
+                mt = binding.get("max_tokens", 4096)
+                from .budget import MAX_OUTPUT_TOKENS
+
+                if isinstance(mt, bool) or not isinstance(mt, int) or not 0 < mt <= MAX_OUTPUT_TOKENS:
+                    raise ValueError(
+                        f"pipeline[{i}].roles.{role}.max_tokens must be a whole number from 1 to "
+                        f"{MAX_OUTPUT_TOKENS}, got {mt!r}"
+                    )
                 roles[role] = ModelSpec(
                     vendor=binding["vendor"],
                     model=binding["model"],
                     prompt_template=binding.get("prompt"),
-                    max_tokens=binding.get("max_tokens", 4096),
+                    max_tokens=mt,
                     temperature=binding.get("temperature", 1.0),
                 )
             stages.append(

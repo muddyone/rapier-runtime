@@ -97,10 +97,8 @@ def _post_with_retry(url: str, headers: dict, payload: dict, timeout: int = 120)
             raise
         if resp.status_code == 429 or resp.status_code >= 500:
             budget.release(reserved)
-            retry_after = resp.headers.get("Retry-After")
-            wait = float(retry_after) if (retry_after or "").replace(".", "", 1).isdigit() else delay
             last = f"HTTP {resp.status_code}"
-            time.sleep(min(wait, 30))
+            time.sleep(_retry_wait(resp.headers.get("Retry-After"), delay))
             delay = min(delay * 2, 30)
             continue
         try:
@@ -112,6 +110,18 @@ def _post_with_retry(url: str, headers: dict, payload: dict, timeout: int = 120)
         budget.settle(payload, data if isinstance(data, dict) else None, reserved)
         return data
     raise RuntimeError(f"request to {url} failed after retries: {last}")
+
+
+def _retry_wait(retry_after: Any, default: float) -> float:
+    """Seconds to wait before a retry: Retry-After when it is a finite number
+    from 0 to 30, else the backoff delay."""
+    try:
+        v = float(retry_after)
+    except (TypeError, ValueError):
+        return default
+    import math
+
+    return v if math.isfinite(v) and 0 <= v <= 30 else min(default, 30)
 
 
 def _send_once(url: str, headers: dict, payload: dict, timeout: int):

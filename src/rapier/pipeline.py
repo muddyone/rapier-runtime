@@ -262,19 +262,22 @@ class Pipeline:
         env = Envelope(request=request)
         cap = budget.effective_cap(max_usd)  # raises InvalidCap before anything runs
         budget_token = budget.set_budget(cap)
-        # Caller-supplied envelope metadata, merged before any stage runs. Used to
-        # carry context the pipeline itself can't observe — e.g. the front-door
-        # Frame classification (from a separate `rapier frame` call) and the
-        # resolver knobs (settle/verify) — so the compose stage can record them
-        # on the ceremony-ledger row.
-        if seed_meta:
-            env.meta.update(seed_meta)
-        ledger = Ledger(ledger_root, run_slug=self.name) if ledger_root else None
-        # Capture every model call (all vendors, one path) to the transcript.
-        if ledger:
-            set_transcript_sink(ledger.record_transcript)
-
+        ledger = None
+        # The try starts right after the budget is set, so a failure while the run
+        # is being set up (the ledger, seed metadata, the transcript sink) still
+        # resets it (verifier M-4).
         try:
+            # Caller-supplied envelope metadata, merged before any stage runs. Used to
+            # carry context the pipeline itself can't observe — e.g. the front-door
+            # Frame classification (from a separate `rapier frame` call) and the
+            # resolver knobs (settle/verify) — so the compose stage can record them
+            # on the ceremony-ledger row.
+            if seed_meta:
+                env.meta.update(seed_meta)
+            ledger = Ledger(ledger_root, run_slug=self.name) if ledger_root else None
+            # Capture every model call (all vendors, one path) to the transcript.
+            if ledger:
+                set_transcript_sink(ledger.record_transcript)
             env = self._run_stages(env, ledger, log, cancel)
             return env
         finally:

@@ -15,7 +15,7 @@ import textwrap
 
 from ...envelope import Envelope
 from ...stage import StageContext, TransformStage, register_stage
-from ..resolver.compose import _HEAVY, _RULE, _W, _bullets, _para, _sec, declared_vs_ran
+from ..resolver.compose import _HEAVY, _RULE, _W, _bullets, _overrun_note, _para, _sec, declared_vs_ran
 from . import _common as C
 from .gate import evaluate
 
@@ -263,7 +263,7 @@ def render_map(env: Envelope) -> str:
                   _para(f"${b['spent_usd']:.2f} spent of a ${b['cap_usd']:.2f} cap over {b['calls']} model "
                         "call(s)." + (f" The run STOPPED at the cap: {b['refused']} call(s) were refused, "
                                       "and every check they belonged to reads as not run."
-                                      if b["stopped"] else "")))
+                                      if b["stopped"] else "") + _overrun_note(b)))
     run_dir = env.meta.get("run_dir")
     L += _sec("THE RECORD", "Where this run is on disk.",
               _para(f"Saved for audit to:\n\n  {run_dir}" if run_dir else

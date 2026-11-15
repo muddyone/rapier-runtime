@@ -509,7 +509,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.cmd == "run":
         from .operator_policy import PolicyError, decide_independence, decide_manifest, stop_message
 
-        manifest = Manifest.load(args.manifest)
+        try:
+            manifest = Manifest.load(args.manifest)
+        except (OSError, ValueError) as exc:
+            print(f"can't load manifest {args.manifest}: {exc}", file=sys.stderr)
+            return 2
         try:
             decision = decide_manifest(manifest.stages)
             if any(s.stage in ("cross_review", "spark", "pattern_lock", "cut")

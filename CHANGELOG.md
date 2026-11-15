@@ -43,6 +43,18 @@ The cap holds per run and per request:
   no `cache_control`.
 - A call is settled at the price it was reserved at.
 - MCP `max_usd=0` is a cap of $0. Left out, there is no cap.
+- Every number that feeds a reservation or a charge must be finite,
+  non-negative and under a ceiling, or the call is refused (or the run, before
+  it starts): the output limit (a whole number from 1 to 200,000, checked again
+  when a manifest loads), prices (above 0 and at most $1,000 per million
+  tokens), the cap (at most $1,000 per run), each usage count (a whole number
+  up to 50 million, else the full reservation is charged), and Retry-After
+  (0 to 30 seconds, else the backoff). Reservations and charges never go below 0.
+- The budget is set and reset around the whole run, setup included, and a run
+  never clears an enclosing budget.
+- A call that costs more than it reserved (a vendor billing past the limit) is
+  charged in full, never clamped; the run stops there and the report says by
+  how much.
 
 ### Changed: map mode follows SPARRING specification v1.4, section 3.7
 
