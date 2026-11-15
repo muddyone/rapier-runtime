@@ -1659,3 +1659,13 @@ def test_a_support_unit_not_judged_is_listed():
 def test_control_clean_roles_add_nothing(run):
     m = _m(run())
     assert m["gate"]["did_not_run"] == [] and all(a.get("matcher") in (None, "ran") for a in m["attacks"].values())
+
+
+def test_a_pass_with_checks_not_run_says_so_beside_the_verdict(run):
+    def merge(p, v):
+        raise RuntimeError("503")
+    env = run({F.MERGE: merge})
+    m = _m(env)
+    assert m["gate"]["verdict"] == "PASS" and map_final_state(m)[0] == "defer"
+    flat = " ".join(env.meta["report_md"].split())
+    assert "PASS. Not every check ran, so this verdict covers only what did. Did not run: Pattern Lock merge for" in flat

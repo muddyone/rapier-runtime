@@ -221,7 +221,10 @@ def render_map(env: Envelope) -> str:
                 else "."))
     reasons = g["fail"] + g["review"]
     L += _sec("3. THE MAP GATE", "What the verdict does and does not claim.",
-              _para(f"{g['verdict']}." + (" " + "; ".join(reasons) + "." if reasons else "") + "\n\n" + claim))
+              _para(f"{g['verdict']}." + (" " + "; ".join(reasons) + "." if reasons else "")
+                    + (" Not every check ran, so this verdict covers only what did. Did not run: "
+                       + "; ".join(g["did_not_run"]) + "." if g.get("did_not_run") else "")
+                    + "\n\n" + claim))
 
     n = len(items) or 1
     cls = {k: sum(1 for i in items if i["anchor"].get("class") == k) for k in ("a", "b", "c")}

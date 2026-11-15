@@ -1,6 +1,13 @@
 """$0 replay: serve a saved map run's recorded replies, matched by (system, prompt),
 through the CURRENT code. A call the record doesn't have gets a scripted reply, or
-the replay stops. No network: available_vendors and client_for are stubbed."""
+the replay stops. No network: available_vendors and client_for are stubbed.
+
+A library, not a command: run it from the repo root (it puts ``src`` on the path)
+and call ``replay(run_dir, frame_file, request_file, max_calls, scripted=None,
+overrides=None)``, which returns ``(envelope, log)``. ``overrides`` maps a recorded
+call index to a ``(text, stop_reason)`` to serve instead; ``scripted(system, prompt,
+vendor)`` answers calls the record doesn't have, or returns None to stop. Used for
+docs/map-runs/failure-analysis-d157.md."""
 import json, os, sys, collections
 sys.path.insert(0, "src")
 from rapier.models import ModelResponse
