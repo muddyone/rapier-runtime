@@ -243,8 +243,16 @@ what's next" so a new session can continue without reconstructing from git log.
    - sparring-2's independent reference (sparring-framework 7614bea9) reproduces
      872/70/6 exactly, the same 9 movers included, and adopts the V-1 rule for
      unquoted cell text.
-   - **Next, in order:** sparring-3 shows Bart the new counts beside 863/79/6 in a
-     confirm item; on his yes, the ONE $8 run under the brief below. v1.5 goes public (sparring W-23)
+   - **The D-133 run (2026-11-15 00:55Z) stopped before generation, $0.05 spent,
+     not on-contract, no release.** Run dir `~/.rapier/runs/20261114185558-map`.
+     The frame-attack added 2 regions (R11 plan header and dependencies, R12
+     cross-section interactions), the headroom the 10-region frame was built for,
+     making 12 units = 73 planned calls; the run had `--max-calls 61`, sized for 10.
+     Lesson: size `--max-calls` for the unit CAP (1 + 6 x 12 = 73), never for the
+     frame as supplied. The Anthropic default model is Opus 4.8, so the Generator
+     was pinned with `RAPIER_MODEL_ANTHROPIC=claude-haiku-5-5`.
+   - **Next:** D-136 (blocking, money): one more identical run with `--max-calls 73`,
+     or stop. Nothing runs until it shows answered a on the queue. v1.5 goes public (sparring W-23)
      before any release.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
