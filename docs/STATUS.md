@@ -240,9 +240,11 @@ what's next" so a new session can continue without reconstructing from git log.
      misquoted (32 near-quotes, 38 elisions), possible reversal on 18 items**;
      rr-1 reproduced it. The 9 that moved from the first build's 863/79/6 are all
      quotes of the source's own "...". The 6 are real errors.
-   - **Next, in order:** sparring-2's reference script lands on the same counts;
-     sparring-3 shows Bart the new counts beside 863/79/6 in a confirm item; on his
-     yes, the ONE $8 run under the brief below. v1.5 goes public (sparring W-23)
+   - sparring-2's independent reference (sparring-framework 7614bea9) reproduces
+     872/70/6 exactly, the same 9 movers included, and adopts the V-1 rule for
+     unquoted cell text.
+   - **Next, in order:** sparring-3 shows Bart the new counts beside 863/79/6 in a
+     confirm item; on his yes, the ONE $8 run under the brief below. v1.5 goes public (sparring W-23)
      before any release.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
