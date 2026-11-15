@@ -321,6 +321,19 @@ _(M4 publish is **DONE** — v0.4.0 on PyPI + the full landing live; see Done ab
 Loom submodule pin bumped to the v0.4.0 release commit `514df56`.)_
 
 ## Things a new session should know
+- **Paid map runs (learned 2026-11-15, plan 19):**
+  - Rapier's default Anthropic model is `claude-opus-4-8`. For a run that names
+    Haiku as Generator, pin it: `RAPIER_MODEL_ANTHROPIC=claude-haiku-5-5`.
+  - Size `--max-calls` for the unit CAP after the frame-attack (1 + 6 x 12 = 73),
+    never for the frame as supplied: the frame-attack's additions vary run to run.
+  - A "is a run already going?" guard must not match its own shell: anchor it,
+    `ps -eo args= | grep -qE '^python3 -m rapier[.]cli map'`. A bare `pgrep -f`
+    matches the command line it runs in.
+  - Estimates from the $0 dry runs ran low: 12 units estimated $5.87, actual
+    $6.65. Keep a cap margin above the estimate.
+  - Keys: 1Password vault "Sparring Framework", item "sparring-framework LLM API
+    keys", fields ANTHROPIC_API_KEY / OPENAI_API_KEY, read with `op read` inside
+    the run's process.
 - **Two repos.** This engine (`muddyone/rapier-runtime`, public) vs. the SPARRING
   method + paper (private `muddyone/sparring`; public artifacts in
   `muddyone/sparring-publicaccess`).
