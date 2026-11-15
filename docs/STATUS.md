@@ -225,8 +225,8 @@ what's next" so a new session can continue without reconstructing from git log.
      overrides can't lower a price; incomplete usage charged in full; MCP
      `max_usd=0` is $0; vendored direct callers refuse under a cap; an overrun is
      charged in full and stops the run. Cross-vendor /spars D-120 ($1.10) and
-     D-123 ($1.52) found S-1..S-6 and M-1/M-4, all fixed. **The last cross-vendor
-     pass is D-126, Bart's to answer.**
+     D-123 ($1.52) found S-1..S-6 and M-1/M-4, all fixed. **D-126, the last
+     cross-vendor pass, PASSED** ($1.35 of $3, overrun $0). The cap is done.
    - **v1.4 rules: passed** (rr-1, 4faa3777 + 1976e28a + 1e2b4d4d). 12-unit cap and
      blocks, pre-run call plan (`--max-calls`), labels by claimed class, matcher over
      the whole field (one call per unit), misquoted demotion at 0.8, REVIEW at >10%
@@ -237,6 +237,19 @@ what's next" so a new session can continue without reconstructing from git log.
      table column; sparring-2 proposes a v1.5 rule (separators in a table/diagram
      act like an ellipsis) plus string-escape folding. Not built until v1.5 is
      decided. Plan 19 frame: 10 supplied regions under the default cap of 12.
+   - **Next, in order:** Bart answers D-128 (v1.5, a/b/c/d). sparring-3 applies v1.5
+     to the private spec and sends the SHA. Build v1.5, then reproduce sparring-2's
+     $0 re-score of D-100 (863 found / 79 demoted / 6 fabricated) before anything
+     paid. Then the ONE $8 run.
+   - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
+     PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
+     10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live
+     runs, no retry as a fresh run. A stop at the cap is a defer that goes back to
+     Bart, not a re-run.
+   - **Release gate (D-101, stated in D-128 covers 5):** release if the run is
+     on-contract (every stage ran, every reply met its contract). A gate FAIL on
+     real errors still releases. A cap or call-budget stop, or any off-contract
+     reply, does not: fix, re-review, back to Bart. Only once D-128 is answered.
    - Cost lesson: the whole field resent on every call (~90k tokens) was the bill,
      not the source.
 1. ~~**Confirm the MCP server on Claude Desktop.**~~ **DONE (2026-07-18) — end to
