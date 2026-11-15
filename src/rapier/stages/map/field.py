@@ -113,7 +113,7 @@ class MapSparkStage(TransformStage):
                                system=ctx.config.get("generate_prompt", GENERATE),
                                prompt=f"REQUEST AND SOURCE:\n{env.request}\n\n{_unit_text(m, r)}")
                 got = norm_items(reply)
-                p["generate"] = "ran" if got is not None else "off-contract"
+                p["generate"] = "ran" if got is not None else "off-contract" + C.cut_off_note(m)
             except Exception as exc:  # noqa: BLE001
                 got, p["generate"] = None, f"error: {str(exc)[:200]}"
             for it in got or []:
@@ -126,7 +126,7 @@ class MapSparkStage(TransformStage):
                                prompt=(f"REQUEST AND SOURCE:\n{env.request}\n\n{_unit_text(m, r)}\n\n"
                                        f"GENERATOR'S ITEMS FOR THIS UNIT:\n{listed}"))
                 got = norm_items(reply)
-                p["expand"] = "ran" if got is not None else "off-contract"
+                p["expand"] = "ran" if got is not None else "off-contract" + C.cut_off_note(m)
             except Exception as exc:  # noqa: BLE001
                 got, p["expand"] = None, f"error: {str(exc)[:200]}"
             for it in got or []:

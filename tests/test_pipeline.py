@@ -54,7 +54,7 @@ def test_transcript_captures_every_model_call(tmp_path):
     lines = [json.loads(l) for l in tx.read_text().splitlines()]
     assert len(lines) == 1
     assert lines[0]["vendor"] == "mock"
-    assert set(lines[0]) == {"vendor", "model", "system", "prompt", "response"}
+    assert set(lines[0]) == {"vendor", "model", "system", "prompt", "response", "stop_reason"}
 
 
 def test_transcript_sink_reset_after_run(tmp_path):

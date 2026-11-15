@@ -823,9 +823,16 @@ def check_locus(locus: str, source: str, threshold: float = MISQUOTE_THRESHOLD,
     found_q = [(at, q) for at, q in found_q if q.strip()]
     if not found_q:
         bare = _LEAD_REF.sub("", loc.strip('"\u201c\u201d\'').strip())
-        # V-1 still holds for unquoted text: one common word proves nothing, even
-        # when it is a diagram or table cell. Two or more words, or an identifier.
+        # One common word locates no claim (V-1). If it is in the source it is not
+        # fabricated: it is too thin to cite, and is demoted (sparring-3's ruling,
+        # 2026-11-15; W-28 makes it an explicit minimum-locus rule). Two or more
+        # words, or an identifier, go on to the diagram and table rule.
         if len(_words(_fold(bare))) < 2 and not _identifier(bare):
+            wf = _fold(bare)
+            if b2["status"] == "fabricated" and _words(wf) and wf in _fold(source):
+                return done({"status": "thin", "quote": bare,
+                             "why": "the locus is one word that is in the source, too thin to "
+                                    "locate a claim"})
             return done(b2)
         fm = _frag_match(bare, ix, R)
         if fm == "outside-limits":
@@ -888,6 +895,13 @@ def check_item(item: dict, source: str, threshold: float = MISQUOTE_THRESHOLD,
         v = check_locus(a.get("locus", ""), source, threshold, rules)
         if v["status"] == "found":
             a["citation_check"] = "found"
+        elif v["status"] == "thin":
+            # Not fabricated (it is in the source), not misquoted (it quotes nothing),
+            # not cited (it locates no claim): demoted to c, like a class b anchor
+            # with no entry identifier. Doesn't count toward the 10% misquote line.
+            item["anchor"] = {"class": "c", "basis": "", "downgraded_from": "a", "thin_locus": True,
+                              "locus": a.get("locus", ""),
+                              "note": "locus too thin to locate a claim"}
         elif v["status"] == "misquoted":
             kind = v.get("kind") or "near-quote"
             item["anchor"] = {"class": "c", "basis": "", "downgraded_from": "a", "misquoted": True,
@@ -936,11 +950,13 @@ class MapCiteStage(TransformStage):
                 c["anchor"] = tmp["anchor"]
         fab = sum(1 for i in items if i["anchor"].get("citation_check") == "fabricated")
         mis = sum(1 for i in items if i["anchor"].get("misquoted"))
+        thin = sum(1 for i in items if i["anchor"].get("thin_locus"))
         near = sum(1 for i in items if i["anchor"].get("misquote_kind") == "near-quote")
         rev = [i["id"] for i in items if i["anchor"].get("possible_reversal")]
         m["citation_check"] = {"status": "ran", "misquote_threshold": threshold,
                                "ellipsis_min_words": rules.min_words, "ellipsis_max_gap": rules.max_gap,
-                               "fabricated": fab, "misquoted": mis, "near_quotes": near,
+                               "fabricated": fab, "misquoted": mis, "thin_loci": thin,
+                               "near_quotes": near,
                                "elisions": mis - near, "possible_reversal": rev}
         env.add_trace("map_cite", self.kind, f"items={len(items)} fabricated={fab} misquoted={mis}")
         return env

@@ -267,8 +267,20 @@ what's next" so a new session can continue without reconstructing from git log.
      cross-checked against its hash, supplied frame, call log and transcript
      (rr-1 CF-1). "Never a mix" of seams is per block (sparring-3), so a frame can
      hold a lens block.
-   - **Next:** D-138 (blocking, money), a / b / c (stop). Nothing runs before Bart
-     answers it on the queue.
+   - **The D-138 run (option a, 2026-11-15 07:09-07:36Z) is NOT on-contract; no
+     release.** Run dir `~/.rapier/runs/20261115010859-map`. $6.65 of $8, 69
+     calls, all answered, no overrun (GPT-5.5 $6.58, Haiku $0.07). Fresh
+     frame-attack added 4 (12 units). Gate FAIL, BLOCK; labels 1 HELD, 10
+     YIELDING, B4 UNPROBED. Off-contract: B4's Haiku Generator reply came back cut
+     off mid-JSON (8,578 chars, far under the 8,000-token limit; the stop reason
+     wasn't recorded). The FAIL was 4 bare one-word loci that are in the source.
+     Tonight's spend: $10.73.
+   - **Fixes ($0, in rr-1's review):** every call records the provider's stop
+     reason and a cut-off reply is named; a one-word locus that is in the source is
+     demoted to c as "too thin to locate a claim" (sparring-3's ruling; W-28), not
+     fabricated. Re-scoring this run's record under it: REVIEW (0 fabricated,
+     4 thin), labels unchanged.
+   - **Next:** sparring-3 puts one item to Bart. Nothing more runs without it.
    - **Run brief (D-115, as relayed from rr-1 via loom-0):** `--max-usd 8` is a
      PER-RUN cap, not a wallet. Start exactly ONE live run of Loom plan 19 (supplied
      10-region frame, Haiku 5.5 Generator, GPT-5.5 attacker). No concurrent live

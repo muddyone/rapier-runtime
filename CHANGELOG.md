@@ -88,6 +88,13 @@ The class a citation check is made fit for real sources (D-128 a).
   (two or more consecutive lines drawn with box or arrow characters), and a cell
   spans consecutive lines. A quote whose "..." is in the source itself is found
   verbatim. A bare single common word stays fabricated even when it is a cell.
+- A bare one-word locus that is in the source is no longer called fabricated:
+  it is too thin to locate a claim and is demoted to class c with that note
+  (sparring-3's ruling). It isn't misquoted and doesn't count toward the 10%
+  line. A bare word that isn't in the source is still fabricated.
+- Every model call records the provider's stop reason, in the transcript and the
+  map's call log, and a reply cut off at the output limit is named as such in
+  the probe's off-contract status.
 - `scripts/rescore-map.py` re-scores a saved run at $0 under v1.4 and v1.5. On
   the D-100 record: v1.4 890 / 40 / 18, v1.5 872 / 70 / 6 (7.4% misquoted: 32
   near-quotes, 38 elisions), possible reversal on 18 items.

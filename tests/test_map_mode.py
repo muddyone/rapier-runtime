@@ -906,8 +906,27 @@ def test_anchor_rule_sends_absence_claims_to_a_section_locus():
 
 @pytest.mark.parametrize("locus", ["service", "Rollout", "region", "answer"])
 def test_bare_common_word_is_not_a_class_a_locus(locus):
+    """V-1 as revised by sparring-3: a bare common word that IS in the source is
+    not cited and not fabricated; it is too thin (demoted to c)."""
+    from rapier.stages.map.cite import check_locus
+    assert check_locus(locus, SOURCE)["status"] == "thin"
+
+
+@pytest.mark.parametrize("locus", ["invented", "Kubernetes"])
+def test_control_bare_word_not_in_the_source_is_fabricated(locus):
     from rapier.stages.map.cite import check_locus
     assert check_locus(locus, SOURCE)["status"] == "fabricated"
+
+
+def test_thin_locus_is_demoted_not_failed_and_not_misquoted(run):
+    env = run({F.GENERATE: lambda p, v: {"items": [
+        {"text": "x", "anchor": {"class": "a", "locus": "Rollout"}}]}})
+    m = _m(env)
+    a = m["items"][0]["anchor"]
+    assert a["class"] == "c" and a["thin_locus"] and a["note"] == "locus too thin to locate a claim"
+    assert not a.get("misquoted") and m["gate"]["verdict"] != "FAIL"
+    assert not any("misquoted" in r for r in m["gate"]["review"])
+    assert "too thin to locate a claim" in " ".join(env.meta["report_md"].split())
 
 
 @pytest.mark.parametrize("locus", ["rollout_plan", "eu-west", "config.yaml", "loomAudit",
@@ -1187,7 +1206,7 @@ def test_v15_4_control_a_splice_that_drops_words_is_still_judged():
 
 @pytest.mark.parametrize("locus", ["billing", "gateway", "service"])
 def test_v1_still_holds_for_a_bare_word_that_is_a_diagram_cell(locus):
-    assert _rr(locus)["status"] == "fabricated"
+    assert _rr(locus)["status"] == "thin"   # in the source, too thin: demoted, never found
 
 
 def test_control_bare_two_word_cell_text_is_found():
@@ -1389,3 +1408,56 @@ def test_a_frame_may_hold_section_blocks_and_a_lens_block(run):
     m = _m(env)
     assert not m.get("stopped")
     assert [u["basis"] for u in m["frame"]["units"]] == ["section", "lens"]
+
+
+# ── the provider's stop reason is recorded; a cut-off reply says so (D-138 run, B4) ──
+
+@pytest.mark.parametrize("vendor,body,stop", [
+    ("anthropic", {"content": [{"type": "text", "text": "{\"items\": [{\"te"}], "stop_reason": "max_tokens",
+                   "usage": {"input_tokens": 1, "output_tokens": 1}}, "max_tokens"),
+    ("openai", {"choices": [{"message": {"content": "{\"items\": ["}, "finish_reason": "length"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1}}, "length"),
+])
+def test_stop_reason_is_recorded_and_a_cut_off_is_flagged(monkeypatch, vendor, body, stop):
+    from rapier import models
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setenv("OPENAI_API_KEY", "k")
+    monkeypatch.setattr(models, "_post_with_retry", lambda *a, **k: body)
+    seen = []
+    models.set_transcript_sink(seen.append)
+    try:
+        r = models.build_client(models.ModelSpec(vendor, "m", max_tokens=10)).complete("s", "p")
+    finally:
+        models.set_transcript_sink(None)
+    assert r.stop_reason == stop and r.cut_off is True
+    assert seen[0]["stop_reason"] == stop
+
+
+def test_control_a_finished_reply_is_not_cut_off(monkeypatch):
+    from rapier import models
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(models, "_post_with_retry", lambda *a, **k: {
+        "content": [{"type": "text", "text": "{}"}], "stop_reason": "end_turn"})
+    r = models.build_client(models.ModelSpec("anthropic", "m", max_tokens=10)).complete("s", "p")
+    assert r.stop_reason == "end_turn" and r.cut_off is False
+
+
+def test_a_cut_off_generator_reply_is_named_in_the_probe(run, monkeypatch):
+    class Cut:
+        def __init__(self, v):
+            self.v = v
+
+        def complete(self, system, prompt):
+            from rapier.models import ModelResponse
+            if system == F.GENERATE and "UNIT R2" in prompt:
+                return ModelResponse(text='{"items": [{"te', vendor=self.v, model="m", stop_reason="max_tokens")
+            return ModelResponse(text=json.dumps(DEFAULT[system](prompt, self.v)), vendor=self.v, model="m",
+                                 stop_reason="end_turn")
+
+    monkeypatch.setattr(C, "available_vendors", lambda: ["anthropic", "openai"])
+    monkeypatch.setattr(C, "client_for", lambda v: Cut(v))
+    env = Pipeline.from_manifest(load_preset("map")).run(SOURCE, seed_meta={"map_regions": REGIONS})
+    m = _m(env)
+    assert m["probes"]["R2"]["generate"] == "off-contract (the reply was cut off: stop reason max_tokens)"
+    assert m["gate"]["labels"]["R2"]["label"] == "UNPROBED"
+    assert any(c.get("cut_off") for c in m["calls"])

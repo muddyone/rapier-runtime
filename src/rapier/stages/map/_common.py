@@ -64,7 +64,8 @@ def call(env: Envelope, *, role: str, vendor: str, purpose: str, system: str, pr
     rec = {"role": role, "vendor": vendor, "purpose": purpose, "region": region, "ok": False}
     m["calls"].append(rec)
     try:
-        text = client_for(vendor).complete(system, prompt).text
+        resp = client_for(vendor).complete(system, prompt)
+        text = resp.text
     except budget.BudgetExceeded as exc:
         rec.update(error=str(exc)[:200], stopped_by="dollar cap")
         raise
@@ -72,7 +73,19 @@ def call(env: Envelope, *, role: str, vendor: str, purpose: str, system: str, pr
         rec["error"] = str(exc)[:200]
         raise
     rec["ok"] = True
+    stop = getattr(resp, "stop_reason", None)
+    if stop:
+        rec["stop_reason"] = stop
+    if getattr(resp, "cut_off", False):
+        rec["cut_off"] = True
     return parse_json_lenient(text)
+
+
+def cut_off_note(m: dict) -> str:
+    """" (cut off at the output limit)" when the last recorded call was, else ""."""
+    last = (m.get("calls") or [{}])[-1]
+    return (f" (the reply was cut off: stop reason {last.get('stop_reason')})"
+            if last.get("cut_off") else "")
 
 
 def region_list(m: dict) -> list[dict]:

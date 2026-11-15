@@ -96,6 +96,9 @@ def _item_line(it: dict) -> str:
         if a.get("citation_check") == "fabricated":
             fb = a.get("fabricated") or {}
             anc += " (FABRICATED: not found in the source" + (f"; {fb['why']}" if fb.get("why") else "") + ")"
+    elif a.get("thin_locus"):
+        anc = (f"demoted to speculative: cited {a.get('locus')!r}, which is in the source but "
+               "is too thin to locate a claim")
     elif a.get("misquoted") and a.get("misquote_kind") == "elision":
         anc = (f"MISQUOTED (elision), demoted to speculative: cited {a.get('locus')}; "
                f"{a.get('note', '').removeprefix('misquoted (elision): ')}")
@@ -237,6 +240,8 @@ def render_map(env: Envelope) -> str:
             f"{(m.get('citation_check') or {}).get('misquote_threshold', 0.8)} word-level similarity, "
             "with no negation, modal, number, or direction or quantity word among the differing "
             "words; an elision is an ellipsis splice outside the limits or across a sentence break.",
+          f"Loci too thin to locate a claim (one word that is in the source), demoted to c: "
+          f"{sum(1 for i in items if i['anchor'].get('thin_locus'))}.",
           ("Possible reversal by ellipsis (the quote skips a negation, modal or exclusion word "
            "across a sentence break; check it against the source): "
            + "; ".join(f"{i['id']} “{q}”" for i in revs

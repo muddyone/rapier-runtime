@@ -33,6 +33,16 @@ class ModelResponse:
     vendor: str
     model: str
     raw: dict[str, Any] | None = None
+    # Why the provider stopped: "end_turn"/"stop" (finished) or "max_tokens"/
+    # "length" (cut off at the output limit). None when the provider gave none.
+    stop_reason: str | None = None
+
+    @property
+    def cut_off(self) -> bool:
+        return self.stop_reason in CUT_OFF_REASONS
+
+
+CUT_OFF_REASONS = frozenset({"max_tokens", "length", "model_context_window_exceeded"})
 
 
 # --- one HTTP path + one transcript hook for EVERY vendor -------------------
@@ -48,11 +58,13 @@ def set_transcript_sink(fn) -> None:
     _transcript_sink = fn
 
 
-def _record(vendor: str, model: str, system: str, prompt: str, response: str) -> None:
+def _record(vendor: str, model: str, system: str, prompt: str, response: str,
+            stop_reason: str | None = None) -> None:
     if _transcript_sink is not None:
         try:
             _transcript_sink(
-                {"vendor": vendor, "model": model, "system": system, "prompt": prompt, "response": response}
+                {"vendor": vendor, "model": model, "system": system, "prompt": prompt, "response": response,
+                 "stop_reason": stop_reason}
             )
         except Exception:  # transcript capture must never break a run
             pass
@@ -184,8 +196,9 @@ class AnthropicModelClient(ModelClient):
             },
         )
         text = "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text")
-        _record("anthropic", self.spec.model, system, prompt, text)
-        return ModelResponse(text=text, vendor="anthropic", model=self.spec.model)
+        stop = data.get("stop_reason")
+        _record("anthropic", self.spec.model, system, prompt, text, stop)
+        return ModelResponse(text=text, vendor="anthropic", model=self.spec.model, stop_reason=stop)
 
 
 class OpenAIModelClient(ModelClient):
@@ -204,9 +217,11 @@ class OpenAIModelClient(ModelClient):
                 "max_completion_tokens": self.spec.max_tokens,
             },
         )
-        text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
-        _record("openai", self.spec.model, system, prompt, text)
-        return ModelResponse(text=text, vendor="openai", model=self.spec.model)
+        choice = (data.get("choices") or [{}])[0]
+        text = choice.get("message", {}).get("content") or ""
+        stop = choice.get("finish_reason")
+        _record("openai", self.spec.model, system, prompt, text, stop)
+        return ModelResponse(text=text, vendor="openai", model=self.spec.model, stop_reason=stop)
 
 
 class OpenAICompatibleModelClient(ModelClient):
@@ -236,9 +251,11 @@ class OpenAICompatibleModelClient(ModelClient):
                 "max_tokens": self.spec.max_tokens,
             },
         )
-        text = (data.get("choices") or [{}])[0].get("message", {}).get("content") or ""
-        _record(self.spec.vendor, self.spec.model, system, prompt, text)
-        return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model)
+        choice = (data.get("choices") or [{}])[0]
+        text = choice.get("message", {}).get("content") or ""
+        stop = choice.get("finish_reason")
+        _record(self.spec.vendor, self.spec.model, system, prompt, text, stop)
+        return ModelResponse(text=text, vendor=self.spec.vendor, model=self.spec.model, stop_reason=stop)
 
 
 # vendor -> (base_url, key_env, default_model). Defaults are overridable in the
